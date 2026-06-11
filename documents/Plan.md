@@ -365,14 +365,21 @@
 목표:
 
 * 게임 화면 구현
+* 플레이 화면 레이아웃 구현
 * 카드 UI 구현
+* 카드 / 덱 생성 흐름 구현
 * 전장 UI 구현
+* 플레이어 입력 및 합법 행동 하이라이트 구현
+* AI 턴 연결
+* 이벤트 로그 / 디버그 패널 구현
 * PvE 스테이지 구현
 * 보스전 구현
 
 산출물:
 
 * Playable MVP
+* Starter Deck / PvE Scenario Data
+* Phaser Layout / UI View Model
 
 ---
 
