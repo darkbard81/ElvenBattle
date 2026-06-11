@@ -1,5 +1,6 @@
 import type { GameState } from '../core';
 import { applyAction } from '../game/action';
+import { advanceToFirstPlayablePhase } from '../game/phase';
 import { hashEventLog, hashGameState } from './hash';
 import { createStateSnapshot, selectCheckpointForAction, verifyCheckpoint } from './snapshot';
 import type {
@@ -23,9 +24,13 @@ export function replayActions(
   let nextState = initialState;
 
   for (const entry of actions) {
+    const aligned = alignStateToActionHash(nextState, entry);
+
+    nextState = aligned.state;
+
     const stateHashBefore = hashGameState(nextState);
 
-    if (entry.stateHashBefore !== stateHashBefore) {
+    if (!aligned.ok) {
       errors.push({
         code: 'ERR_REPLAY_HASH_MISMATCH',
         reason: 'state_hash_before_mismatch',
@@ -71,15 +76,21 @@ export function replayActions(
     }
 
     const checkpoint = selectCheckpointForAction(options.checkpoints ?? [], entry.index);
-    const checkpointError = checkpoint ? verifyCheckpoint(result.state, checkpoint) : null;
+    const checkpointResult = checkpoint
+      ? verifyCheckpointWithAutomaticPhases(result.state, checkpoint)
+      : { state: result.state, error: null };
 
-    if (checkpointError) {
-      errors.push(checkpointError);
-      nextState = result.state;
+    if (checkpointResult.error) {
+      errors.push(checkpointResult.error);
+      nextState = checkpointResult.state;
       break;
     }
 
-    nextState = result.state;
+    nextState = checkpointResult.state;
+  }
+
+  if (errors.length === 0) {
+    nextState = advanceToFirstPlayablePhase(nextState);
   }
 
   const finalStateHash = hashGameState(nextState);
@@ -180,6 +191,8 @@ export function createReplayCheckpoints(
   let nextState = initialState;
 
   for (const entry of actions) {
+    nextState = alignStateToActionHash(nextState, entry).state;
+
     const result = applyAction(nextState, entry.action);
 
     if (!result.ok) {
@@ -198,4 +211,47 @@ export function createReplayCheckpoints(
   }
 
   return checkpoints;
+}
+
+function alignStateToActionHash(
+  state: GameState,
+  entry: ActionLogEntry,
+): { ok: boolean; state: GameState } {
+  const currentHash = hashGameState(state);
+
+  if (currentHash === entry.stateHashBefore) {
+    return {
+      ok: true,
+      state,
+    };
+  }
+
+  const playableState = advanceToFirstPlayablePhase(state);
+
+  return {
+    ok: hashGameState(playableState) === entry.stateHashBefore,
+    state: playableState,
+  };
+}
+
+function verifyCheckpointWithAutomaticPhases(
+  state: GameState,
+  checkpoint: StateSnapshot,
+): { state: GameState; error: ReplayValidationError | null } {
+  const directError = verifyCheckpoint(state, checkpoint);
+
+  if (!directError) {
+    return {
+      state,
+      error: null,
+    };
+  }
+
+  const playableState = advanceToFirstPlayablePhase(state);
+  const playableError = verifyCheckpoint(playableState, checkpoint);
+
+  return {
+    state: playableError ? state : playableState,
+    error: playableError,
+  };
 }

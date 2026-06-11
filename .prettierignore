@@ -5,3 +5,6 @@ generated
 package-lock.json
 .old_version
 *.md
+Dockerfile
+.dockerignore
+nginx.conf

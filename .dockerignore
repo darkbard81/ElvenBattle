@@ -1,0 +1,8 @@
+node_modules
+dist
+coverage
+.git
+.vite
+npm-debug.log
+*.tsbuildinfo
+generated/cards-test
