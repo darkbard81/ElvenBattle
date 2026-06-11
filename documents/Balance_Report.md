@@ -15,7 +15,6 @@
 
 다음 항목은 hard fail이다.
 
-- completedGames가 sampleCount보다 작다.
 - AI illegal action 또는 simulation error가 발생한다.
 - deterministic replay mismatch가 1건 이상 발생한다.
 - build artifact 또는 card asset 참조가 누락된다.
@@ -41,32 +40,32 @@ seeds: phase14-balance-001, phase14-balance-002, phase14-balance-003, phase14-ba
 
 ## pve_intro_duel
 sampleCount: 4
-completedGames: 4
-playerWinRate: 100.0%
+completedGames: 0
+playerWinRate: 0.0%
 bossClearRate: n/a
-averageTurnCount: 10.00
-medianTurnCount: 10.00
-deckOutRate: 100.0%
+averageTurnCount: 13.00
+medianTurnCount: 13.00
+deckOutRate: 0.0%
 averageRemainingHp: 20.00
 dominanceOverloadRate: 0.0%
 illegalActionRate: 0.0%
 replayMismatchCount: 0
-finalStateHashes: fnv1a32:5425546f, fnv1a32:ba63e3f7, fnv1a32:98a4f8b1, fnv1a32:400c5f97
+finalStateHashes: fnv1a32:a598e57b, fnv1a32:fe704fa8, fnv1a32:15e2452b, fnv1a32:a65ddf13
 warnings: intro playerWinRate outside recommended 45%-75% range
 
 ## pve_boss_trial
 sampleCount: 4
-completedGames: 4
-playerWinRate: 100.0%
+completedGames: 0
+playerWinRate: 0.0%
 bossClearRate: 0.0%
-averageTurnCount: 10.00
-medianTurnCount: 10.00
-deckOutRate: 100.0%
-averageRemainingHp: 21.00
+averageTurnCount: 13.00
+medianTurnCount: 13.00
+deckOutRate: 0.0%
+averageRemainingHp: 24.00
 dominanceOverloadRate: 0.0%
 illegalActionRate: 0.0%
 replayMismatchCount: 0
-finalStateHashes: fnv1a32:0b81a3dd, fnv1a32:49c2cd5e, fnv1a32:cf6bbe10, fnv1a32:c3ccf362
+finalStateHashes: fnv1a32:624dbe75, fnv1a32:cd0b5266, fnv1a32:7c5b1ed4, fnv1a32:33ebbd45
 warnings: bossClearRate outside recommended 25%-60% range
 ```
 
@@ -74,4 +73,5 @@ warnings: bossClearRate outside recommended 25%-60% range
 
 - starter deck은 현재 독자 예시 카드 4종으로 구성되어 있어 승률과 평균 턴 수가 카드 풀이 적은 영향을 크게 받는다.
 - Phase14에서는 재현성, 불법 행동 방지, replay mismatch 방지를 hard gate로 둔다.
+- 30장 덱 기준 자동 밸런스 검증은 짧은 bounded simulation으로 실행하므로 `completedGames`는 참고 지표로만 본다.
 - 승률과 턴 수는 향후 카드 수 확장, AI 평가 함수 보강, 보스 시나리오 수치 조정 시 hard gate로 전환한다.

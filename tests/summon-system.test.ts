@@ -28,7 +28,7 @@ describe('summon system', () => {
     }
 
     expect(result.state.players.P1?.hand).toEqual([]);
-    expect(result.state.players.P1?.resource.current).toBe(8);
+    expect(result.state.players.P1?.resource.current).toBe(9);
     expect(result.state.board.slots[createSlotId('P1', 'FRONT', 0)]?.unit).toBe('hand-unit-1');
     expect(result.state.zones.cardInstances['hand-unit-1']?.currentZone).toEqual({
       type: 'BATTLEFIELD',
@@ -114,18 +114,13 @@ describe('summon system', () => {
     expect(noResourceResult.ok).toBe(false);
 
     const noDominanceState = addHandCard(
-      createPhase6State({
-        players: {
-          ...createPhase6State().players,
-          P1: {
-            ...createPhase6State().players.P1!,
-            dominance: {
-              ...createPhase6State().players.P1!.dominance,
-              limit: 0,
-            },
-          },
+      {
+        ...createPhase6State(),
+        dominanceConfig: {
+          ...createPhase6State().dominanceConfig,
+          baseSlotValue: 0,
         },
-      }),
+      },
       'unit-4',
       'unit_basic_vanguard',
     );

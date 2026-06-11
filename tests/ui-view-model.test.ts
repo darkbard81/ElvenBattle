@@ -12,9 +12,9 @@ describe('Phase13 UI view model', () => {
     expect(viewModel.phase).toBe('MAIN');
     expect(viewModel.players).toHaveLength(2);
     expect(viewModel.players[0]?.hp).toBeGreaterThan(0);
-    expect(viewModel.hand.length).toBe(3);
+    expect(viewModel.hand.length).toBe(6);
     expect(viewModel.boardSlots).toHaveLength(12);
-    expect(viewModel.opponentHandCount).toBe(3);
+    expect(viewModel.opponentHandCount).toBe(6);
   });
 
   it('creates result view model for game over state', () => {

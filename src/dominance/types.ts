@@ -27,6 +27,7 @@ export interface DominanceConfig {
   startLimit: number;
   limitGainPerTurn: number;
   cap: number;
+  baseSlotValue: number;
   overloadPolicy: DominanceOverloadPolicy;
 }
 
@@ -41,6 +42,7 @@ export const DEFAULT_DOMINANCE_CONFIG = {
   startLimit: 3,
   limitGainPerTurn: 1,
   cap: 10,
+  baseSlotValue: 1,
   overloadPolicy: 'BLOCK_NEW_SUMMON_ONLY',
 } as const satisfies DominanceConfig;
 

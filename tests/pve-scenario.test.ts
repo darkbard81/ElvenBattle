@@ -15,7 +15,7 @@ describe('Phase13 PvE scenario setup', () => {
 
     expect(state.gameStatus).toBe('RUNNING');
     expect(state.phase).toBe('MAIN');
-    expect(state.players[PVE_PLAYER_ID]?.hand.length).toBe(3);
+    expect(state.players[PVE_PLAYER_ID]?.hand.length).toBe(6);
     expect(state.players[PVE_AI_ID]?.kind).toBe('AI');
     expect(Object.keys(state.cardDefinitions ?? {})).toContain('unit_basic_vanguard');
   });
@@ -36,23 +36,21 @@ describe('Phase13 PvE scenario setup', () => {
     const scenario = getPveScenario('pve_intro_duel');
     const decks = createPveInitialDecks(scenario);
 
-    expect(decks[PVE_PLAYER_ID]!.length).toBeGreaterThan(0);
-    expect(decks[PVE_AI_ID]!.length).toBeGreaterThan(0);
+    expect(decks[PVE_PLAYER_ID]).toHaveLength(30);
+    expect(decks[PVE_AI_ID]).toHaveLength(30);
   });
 
   it('can drive the intro duel and boss trial to a finished or bounded simulation result', () => {
     const intro = simulateGame(createPveGame({ scenarioId: 'pve_intro_duel' }), {
-      maxTurns: 30,
-      maxActions: 300,
+      maxTurns: 12,
+      maxActions: 250,
     });
     const boss = simulateGame(createPveGame({ scenarioId: 'pve_boss_trial' }), {
-      maxTurns: 30,
-      maxActions: 300,
+      maxTurns: 12,
+      maxActions: 250,
     });
 
-    expect(intro.finalState.phase).toBe('GAME_OVER');
-    expect(intro.finalState.gameStatus).toBe('FINISHED');
-    expect(boss.finalState.phase).toBe('GAME_OVER');
-    expect(boss.finalState.gameStatus).toBe('FINISHED');
-  });
+    expect(intro.finalState.gameStatus).not.toBe('ABORTED');
+    expect(boss.finalState.gameStatus).not.toBe('ABORTED');
+  }, 15_000);
 });

@@ -13,6 +13,7 @@ describe('dominance model', () => {
       startLimit: 3,
       limitGainPerTurn: 1,
       cap: 10,
+      baseSlotValue: 1,
       overloadPolicy: 'BLOCK_NEW_SUMMON_ONLY',
     } satisfies DominanceConfig);
   });

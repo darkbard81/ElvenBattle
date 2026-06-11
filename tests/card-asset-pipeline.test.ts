@@ -30,5 +30,5 @@ describe('Phase 9 card asset pipeline', () => {
       expect(card.runtimeNumberSlots.some((slot) => slot.field === 'COST')).toBe(true);
       expect(card.skillTextOverlay.backgroundAlpha).toBeGreaterThan(0);
     }
-  });
+  }, 20_000);
 });

@@ -5,17 +5,17 @@ export const PVE_PLAYER_ID = 'P1';
 export const PVE_AI_ID = 'P2';
 
 export const PVE_PLAYER_STARTER_DECK: readonly DeckEntry[] = [
-  { cardId: 'unit_basic_vanguard', count: 3 },
-  { cardId: 'unit_back_support', count: 2 },
-  { cardId: 'tactic_basic_focus', count: 1 },
-  { cardId: 'ongoing_basic_banner', count: 1 },
+  { cardId: 'unit_basic_vanguard', count: 12 },
+  { cardId: 'unit_back_support', count: 10 },
+  { cardId: 'tactic_basic_focus', count: 4 },
+  { cardId: 'ongoing_basic_banner', count: 4 },
 ];
 
 export const PVE_AI_STARTER_DECK: readonly DeckEntry[] = [
-  { cardId: 'unit_basic_vanguard', count: 3 },
-  { cardId: 'unit_back_support', count: 2 },
-  { cardId: 'tactic_basic_focus', count: 1 },
-  { cardId: 'ongoing_basic_banner', count: 1 },
+  { cardId: 'unit_basic_vanguard', count: 12 },
+  { cardId: 'unit_back_support', count: 10 },
+  { cardId: 'tactic_basic_focus', count: 4 },
+  { cardId: 'ongoing_basic_banner', count: 4 },
 ];
 
 export function getPveStarterDeck(playerId: string): readonly DeckEntry[] {

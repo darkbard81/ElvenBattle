@@ -189,10 +189,11 @@ export class GameScene extends Phaser.Scene {
 
     this.add.text(x + 8, y + 8, card.name, {
       color: card.exhausted ? '#94a3b8' : '#f8fafc',
+      fixedHeight: 34,
       fixedWidth: 96,
       fontFamily: 'Arial, sans-serif',
       fontSize: '12px',
-      wordWrap: { width: 96 },
+      wordWrap: { width: 96, useAdvancedWrap: true },
     });
     this.add.text(x + 8, y + 76, this.formatCardNumbers(card), {
       color: '#fde68a',
@@ -245,10 +246,11 @@ export class GameScene extends Phaser.Scene {
       this.addCardImage(card, x + 6, y + 6, 84, 126);
       this.add.text(x + 8, y + 10, card.name, {
         color: '#f8fafc',
+        fixedHeight: 44,
         fixedWidth: 80,
         fontFamily: 'Arial, sans-serif',
         fontSize: '12px',
-        wordWrap: { width: 80 },
+        wordWrap: { width: 80, useAdvancedWrap: true },
       });
       this.add.text(x + 8, y + 104, this.formatCardNumbers(card), {
         color: '#fde68a',

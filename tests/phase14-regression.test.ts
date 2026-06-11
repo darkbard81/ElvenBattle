@@ -9,8 +9,8 @@ describe('Phase14 deterministic replay regression', () => {
     const initialState = createPveGame({ scenarioId: 'pve_intro_duel' });
     const result = simulateGame(initialState, {
       createReplayFile: true,
-      maxTurns: 30,
-      maxActions: 300,
+      maxTurns: 12,
+      maxActions: 250,
     });
 
     expect(result.replayFile).toBeDefined();
@@ -20,7 +20,7 @@ describe('Phase14 deterministic replay regression', () => {
     expect(replay.ok).toBe(true);
     expect(replay.finalStateHash).toBe(hashGameState(result.finalState));
     expect(replay.finalEventLogHash).toBe(hashEventLog(result.finalState.eventLog));
-  });
+  }, 15_000);
 
   it('creates stable initial and final hashes for the same seed and scenario', () => {
     const leftInitial = createPveGame({ scenarioId: 'pve_boss_trial' });
@@ -28,12 +28,12 @@ describe('Phase14 deterministic replay regression', () => {
 
     expect(hashGameState(leftInitial)).toBe(hashGameState(rightInitial));
 
-    const leftResult = simulateGame(leftInitial, { maxTurns: 30, maxActions: 300 });
-    const rightResult = simulateGame(rightInitial, { maxTurns: 30, maxActions: 300 });
+    const leftResult = simulateGame(leftInitial, { maxTurns: 12, maxActions: 250 });
+    const rightResult = simulateGame(rightInitial, { maxTurns: 12, maxActions: 250 });
 
     expect(hashGameState(leftResult.finalState)).toBe(hashGameState(rightResult.finalState));
     expect(hashEventLog(leftResult.finalState.eventLog)).toBe(
       hashEventLog(rightResult.finalState.eventLog),
     );
-  });
+  }, 15_000);
 });

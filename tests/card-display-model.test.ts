@@ -14,7 +14,7 @@ describe('Phase 9 card display model', () => {
     expect(model.name).toBe('card.unit_basic_vanguard.name');
     expect(model.type).toBe('UNIT');
     expect(model.rarity).toBe('COMMON');
-    expect(model.cost).toBe(2);
+    expect(model.cost).toBe(1);
     expect(model.dominanceCost).toBe(1);
     expect(model.dominanceValue).toBe(1);
     expect(model.dominanceRequirement).toBeNull();

@@ -194,7 +194,7 @@ function validateSummonUnit(
     handValidation,
     validatePlacementSlot(state.board, action.payload.slotId, action.playerId, definition),
     resourceValidation,
-    canPayDominanceForSummon(state, action.playerId, definition),
+    canPayDominanceForSummon(state, action.playerId, definition, action.payload.slotId),
   );
 }
 

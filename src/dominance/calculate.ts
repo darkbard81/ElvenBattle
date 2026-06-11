@@ -1,5 +1,6 @@
 import type { CardDefinition } from '../cards';
 import type { GameState, PlayerId } from '../core';
+import type { BoardSlot, SlotId } from '../board';
 import { createDominanceChangedEvent, type DominanceChangeReason } from '../events';
 import type { GameEvent } from '../events';
 import type { DominanceState } from './types';
@@ -22,6 +23,7 @@ export function calculateDominanceForPlayer(
 
   let used = 0;
   let boardValue = 0;
+  let overloaded = false;
 
   for (const slot of Object.values(state.board.slots)) {
     if (slot.ownerSide !== playerId || !slot.unit) {
@@ -40,16 +42,69 @@ export function calculateDominanceForPlayer(
       continue;
     }
 
-    used += definition.dominanceCost ?? 0;
+    used += definition.cost;
     boardValue += definition.dominanceValue ?? 0;
+
+    if (definition.cost > calculateSlotDominance(state, definitions, playerId, slot.slotId)) {
+      overloaded = true;
+    }
   }
 
   return {
     ...player.dominance,
     used,
     boardValue,
-    overloaded: used > player.dominance.limit + player.dominance.temporaryLimit,
+    overloaded,
   };
+}
+
+export function calculateSlotDominance(
+  state: GameState,
+  definitions: Record<string, CardDefinition>,
+  playerId: PlayerId,
+  slotId: SlotId,
+): number {
+  const targetSlot = state.board.slots[slotId];
+
+  if (!targetSlot || targetSlot.ownerSide !== playerId) {
+    return 0;
+  }
+
+  let value = state.dominanceConfig.baseSlotValue;
+
+  for (const sourceSlot of Object.values(state.board.slots)) {
+    if (
+      sourceSlot.ownerSide !== playerId ||
+      sourceSlot.slotId === slotId ||
+      !sourceSlot.unit ||
+      !isSurroundingSlot(sourceSlot, targetSlot)
+    ) {
+      continue;
+    }
+
+    const instance = state.zones.cardInstances[sourceSlot.unit];
+
+    if (!instance || instance.controllerId !== playerId) {
+      continue;
+    }
+
+    value += definitions[instance.definitionId]?.dominanceValue ?? 0;
+  }
+
+  return value;
+}
+
+function isSurroundingSlot(source: BoardSlot, target: BoardSlot): boolean {
+  const sourceRowIndex = getRowIndex(source);
+  const targetRowIndex = getRowIndex(target);
+  const rowDistance = Math.abs(sourceRowIndex - targetRowIndex);
+  const columnDistance = Math.abs(source.column - target.column);
+
+  return rowDistance <= 1 && columnDistance <= 1 && rowDistance + columnDistance > 0;
+}
+
+function getRowIndex(slot: BoardSlot): number {
+  return slot.row === 'FRONT' ? 0 : 1;
 }
 
 export function recalculateDominance(

@@ -1,12 +1,15 @@
 import type { CardDefinition } from '../cards';
 import type { GameState, PlayerId } from '../core';
+import type { SlotId } from '../board';
 import { validationError, validationOk } from '../rules';
 import type { ValidationResult } from '../rules';
+import { calculateSlotDominance } from './calculate';
 
 export function canPayDominanceForSummon(
   state: GameState,
   playerId: PlayerId,
   definition: CardDefinition,
+  slotId: SlotId,
 ): ValidationResult {
   const player = state.players[playerId];
 
@@ -16,16 +19,20 @@ export function canPayDominanceForSummon(
     });
   }
 
-  const nextUsed = player.dominance.used + (definition.dominanceCost ?? 0);
-  const limit = player.dominance.limit + player.dominance.temporaryLimit;
+  const slotDominance = calculateSlotDominance(
+    state,
+    state.cardDefinitions ?? {},
+    playerId,
+    slotId,
+  );
 
-  if (nextUsed > limit) {
+  if (definition.cost > slotDominance) {
     return validationError('ERR_INSUFFICIENT_DOMINANCE', 'error.insufficient_dominance', {
       playerId,
       cardId: definition.cardId,
-      used: player.dominance.used,
-      dominanceCost: definition.dominanceCost ?? 0,
-      limit,
+      slotId,
+      cost: definition.cost,
+      slotDominance,
     });
   }
 
