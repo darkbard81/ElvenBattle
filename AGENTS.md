@@ -46,10 +46,10 @@
 작업 완료 전에는 변경 범위에 맞게 최소한 다음을 실행한다.
 
 ```bash
-npm run build
+npm --silent run build
 npm run lint
 npm run format:check
-npm test
+npm test -- --reporter=dot
 ```
 
 개발 서버 확인이 필요한 작업이면 다음도 실행한다.
