@@ -1,0 +1,14 @@
+{
+  "cardId": "unit_back_support",
+  "nameKey": "card.unit_back_support.name",
+  "type": "UNIT",
+  "cost": 1,
+  "dominanceCost": 1,
+  "dominanceValue": 1,
+  "baseAttack": 1,
+  "baseHealth": 2,
+  "rowRestriction": ["BACK"],
+  "tags": ["SUPPORT_UNIT"],
+  "abilities": [],
+  "rarity": "COMMON"
+}

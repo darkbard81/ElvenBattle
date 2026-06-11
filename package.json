@@ -1,0 +1,33 @@
+{
+  "name": "elven-battle",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "generate:cards": "tsx scripts/generate-card-assets.ts",
+    "generate:cards:check": "tsx scripts/generate-card-assets.ts --check",
+    "lint": "eslint .",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "phaser": "^3.90.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.29.0",
+    "@types/node": "^25.9.3",
+    "eslint": "^9.29.0",
+    "prettier": "^3.5.3",
+    "sharp": "^0.35.0",
+    "tsx": "^4.22.4",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.34.1",
+    "vite": "^6.3.5",
+    "vitest": "^3.2.3"
+  }
+}

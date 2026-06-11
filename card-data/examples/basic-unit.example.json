@@ -1,0 +1,14 @@
+{
+  "cardId": "unit_basic_vanguard",
+  "nameKey": "card.unit_basic_vanguard.name",
+  "type": "UNIT",
+  "cost": 2,
+  "dominanceCost": 1,
+  "dominanceValue": 1,
+  "baseAttack": 2,
+  "baseHealth": 3,
+  "rowRestriction": "ANY",
+  "tags": ["BASIC_UNIT"],
+  "abilities": [],
+  "rarity": "COMMON"
+}

@@ -1,0 +1,10 @@
+{
+  "cardId": "ongoing_basic_banner",
+  "nameKey": "card.ongoing_basic_banner.name",
+  "type": "ONGOING",
+  "cost": 2,
+  "dominanceRequirement": 2,
+  "tags": ["BASIC_ONGOING"],
+  "abilities": [],
+  "rarity": "COMMON"
+}

@@ -1,0 +1,7 @@
+node_modules/
+dist/
+coverage/
+generated/*
+!generated/README.md
+*.local
+.DS_Store
