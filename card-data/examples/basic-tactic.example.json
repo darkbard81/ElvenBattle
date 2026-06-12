@@ -1,9 +1,0 @@
-{
-  "cardId": "tactic_basic_focus",
-  "nameKey": "card.tactic_basic_focus.name",
-  "type": "TACTIC",
-  "cost": 1,
-  "tags": ["BASIC_TACTIC"],
-  "abilities": [],
-  "rarity": "COMMON"
-}

@@ -1,6 +1,9 @@
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  server: {
+    allowedHosts: ['mcp.krdp.ddns.net'],
+  },
   build: {
     target: 'es2022',
     rollupOptions: {
