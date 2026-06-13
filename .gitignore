@@ -5,3 +5,5 @@ generated/*
 !generated/README.md
 *.local
 .DS_Store
+cards/
+assets/
