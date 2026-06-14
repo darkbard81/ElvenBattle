@@ -1,12 +1,15 @@
 import './styles.css';
-import Phaser from 'phaser';
-import RexBBCodeText from 'phaser3-rex-plugins/plugins/bbcodetext';
 
 const RUNTIME_FONT_FAMILY = 'CardTextRuntime';
 const urlParams = new URLSearchParams(window.location.search);
 const INITIAL_CARD_ID = urlParams.get('cardId');
 const captureId = urlParams.get('captureId');
 const isCaptureMode = urlParams.get('capture') === '1';
+
+const COLOR_OPEN_TAG = '[color=';
+const COLOR_CLOSE_TAG = '[/color]';
+const ESC_OPEN_TAG = '[esc]';
+const ESC_CLOSE_TAG = '[/esc]';
 
 declare global {
   interface Window {
@@ -101,6 +104,7 @@ app.innerHTML = `
   <main class="app">
     <section class="preview-shell" aria-label="카드 미리보기">
       <div class="stage" data-stage>
+        <canvas class="render-ready-canvas" width="1" height="1" aria-hidden="true"></canvas>
         <img class="card-layer art-layer" data-art-image alt="selected card art" />
         <img class="card-layer reference-layer" data-reference-image alt="card frame reference" />
         <div class="text-area ability-text-area" data-area-key="ability" data-text-area>
@@ -201,12 +205,6 @@ let defaultArtOffsetY = 0;
 let currentCardId = INITIAL_CARD_ID ?? '';
 let activeAreaKey: AreaKey = 'ability';
 let dragState: DragState | null = null;
-let bbcodeGame: Phaser.Game | null = null;
-let bbcodeScene: Phaser.Scene | null = null;
-let bbcodeTextObject: InstanceType<typeof RexBBCodeText> | null = null;
-let nameBbcodeGame: Phaser.Game | null = null;
-let nameBbcodeScene: Phaser.Scene | null = null;
-let nameBbcodeTextObject: InstanceType<typeof RexBBCodeText> | null = null;
 
 void initialize();
 
@@ -230,7 +228,7 @@ async function initialize(): Promise<void> {
     }
     await loadRuntimeFont(abilityArea.fontFile);
     await document.fonts.ready;
-    createBBCodePreviews();
+    syncBBCodePreviews();
     bindEvents();
     setStatus('마우스로 흰색 영역을 드래그하거나 우하단 핸들로 크기를 조정할 수 있습니다.');
   } catch (error) {
@@ -627,180 +625,145 @@ function getActiveTextPreview(): string {
     return '';
   }
 
-  return activeAreaKey === 'ability'
-    ? editorData.abilityText
-    : editorData.nameText;
-}
-
-function createBBCodePreviews(): void {
-  createAbilityBBCodePreview();
-  createNameBBCodePreview();
-}
-
-function createAbilityBBCodePreview(): void {
-  if (bbcodeGame) {
-    syncAbilityBBCodePreview();
-    return;
-  }
-
-  const { width, height } = readPreviewSize(bbcodePreviewElement);
-  class BBCodePreviewScene extends Phaser.Scene {
-    constructor() {
-      super('bbcode-preview');
-    }
-
-    create(): void {
-      registerBBCodeScene(this);
-      bbcodeTextObject = new RexBBCodeText(this, 0, 0, '', {
-        fontFamily: RUNTIME_FONT_FAMILY,
-        fontSize: '18px',
-        fontStyle: '700',
-        color: '#17251A',
-      });
-      this.add.existing(bbcodeTextObject);
-      syncAbilityBBCodePreview();
-    }
-  }
-
-  bbcodeGame = new Phaser.Game({
-    type: Phaser.CANVAS,
-    parent: bbcodePreviewElement,
-    width,
-    height,
-    transparent: true,
-    backgroundColor: 'rgba(0,0,0,0)',
-    scene: BBCodePreviewScene,
-    audio: {
-      noAudio: true,
-    },
-  });
-}
-
-function createNameBBCodePreview(): void {
-  if (nameBbcodeGame) {
-    syncNameBBCodePreview();
-    return;
-  }
-
-  const { width, height } = readPreviewSize(nameBbcodePreviewElement);
-  class NameBBCodePreviewScene extends Phaser.Scene {
-    constructor() {
-      super('name-bbcode-preview');
-    }
-
-    create(): void {
-      registerNameBBCodeScene(this);
-      nameBbcodeTextObject = new RexBBCodeText(this, 0, 0, '', {
-        fontFamily: RUNTIME_FONT_FAMILY,
-        fontSize: '18px',
-        fontStyle: '700',
-        color: '#FFFFFF',
-      });
-      this.add.existing(nameBbcodeTextObject);
-      syncNameBBCodePreview();
-    }
-  }
-
-  nameBbcodeGame = new Phaser.Game({
-    type: Phaser.CANVAS,
-    parent: nameBbcodePreviewElement,
-    width,
-    height,
-    transparent: true,
-    backgroundColor: 'rgba(0,0,0,0)',
-    scene: NameBBCodePreviewScene,
-    audio: {
-      noAudio: true,
-    },
-  });
+  return activeAreaKey === 'ability' ? editorData.abilityText : editorData.nameText;
 }
 
 function syncBBCodePreviews(): void {
   syncAbilityBBCodePreview();
   syncNameBBCodePreview();
-  if (bbcodeTextObject && nameBbcodeTextObject) {
-    requestAnimationFrame(() => {
-      window.__CARD_TEXT_TOOL_READY = true;
-    });
-  }
+  requestAnimationFrame(() => {
+    window.__CARD_TEXT_TOOL_READY = true;
+  });
 }
 
 function syncAbilityBBCodePreview(): void {
-  if (!editorData || !abilityArea || !bbcodeGame || !bbcodeScene || !bbcodeTextObject) {
+  if (!editorData || !abilityArea) {
     return;
   }
 
-  const { width, height } = readPreviewSize(bbcodePreviewElement);
-  bbcodeGame.scale.resize(width, height);
-  bbcodeScene.cameras.main.setSize(width, height);
-
-  const stageRect = stage.getBoundingClientRect();
-  const scale = stageRect.width / editorData.canvas.width;
-  const fontSize = Math.max(10, Math.round(abilityArea.fontSize * scale));
+  const fontSize = readScaledFontSize(abilityArea.fontSize);
   const lineSpacing = Math.max(1, Math.round(fontSize * 0.18));
 
-  bbcodeTextObject
-    .setText(editorData.abilityText)
-    .setStyle({
-      fontFamily: RUNTIME_FONT_FAMILY,
-      fontSize: `${fontSize}px`,
-      fontStyle: '700',
-      color: abilityArea.textColor,
-      fixedWidth: width,
-      fixedHeight: height,
-      lineSpacing,
-    })
-    .setFixedSize(width, height)
-    .setWrapMode('char')
-    .setWrapWidth(width)
-    .setLineSpacing(lineSpacing)
-    .updateText(true);
+  bbcodePreviewElement.style.fontFamily = RUNTIME_FONT_FAMILY;
+  bbcodePreviewElement.style.fontSize = `${fontSize}px`;
+  bbcodePreviewElement.style.fontWeight = '700';
+  bbcodePreviewElement.style.color = abilityArea.textColor;
+  bbcodePreviewElement.style.lineHeight = `${fontSize + lineSpacing}px`;
+  bbcodePreviewElement.style.textAlign = 'left';
+  bbcodePreviewElement.style.display = 'block';
+
+  renderInlineBBCode(bbcodePreviewElement, editorData.abilityText);
 }
 
 function syncNameBBCodePreview(): void {
-  if (!editorData || !nameArea || !nameBbcodeGame || !nameBbcodeScene || !nameBbcodeTextObject) {
+  if (!editorData || !nameArea) {
     return;
   }
 
-  const { width, height } = readPreviewSize(nameBbcodePreviewElement);
-  nameBbcodeGame.scale.resize(width, height);
-  nameBbcodeScene.cameras.main.setSize(width, height);
+  const fontSize = readScaledFontSize(nameArea.fontSize);
+
+  nameBbcodePreviewElement.style.fontFamily = RUNTIME_FONT_FAMILY;
+  nameBbcodePreviewElement.style.fontSize = `${fontSize}px`;
+  nameBbcodePreviewElement.style.fontWeight = '700';
+  nameBbcodePreviewElement.style.color = nameArea.textColor;
+  nameBbcodePreviewElement.style.lineHeight = `${Math.round(fontSize * 1.18)}px`;
+  nameBbcodePreviewElement.style.textAlign = 'center';
+  nameBbcodePreviewElement.style.display = 'flex';
+  nameBbcodePreviewElement.style.alignItems = 'center';
+  nameBbcodePreviewElement.style.justifyContent = 'center';
+
+  renderInlineBBCode(nameBbcodePreviewElement, editorData.nameText);
+}
+
+function readScaledFontSize(fontSize: number): number {
+  if (!editorData) {
+    return fontSize;
+  }
 
   const stageRect = stage.getBoundingClientRect();
   const scale = stageRect.width / editorData.canvas.width;
-  const fontSize = Math.max(10, Math.round(nameArea.fontSize * scale));
-  nameBbcodeTextObject
-    .setText(editorData.nameText)
-    .setStyle({
-      fontFamily: RUNTIME_FONT_FAMILY,
-      fontSize: `${fontSize}px`,
-      fontStyle: '700',
-      color: nameArea.textColor,
-      fixedWidth: width,
-      fixedHeight: height,
-      halign: 'center',
-      valign: 'center',
-    })
-    .setFixedSize(width, height)
-    .setWrapMode('char')
-    .setWrapWidth(width)
-    .updateText(true);
+  return Math.max(10, Math.round(fontSize * scale));
 }
 
-function registerBBCodeScene(scene: Phaser.Scene): void {
-  bbcodeScene = scene;
-}
+function renderInlineBBCode(target: HTMLElement, source: string): void {
+  const fragment = document.createDocumentFragment();
+  const colorStack: HTMLElement[] = [];
+  const lowerSource = source.toLowerCase();
+  let index = 0;
 
-function registerNameBBCodeScene(scene: Phaser.Scene): void {
-  nameBbcodeScene = scene;
-}
-
-function readPreviewSize(element: HTMLElement): { width: number; height: number } {
-  const rect = element.getBoundingClientRect();
-  return {
-    width: Math.max(1, Math.round(rect.width)),
-    height: Math.max(1, Math.round(rect.height)),
+  const append = (node: Node): void => {
+    const parent = colorStack[colorStack.length - 1];
+    if (parent) {
+      parent.append(node);
+    } else {
+      fragment.append(node);
+    }
   };
+
+  while (index < source.length) {
+    if (lowerSource.startsWith(COLOR_OPEN_TAG, index)) {
+      const tagEnd = source.indexOf(']', index);
+      if (tagEnd !== -1) {
+        const color = source.slice(index + COLOR_OPEN_TAG.length, tagEnd).trim();
+        if (isSafeColor(color)) {
+          const span = document.createElement('span');
+          span.style.color = color;
+          append(span);
+          colorStack.push(span);
+          index = tagEnd + 1;
+          continue;
+        }
+      }
+    }
+
+    if (lowerSource.startsWith(COLOR_CLOSE_TAG, index)) {
+      colorStack.pop();
+      index += COLOR_CLOSE_TAG.length;
+      continue;
+    }
+
+    if (lowerSource.startsWith(ESC_OPEN_TAG, index)) {
+      index += ESC_OPEN_TAG.length;
+      continue;
+    }
+
+    if (lowerSource.startsWith(ESC_CLOSE_TAG, index)) {
+      index += ESC_CLOSE_TAG.length;
+      continue;
+    }
+
+    if (source[index] === '\n') {
+      append(document.createElement('br'));
+      index += 1;
+      continue;
+    }
+
+    const nextIndex = findNextBBCodeBoundary(lowerSource, index + 1);
+    append(document.createTextNode(source.slice(index, nextIndex)));
+    index = nextIndex;
+  }
+
+  target.replaceChildren(fragment);
+}
+
+function findNextBBCodeBoundary(source: string, fromIndex: number): number {
+  const candidates = [
+    source.indexOf(COLOR_OPEN_TAG, fromIndex),
+    source.indexOf(COLOR_CLOSE_TAG, fromIndex),
+    source.indexOf(ESC_OPEN_TAG, fromIndex),
+    source.indexOf(ESC_CLOSE_TAG, fromIndex),
+    source.indexOf('\n', fromIndex),
+  ].filter((value) => value !== -1);
+
+  if (candidates.length === 0) {
+    return source.length;
+  }
+
+  return Math.min(...candidates);
+}
+
+function isSafeColor(value: string): boolean {
+  return /^#[0-9a-f]{3,8}$/i.test(value);
 }
 
 function toCanvasPoint(event: PointerEvent): { x: number; y: number } {
