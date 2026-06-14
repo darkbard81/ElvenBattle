@@ -555,7 +555,12 @@ function renderAssetOptions(
 function renderImageLayers(): void {
   artImageElement.src = toAssetUrl(selectedArtImage);
   referenceImageElement.src = toAssetUrl(selectedReferenceImage);
-  artImageElement.style.transform = `translateY(${artOffsetY}px)`;
+
+  const scaledArtOffsetY = editorData
+    ? artOffsetY * (stage.clientHeight / editorData.canvas.height)
+    : artOffsetY;
+
+  artImageElement.style.transform = `translateY(${scaledArtOffsetY}px)`;
   artOffsetYInput.value = String(artOffsetY);
 }
 
