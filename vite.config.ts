@@ -81,7 +81,6 @@ type DeckData = {
 type CardAssetPaths = {
   png: string;
   webp: string;
-  webpSmall: string;
 };
 
 type SharpMetadata = {
@@ -434,22 +433,16 @@ async function finalizeCardAssets(cardId: string, sourcePath: string): Promise<C
 
   const pngPath = path.join(pngDir, `${cardId}.png`);
   const webpPath = path.join(webpDir, `${cardId}.webp`);
-  const webpSmallPath = path.join(webpDir, `${cardId}_S.webp`);
 
   await sharpFactory(sourcePath).png().toFile(pngPath);
   await sharpFactory(sourcePath)
     .resize(Math.round(width * 0.5), Math.round(height * 0.5))
     .webp({ quality: 90 })
     .toFile(webpPath);
-  await sharpFactory(sourcePath)
-    .resize(Math.round(width * 0.25), Math.round(height * 0.25))
-    .webp({ quality: 88 })
-    .toFile(webpSmallPath);
 
   const assets = {
     png: toProjectPath(pngPath),
     webp: toProjectPath(webpPath),
-    webpSmall: toProjectPath(webpSmallPath),
   };
 
   const deck = await readJsonFile<DeckData>(deckPath);
