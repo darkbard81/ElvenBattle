@@ -626,10 +626,8 @@ function formatAbilityText(
     .map((ability) => {
       const title = abilityTitles.get(ability.category) ?? ability.category;
       return [
-        `[color=${area.nameColor}]${escapeBBCode(ability.name)}[/color]`,
-        `[color=${area.titleColor}][${escapeBBCode(title)}][/color] : [color=${
-          area.textColor
-        }]${escapeBBCode(ability.text)}[/color]`,
+        `[color=${area.nameColor}]${escapeBBCode(ability.name)}[/color] : [color=${area.titleColor}][${escapeBBCode(title)}][/color]`,
+        `[color=${area.textColor}]${escapeBBCode(ability.text)}[/color]`,
       ].join('\n');
     })
     .join('\n\n');
