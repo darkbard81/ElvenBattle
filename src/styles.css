@@ -58,6 +58,17 @@ select {
   touch-action: none;
 }
 
+.render-ready-canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .card-layer {
   position: absolute;
   inset: 0;
@@ -109,12 +120,15 @@ select {
   width: 100%;
   height: 100%;
   overflow: hidden;
+  overflow-wrap: anywhere;
   pointer-events: none;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
-.bbcode-preview canvas {
-  display: block;
-  pointer-events: none;
+.name-bbcode-preview {
+  align-items: center;
+  justify-content: center;
 }
 
 .resize-handle {
