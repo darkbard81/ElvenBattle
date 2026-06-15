@@ -160,6 +160,7 @@ app.innerHTML = `
       <div class="actions">
         <button type="button" data-save>저장</button>
         <button type="button" data-generate>생성</button>
+        <button type="button" data-generate-all>일괄생성</button>
         <button type="button" class="secondary" data-reset>기본값</button>
       </div>
       <p class="status" data-status></p>
@@ -181,6 +182,7 @@ const textPreviewElement = mustQuery<HTMLPreElement>('[data-text-preview]');
 const statusElement = mustQuery<HTMLParagraphElement>('[data-status]');
 const saveButton = mustQuery<HTMLButtonElement>('[data-save]');
 const generateButton = mustQuery<HTMLButtonElement>('[data-generate]');
+const generateAllButton = mustQuery<HTMLButtonElement>('[data-generate-all]');
 const resetButton = mustQuery<HTMLButtonElement>('[data-reset]');
 const artSelect = mustQuery<HTMLSelectElement>('[data-art-select]');
 const referenceSelect = mustQuery<HTMLSelectElement>('[data-reference-select]');
@@ -286,6 +288,10 @@ function bindEvents(): void {
 
   generateButton.addEventListener('click', () => {
     void generateCard();
+  });
+
+  generateAllButton.addEventListener('click', () => {
+    void generateAllCards();
   });
 
   resetButton.addEventListener('click', () => {
@@ -409,15 +415,14 @@ async function generateCard(): Promise<void> {
   setStatus('텍스트 영역을 합성한 PNG를 생성하는 중입니다.');
 
   try {
-    const response = await postJson('/api/card-text-tool/generate', {
+    const result = await generateCardImage({
       cardId: currentCardId,
-      area: abilityArea,
-      nameArea,
       artImage: selectedArtImage,
+      area: cloneArea(abilityArea),
+      nameArea: cloneArea(nameArea),
       referenceImage: selectedReferenceImage,
       artOffsetY,
     });
-    const result = (await response.json()) as { outputPath: string; outputUrl: string };
     setStatus(`생성 완료: ${result.outputPath}\n`);
     const link = document.createElement('a');
     link.className = 'output-link';
@@ -431,6 +436,92 @@ async function generateCard(): Promise<void> {
   } finally {
     setBusy(false);
   }
+}
+
+async function generateAllCards(): Promise<void> {
+  if (!editorData || !abilityArea || !nameArea) {
+    return;
+  }
+
+  const artImages = editorData.artImages;
+  if (artImages.length === 0) {
+    setStatus('일괄 생성할 art 이미지를 찾지 못했습니다.');
+    return;
+  }
+
+  const area = cloneArea(abilityArea);
+  const nameAreaSnapshot = cloneArea(nameArea);
+  const referenceImage = selectedReferenceImage;
+  const artOffsetYSnapshot = artOffsetY;
+
+  setBusy(true);
+  setStatus(`art list 전체를 생성하는 중입니다. 0 / ${artImages.length}`);
+
+  const failures: string[] = [];
+  let processed = 0;
+  let successes = 0;
+  let lastResult: { outputPath: string; outputUrl: string } | null = null;
+
+  try {
+    for (const artImage of artImages) {
+      processed += 1;
+      const cardId = cardIdFromAssetPath(artImage.path);
+
+      try {
+        const result = await generateCardImage({
+          cardId,
+          artImage: artImage.path,
+          area,
+          nameArea: nameAreaSnapshot,
+          referenceImage,
+          artOffsetY: artOffsetYSnapshot,
+        });
+        successes += 1;
+        lastResult = result;
+        setStatus(`일괄 생성 중입니다. ${processed} / ${artImages.length} (${cardId})`);
+      } catch (error) {
+        failures.push(`${cardId}: ${formatError(error)}`);
+      }
+    }
+
+    if (failures.length === 0) {
+      setStatus(`일괄 생성 완료: ${successes} / ${artImages.length}`);
+    } else {
+      setStatus(`일괄 생성 완료: ${successes} / ${artImages.length}, 실패 ${failures.length}건\n${failures.join('\n')}`);
+    }
+
+    if (lastResult) {
+      const link = document.createElement('a');
+      link.className = 'output-link';
+      link.href = `${lastResult.outputUrl}?t=${Date.now()}`;
+      link.target = '_blank';
+      link.rel = 'noreferrer';
+      link.textContent = '마지막 생성된 PNG 열기';
+      statusElement.append(link);
+    }
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function generateCardImage(input: {
+  cardId: string;
+  artImage: string;
+  area: TextAreaRegion;
+  nameArea: TextAreaRegion;
+  referenceImage: string;
+  artOffsetY: number;
+}): Promise<{ outputPath: string; outputUrl: string }> {
+  const response = await postJson('/api/card-text-tool/generate', {
+    cardId: input.cardId,
+    area: input.area,
+    nameArea: input.nameArea,
+    artImage: input.artImage,
+    referenceImage: input.referenceImage,
+    artOffsetY: input.artOffsetY,
+  });
+
+  return (await response.json()) as { outputPath: string; outputUrl: string };
 }
 
 async function postJson(path: string, body: unknown): Promise<Response> {
@@ -817,6 +908,7 @@ async function loadRuntimeFont(fontFile: string): Promise<void> {
 function setBusy(isBusy: boolean): void {
   saveButton.disabled = isBusy;
   generateButton.disabled = isBusy;
+  generateAllButton.disabled = isBusy;
   resetButton.disabled = isBusy;
 }
 
