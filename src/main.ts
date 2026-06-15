@@ -10,6 +10,16 @@ const COLOR_OPEN_TAG = '[color=';
 const COLOR_CLOSE_TAG = '[/color]';
 const ESC_OPEN_TAG = '[esc]';
 const ESC_CLOSE_TAG = '[/esc]';
+const TEXT_STROKE_SHADOW_DIRECTIONS = [
+  [-1, -1],
+  [0, -1],
+  [1, -1],
+  [-1, 0],
+  [1, 0],
+  [-1, 1],
+  [0, 1],
+  [1, 1],
+] as const;
 
 declare global {
   interface Window {
@@ -52,6 +62,8 @@ type TextAreaRegion = {
   nameColor: string;
   titleColor: string;
   textColor: string;
+  textStrokeColor: string;
+  textStrokeWidth: number;
   paddingX: number;
   paddingY: number;
   description: string;
@@ -747,6 +759,7 @@ function syncAbilityBBCodePreview(): void {
   bbcodePreviewElement.style.lineHeight = `${fontSize + lineSpacing}px`;
   bbcodePreviewElement.style.textAlign = 'left';
   bbcodePreviewElement.style.display = 'block';
+  applyTextStroke(bbcodePreviewElement, abilityArea);
 
   renderInlineBBCode(bbcodePreviewElement, editorData.abilityText);
 }
@@ -767,8 +780,32 @@ function syncNameBBCodePreview(): void {
   nameBbcodePreviewElement.style.display = 'flex';
   nameBbcodePreviewElement.style.alignItems = 'center';
   nameBbcodePreviewElement.style.justifyContent = 'center';
+  applyTextStroke(nameBbcodePreviewElement, nameArea);
 
   renderInlineBBCode(nameBbcodePreviewElement, editorData.nameText);
+}
+
+function applyTextStroke(element: HTMLElement, area: TextAreaRegion): void {
+  const strokeWidth = readScaledStrokeWidth(area.textStrokeWidth);
+  const strokeColor = isSafeColor(area.textStrokeColor) ? area.textStrokeColor : 'transparent';
+
+  if (strokeWidth <= 0 || strokeColor === 'transparent') {
+    element.style.removeProperty('-webkit-text-stroke');
+    element.style.removeProperty('-webkit-text-stroke-color');
+    element.style.removeProperty('-webkit-text-stroke-width');
+    element.style.textShadow = '';
+    return;
+  }
+
+  element.style.setProperty('-webkit-text-stroke', `${strokeWidth}px ${strokeColor}`);
+  element.style.textShadow = buildTextStrokeShadow(strokeWidth, strokeColor);
+}
+
+function buildTextStrokeShadow(strokeWidth: number, strokeColor: string): string {
+  const offset = Math.max(1, Math.ceil(strokeWidth));
+  return TEXT_STROKE_SHADOW_DIRECTIONS.map(([x, y]) =>
+    `${x * offset}px ${y * offset}px 0 ${strokeColor}`,
+  ).join(', ');
 }
 
 function readScaledFontSize(fontSize: number): number {
@@ -779,6 +816,20 @@ function readScaledFontSize(fontSize: number): number {
   const stageRect = stage.getBoundingClientRect();
   const scale = stageRect.width / editorData.canvas.width;
   return Math.max(10, Math.round(fontSize * scale));
+}
+
+function readScaledStrokeWidth(strokeWidth: number): number {
+  if (!Number.isFinite(strokeWidth) || strokeWidth <= 0) {
+    return 0;
+  }
+
+  if (!editorData) {
+    return strokeWidth;
+  }
+
+  const stageRect = stage.getBoundingClientRect();
+  const scale = stageRect.width / editorData.canvas.width;
+  return Number(Math.max(0.5, strokeWidth * scale).toFixed(2));
 }
 
 function renderInlineBBCode(target: HTMLElement, source: string): void {
@@ -858,8 +909,8 @@ function findNextBBCodeBoundary(source: string, fromIndex: number): number {
   return Math.min(...candidates);
 }
 
-function isSafeColor(value: string): boolean {
-  return /^#[0-9a-f]{3,8}$/i.test(value);
+function isSafeColor(value: unknown): value is string {
+  return typeof value === 'string' && /^#[0-9a-f]{3,8}$/i.test(value);
 }
 
 function toCanvasPoint(event: PointerEvent): { x: number; y: number } {
