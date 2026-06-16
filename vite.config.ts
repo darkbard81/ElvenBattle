@@ -71,7 +71,6 @@ type Card = {
   id: string;
   name: string;
   abilities: Ability[];
-  assets?: CardAssetPaths;
 };
 
 type DeckData = {
@@ -290,14 +289,13 @@ async function handleCardTextToolRequest(
         artOffsetY,
       });
 
-      const assets = await finalizeCardAssets(card.id, outputCardPath);
+      const outputAssets = await finalizeCardAssets(card.id, outputCardPath);
       await clearTempFiles();
 
-      const outputPath = assets.png;
+      const outputPath = outputAssets.png;
       sendJson(response, {
         outputPath,
         outputUrl: `/${outputPath}`,
-        assets,
       });
       return;
     }
@@ -440,17 +438,12 @@ async function finalizeCardAssets(cardId: string, sourcePath: string): Promise<C
     .webp({ quality: 90 })
     .toFile(webpPath);
 
-  const assets = {
+  const cardAssets = {
     png: toProjectPath(pngPath),
     webp: toProjectPath(webpPath),
   };
 
-  const deck = await readJsonFile<DeckData>(deckPath);
-  const card = findCard(deck, cardId);
-  card.assets = assets;
-  await fs.writeFile(deckPath, `${JSON.stringify(deck, null, 4)}\n`, 'utf8');
-
-  return assets;
+  return cardAssets;
 }
 
 async function clearTempFiles(): Promise<void> {
