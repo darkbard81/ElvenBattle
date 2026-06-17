@@ -11,7 +11,7 @@ const projectRoot = fileURLToPath(new URL('.', import.meta.url));
 const metaPath = path.join(projectRoot, 'cards/card_frame_meta.json');
 const deckPath = path.join(projectRoot, 'cards/deck_test.json');
 const schemaPath = path.join(projectRoot, 'cards/card.schema.json');
-const artAssetsDir = path.join(projectRoot, 'cards/assets/arts');
+const artAssetsDir = path.join(projectRoot, 'assets/cards/arts');
 const referenceAssetsDir = path.join(projectRoot, 'cards/reference');
 const pendingCaptures = new Map<
   string,
@@ -209,7 +209,7 @@ async function handleCardTextToolRequest(
       const meta = await readFrameMeta();
       const deck = await readJsonFile<DeckData>(deckPath);
       const schema = await readJsonFile<JsonRecord>(schemaPath);
-      const artImages = await listAssetImages(artAssetsDir, 'cards/assets/arts');
+      const artImages = await listAssetImages(artAssetsDir, 'assets/cards/arts');
       const referenceImages = await listAssetImages(referenceAssetsDir, 'cards/reference');
       const requestedCardId = url.searchParams.get('cardId');
       const selectedArtImage =
@@ -265,7 +265,7 @@ async function handleCardTextToolRequest(
       const card = findCard(deck, payload.cardId);
       const area = normalizeTextArea(payload.area);
       const nameArea = normalizeTextArea(payload.nameArea, defaultNameTextArea);
-      const artImages = await listAssetImages(artAssetsDir, 'cards/assets/arts');
+      const artImages = await listAssetImages(artAssetsDir, 'assets/cards/arts');
       const referenceImages = await listAssetImages(referenceAssetsDir, 'cards/reference');
       const artImage =
         selectAssetPath(payload.artImage, artImages, 'art image') ??
@@ -413,8 +413,8 @@ function toProjectPath(targetPath: string): string {
 
 async function finalizeCardAssets(cardId: string, sourcePath: string): Promise<CardAssetPaths> {
   const sharpFactory = sharp as unknown as SharpFactory;
-  const pngDir = path.join(projectRoot, 'cards/assets/png');
-  const webpDir = path.join(projectRoot, 'cards/assets/webp');
+  const pngDir = path.join(projectRoot, 'assets/cards/png');
+  const webpDir = path.join(projectRoot, 'assets/cards/webp');
   await fs.mkdir(pngDir, { recursive: true });
   await fs.mkdir(webpDir, { recursive: true });
 

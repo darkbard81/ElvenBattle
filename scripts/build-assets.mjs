@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-const assetsRoot = path.resolve('cards/assets');
+const assetsRoot = path.resolve('assets');
 const outputFile = path.join(assetsRoot, 'assets.json');
 const manifestBase = {
   schemaVersion: 1,
@@ -32,10 +32,11 @@ async function walk(dir) {
 function buildKey(filePath) {
   const relativePath = path.relative(assetsRoot, filePath);
   const parts = relativePath.split(path.sep);
-  const folderName = parts[0];
   const baseName = path.parse(parts.at(-1)).name;
+  const namespace = parts[0];
+  const folderName = parts.slice(1, -1).join('.');
 
-  return `${folderName}.${baseName}`;
+  return folderName ? `${namespace}.${folderName}.${baseName}` : `${namespace}.${baseName}`;
 }
 
 async function main() {
