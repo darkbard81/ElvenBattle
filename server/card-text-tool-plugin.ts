@@ -347,7 +347,8 @@ async function renderCardByScreenshot(input: {
   });
 
   const host = input.request.headers.host ?? '127.0.0.1:3010';
-  const captureUrl = new URL(`http://${host}/`);
+  // const captureUrl = new URL(`http://${host}/`);
+  const captureUrl = new URL('/tools/card-text/', `http://${host}`);
   captureUrl.searchParams.set('capture', '1');
   captureUrl.searchParams.set('captureId', captureId);
   captureUrl.searchParams.set('cardId', input.cardId);
@@ -625,6 +626,9 @@ function validateAreaPayload(value: unknown): SaveAreaPayload {
     cardId: value.cardId,
     area: normalizeTextArea(value.area),
     nameArea: normalizeTextArea(value.nameArea, defaultNameTextArea),
+    ...(typeof value.artImage === 'string' ? { artImage: value.artImage } : {}),
+    ...(typeof value.referenceImage === 'string' ? { referenceImage: value.referenceImage } : {}),
+    ...(typeof value.artOffsetY === 'number' ? { artOffsetY: value.artOffsetY } : {}),
   };
 }
 
