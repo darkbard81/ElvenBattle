@@ -49,6 +49,8 @@ type TextAreaRegion = {
   nameColor: string;
   titleColor: string;
   textColor: string;
+  textStrokeColor: string;
+  textStrokeWidth: number;
   paddingX: number;
   paddingY: number;
   description: string;
@@ -128,6 +130,8 @@ const defaultTextArea: TextAreaRegion = {
   nameColor: '#12351A',
   titleColor: '#7A2D18',
   textColor: '#17251A',
+  textStrokeColor: '#DFDFDF',
+  textStrokeWidth: 0,
   paddingX: 28,
   paddingY: 24,
   description:
@@ -147,6 +151,8 @@ const defaultNameTextArea: TextAreaRegion = {
   fontSize: 42,
   titleFontSize: 42,
   textColor: '#FFFFFF',
+  textStrokeColor: '#222222',
+  textStrokeWidth: 2,
   paddingX: 18,
   paddingY: 18,
   description:

@@ -9,6 +9,7 @@ const manifestBase = {
   revisionAlgorithm: 'sha256-12hex',
   assetBaseUrl: '/tcg',
 };
+const textureExtensions = new Set(['.png', '.webp']);
 
 async function walk(dir) {
   const entries = await readdir(dir, { withFileTypes: true });
@@ -45,6 +46,10 @@ async function main() {
 
   for (const filePath of files) {
     if (filePath === outputFile) {
+      continue;
+    }
+
+    if (!textureExtensions.has(path.extname(filePath).toLowerCase())) {
       continue;
     }
 
