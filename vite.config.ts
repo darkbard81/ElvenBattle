@@ -1,13 +1,14 @@
 import { defineConfig } from 'vitest/config';
+import { appConfig } from './config';
 import { cardTextToolPlugin } from './server/card-text-tool-plugin';
 
 export default defineConfig({
   plugins: [cardTextToolPlugin()],
   server: {
-    allowedHosts: ['mcp.krdp.ddns.net'],
-    host: '0.0.0.0',
-    port: 3010,
-    strictPort: true,
+    allowedHosts: appConfig.server.allowedHosts,
+    host: appConfig.server.host,
+    port: appConfig.server.port,
+    strictPort: appConfig.server.strictPort,
   },
   build: {
     target: 'es2022',

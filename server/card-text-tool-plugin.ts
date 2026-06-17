@@ -3,14 +3,17 @@ import fs from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { appConfig } from '../config';
 import sharp from 'sharp';
 import type { Plugin, ViteDevServer } from 'vite';
 
 const projectRoot = fileURLToPath(new URL('..', import.meta.url));
+const assetsRoot = path.join(projectRoot, 'assets');
+const assetsManifestPath = path.join(assetsRoot, 'assets.json');
 const metaPath = path.join(projectRoot, 'cards/card_frame_meta.json');
 const deckPath = path.join(projectRoot, 'cards/deck_test.json');
 const schemaPath = path.join(projectRoot, 'cards/card.schema.json');
-const artAssetsDir = path.join(projectRoot, 'assets/cards/arts');
+const artAssetsDir = path.join(assetsRoot, 'cards/arts');
 const referenceAssetsDir = path.join(projectRoot, 'cards/reference');
 const pendingCaptures = new Map<
   string,
@@ -25,6 +28,18 @@ const pendingCaptures = new Map<
 >();
 
 type JsonRecord = Record<string, unknown>;
+
+type AssetsManifest = {
+  assetBaseUrl: string;
+  textures: Array<{
+    key: string;
+    path: string;
+    revision: string;
+  }>;
+  manifestRevision: string;
+  schemaVersion: number;
+  revisionAlgorithm: string;
+};
 
 type CanvasMeta = {
   width: number;
@@ -162,11 +177,72 @@ export function cardTextToolPlugin(): Plugin {
   return {
     name: 'card-text-tool',
     configureServer(server: ViteDevServer) {
-      server.middlewares.use((request, response, next) => {
-        void handleCardTextToolRequest(request, response, next);
-      });
+      registerMiddlewares(server.middlewares);
+    },
+    configurePreviewServer(server) {
+      registerMiddlewares(server.middlewares);
     },
   };
+}
+
+function registerMiddlewares(middlewares: ViteDevServer['middlewares']): void {
+  middlewares.use((request, response, next) => {
+    void (async () => {
+      const handled = await handleAssetRequest(request, response, next);
+      if (handled) {
+        return;
+      }
+
+      await handleCardTextToolRequest(request, response, next);
+    })().catch((error) => {
+      next(error as Error);
+    });
+  });
+}
+
+async function handleAssetRequest(
+  request: IncomingMessage,
+  response: ServerResponse,
+  next: () => void,
+): Promise<boolean> {
+  const manifest = await readAssetsManifest();
+  const assetBaseUrl = normalizeAssetBaseUrl(manifest.assetBaseUrl);
+  const url = new URL(request.url ?? '/', 'http://localhost');
+
+  if (!isAssetRoute(url.pathname, assetBaseUrl)) {
+    return false;
+  }
+
+  if (request.method !== 'GET' && request.method !== 'HEAD') {
+    response.statusCode = 405;
+    response.end('Method Not Allowed');
+    return true;
+  }
+
+  const requestedPath = url.pathname.slice(assetBaseUrl.length).replace(/^\/+/, '');
+  if (!requestedPath || requestedPath === 'assets.json') {
+    sendJson(response, manifest);
+    return true;
+  }
+
+  const filePath = path.resolve(assetsRoot, requestedPath);
+  if (!isWithinDirectory(filePath, assetsRoot)) {
+    response.statusCode = 403;
+    response.end('Forbidden');
+    return true;
+  }
+
+  try {
+    const file = await fs.readFile(filePath);
+    response.statusCode = 200;
+    response.setHeader('Content-Type', getMimeType(filePath));
+    response.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+    response.end(request.method === 'HEAD' ? undefined : file);
+    return true;
+  } catch {
+    next();
+    return true;
+  }
 }
 
 async function handleCardTextToolRequest(
@@ -184,13 +260,15 @@ async function handleCardTextToolRequest(
   try {
     if (request.method === 'GET' && url.pathname === '/api/card-text-tool/data') {
       const meta = await readFrameMeta();
+      const manifest = await readAssetsManifest();
+      const assetBaseUrl = normalizeAssetBaseUrl(manifest.assetBaseUrl);
       const deck = await readJsonFile<DeckData>(deckPath);
       const schema = await readJsonFile<JsonRecord>(schemaPath);
-      const artImages = await listAssetImages(artAssetsDir, 'assets/cards/arts');
+      const artImages = await listAssetImages(artAssetsDir, 'cards/arts');
       const referenceImages = await listAssetImages(referenceAssetsDir, 'cards/reference');
       const requestedCardId = url.searchParams.get('cardId');
       const selectedArtImage =
-        selectAssetPath(url.searchParams.get('artImage'), artImages, 'art image') ??
+        selectAssetPath(url.searchParams.get('artImage'), artImages, 'art image', assetBaseUrl) ??
         selectArtImageForCard(requestedCardId, artImages);
       const resolvedCardId = requestedCardId ?? cardIdFromAssetPath(selectedArtImage);
       const card = findCard(deck, resolvedCardId);
@@ -200,7 +278,12 @@ async function handleCardTextToolRequest(
       const nameTextArea = pendingCapture?.nameArea ?? readNameTextArea(meta, textArea);
       const selectedReferenceImage =
         pendingCapture?.referenceImage ??
-        selectAssetPath(url.searchParams.get('referenceImage'), referenceImages, 'reference image') ??
+        selectAssetPath(
+          url.searchParams.get('referenceImage'),
+          referenceImages,
+          'reference image',
+          assetBaseUrl,
+        ) ??
         selectFirstAssetPath(referenceImages, 'reference image');
       const artOffsetY =
         pendingCapture?.artOffsetY ??
@@ -208,6 +291,7 @@ async function handleCardTextToolRequest(
 
       sendJson(response, {
         canvas: meta.canvas,
+        assetBaseUrl,
         card,
         abilityText: formatAbilityText(card, abilityTitles, textArea),
         nameText: formatNameText(card, nameTextArea),
@@ -238,17 +322,19 @@ async function handleCardTextToolRequest(
     if (request.method === 'POST' && url.pathname === '/api/card-text-tool/generate') {
       const payload = validateAreaPayload(await readRequestJson(request));
       const meta = await readFrameMeta();
+      const manifest = await readAssetsManifest();
+      const assetBaseUrl = normalizeAssetBaseUrl(manifest.assetBaseUrl);
       const deck = await readJsonFile<DeckData>(deckPath);
       const card = findCard(deck, payload.cardId);
       const area = normalizeTextArea(payload.area);
       const nameArea = normalizeTextArea(payload.nameArea, defaultNameTextArea);
-      const artImages = await listAssetImages(artAssetsDir, 'assets/cards/arts');
+      const artImages = await listAssetImages(artAssetsDir, 'cards/arts');
       const referenceImages = await listAssetImages(referenceAssetsDir, 'cards/reference');
       const artImage =
-        selectAssetPath(payload.artImage, artImages, 'art image') ??
+        selectAssetPath(payload.artImage, artImages, 'art image', assetBaseUrl) ??
         selectArtImageForCard(card.id, artImages);
       const referenceImage =
-        selectAssetPath(payload.referenceImage, referenceImages, 'reference image') ??
+        selectAssetPath(payload.referenceImage, referenceImages, 'reference image', assetBaseUrl) ??
         selectFirstAssetPath(referenceImages, 'reference image');
       const artOffsetY = toInteger(payload.artOffsetY, readDefaultArtOffsetY(meta));
 
@@ -272,7 +358,7 @@ async function handleCardTextToolRequest(
       const outputPath = outputAssets.png;
       sendJson(response, {
         outputPath,
-        outputUrl: `/${outputPath}`,
+        outputUrl: toAssetUrl(assetBaseUrl, outputPath),
       });
       return;
     }
@@ -292,6 +378,10 @@ async function readJsonFile<T>(targetPath: string): Promise<T> {
 
 async function readFrameMeta(): Promise<FrameMeta> {
   return readJsonFile<FrameMeta>(metaPath);
+}
+
+async function readAssetsManifest(): Promise<AssetsManifest> {
+  return readJsonFile<AssetsManifest>(assetsManifestPath);
 }
 
 function readTextArea(meta: FrameMeta): TextAreaRegion {
@@ -346,7 +436,7 @@ async function renderCardByScreenshot(input: {
     artOffsetY: input.artOffsetY,
   });
 
-  const host = input.request.headers.host ?? '127.0.0.1:3010';
+  const host = input.request.headers.host ?? `${appConfig.capture.host}:${appConfig.server.port}`;
   // const captureUrl = new URL(`http://${host}/`);
   const captureUrl = new URL('/tools/card-text/', `http://${host}`);
   captureUrl.searchParams.set('capture', '1');
@@ -417,11 +507,79 @@ async function finalizeCardAssets(cardId: string, sourcePath: string): Promise<C
     .toFile(webpPath);
 
   const cardAssets = {
-    png: toProjectPath(pngPath),
-    webp: toProjectPath(webpPath),
+    png: toAssetsPath(pngPath),
+    webp: toAssetsPath(webpPath),
   };
 
   return cardAssets;
+}
+
+function normalizeAssetBaseUrl(assetBaseUrl: string): string {
+  if (!assetBaseUrl.startsWith('/')) {
+    return `/${assetBaseUrl.replace(/^\/+/, '')}`;
+  }
+
+  return assetBaseUrl.replace(/\/+$/, '') || '/';
+}
+
+function isAssetRoute(pathname: string, assetBaseUrl: string): boolean {
+  return pathname === assetBaseUrl || pathname.startsWith(`${assetBaseUrl}/`);
+}
+
+function normalizeAssetPath(requestedPath: string, assetBaseUrl: string): string {
+  const stripped = requestedPath.replace(/^https?:\/\/[^/]+/i, '').replace(/^\/+/, '');
+  const normalizedBaseUrl = normalizeAssetBaseUrl(assetBaseUrl).replace(/^\/+/, '');
+
+  if (normalizedBaseUrl && stripped.startsWith(`${normalizedBaseUrl}/`)) {
+    return stripped.slice(normalizedBaseUrl.length + 1);
+  }
+
+  if (stripped.startsWith('assets/')) {
+    return stripped.slice('assets/'.length);
+  }
+
+  return stripped;
+}
+
+function toAssetsPath(targetPath: string): string {
+  return path.relative(assetsRoot, targetPath).split(path.sep).join('/');
+}
+
+function toAssetUrl(assetBaseUrl: string, assetPath: string): string {
+  const normalizedBaseUrl = normalizeAssetBaseUrl(assetBaseUrl);
+  const normalizedPath = assetPath.replace(/^\/+/, '');
+  return `${normalizedBaseUrl}/${normalizedPath}`;
+}
+
+function isWithinDirectory(targetPath: string, directoryPath: string): boolean {
+  const relativePath = path.relative(directoryPath, targetPath);
+  return relativePath !== '' && !relativePath.startsWith('..') && !path.isAbsolute(relativePath);
+}
+
+function getMimeType(filePath: string): string {
+  switch (path.extname(filePath).toLowerCase()) {
+    case '.png':
+      return 'image/png';
+    case '.webp':
+      return 'image/webp';
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg';
+    case '.svg':
+      return 'image/svg+xml';
+    case '.json':
+      return 'application/json; charset=utf-8';
+    case '.ttf':
+      return 'font/ttf';
+    case '.otf':
+      return 'font/otf';
+    case '.woff':
+      return 'font/woff';
+    case '.woff2':
+      return 'font/woff2';
+    default:
+      return 'application/octet-stream';
+  }
 }
 
 async function clearTempFiles(): Promise<void> {
@@ -455,11 +613,13 @@ function createNameTextAreaFromSafeArea(meta: FrameMeta): TextAreaRegion {
 }
 
 function readDefaultArtOffsetY(meta: FrameMeta): number {
-  const chromaArea = isRecord(meta.regions?.inner_chroma_area) ? meta.regions.inner_chroma_area : {};
+  const chromaArea = isRecord(meta.regions?.inner_chroma_area)
+    ? meta.regions.inner_chroma_area
+    : {};
   return Math.round(toInteger(chromaArea.y, 0) / 2);
 }
 
-async function listAssetImages(directoryPath: string, projectDir: string): Promise<AssetImage[]> {
+async function listAssetImages(directoryPath: string, assetDir: string): Promise<AssetImage[]> {
   let entries: string[];
   try {
     entries = await fs.readdir(directoryPath);
@@ -472,11 +632,11 @@ async function listAssetImages(directoryPath: string, projectDir: string): Promi
     .sort((left, right) => left.localeCompare(right))
     .map((entry) => ({
       name: entry,
-      path: `${projectDir}/${entry}`,
+      path: `${assetDir}/${entry}`,
     }));
 
   if (images.length === 0) {
-    throw new Error(`No images found in ${projectDir}`);
+    throw new Error(`No images found in ${assetDir}`);
   }
 
   return images;
@@ -486,12 +646,13 @@ function selectAssetPath(
   requestedPath: string | null | undefined,
   images: AssetImage[],
   label: string,
+  assetBaseUrl: string,
 ): string | null {
   if (!requestedPath) {
     return null;
   }
 
-  const normalizedPath = requestedPath.replace(/^\/+/, '');
+  const normalizedPath = normalizeAssetPath(requestedPath, assetBaseUrl);
   if (images.some((image) => image.path === normalizedPath)) {
     return normalizedPath;
   }

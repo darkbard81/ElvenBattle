@@ -74,6 +74,7 @@ type EditorData = {
     width: number;
     height: number;
   };
+  assetBaseUrl: string;
   card: Card;
   abilityText: string;
   nameText: string;
@@ -499,7 +500,9 @@ async function generateAllCards(): Promise<void> {
     if (failures.length === 0) {
       setStatus(`일괄 생성 완료: ${successes} / ${artImages.length}`);
     } else {
-      setStatus(`일괄 생성 완료: ${successes} / ${artImages.length}, 실패 ${failures.length}건\n${failures.join('\n')}`);
+      setStatus(
+        `일괄 생성 완료: ${successes} / ${artImages.length}, 실패 ${failures.length}건\n${failures.join('\n')}`,
+      );
     }
 
     if (lastResult) {
@@ -656,8 +659,12 @@ function renderAssetOptions(
 }
 
 function renderImageLayers(): void {
-  artImageElement.src = toAssetUrl(selectedArtImage);
-  referenceImageElement.src = toAssetUrl(selectedReferenceImage);
+  if (!editorData) {
+    return;
+  }
+
+  artImageElement.src = toAssetUrl(editorData.assetBaseUrl, selectedArtImage);
+  referenceImageElement.src = toAssetUrl(editorData.assetBaseUrl, selectedReferenceImage);
 
   const scaledArtOffsetY = editorData
     ? artOffsetY * (stage.clientHeight / editorData.canvas.height)
@@ -803,8 +810,8 @@ function applyTextStroke(element: HTMLElement, area: TextAreaRegion): void {
 
 function buildTextStrokeShadow(strokeWidth: number, strokeColor: string): string {
   const offset = Math.max(1, Math.ceil(strokeWidth));
-  return TEXT_STROKE_SHADOW_DIRECTIONS.map(([x, y]) =>
-    `${x * offset}px ${y * offset}px 0 ${strokeColor}`,
+  return TEXT_STROKE_SHADOW_DIRECTIONS.map(
+    ([x, y]) => `${x * offset}px ${y * offset}px 0 ${strokeColor}`,
   ).join(', ');
 }
 
@@ -971,8 +978,12 @@ function formatError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function toAssetUrl(projectPath: string): string {
-  return projectPath.startsWith('/') ? projectPath : `/${projectPath}`;
+function toAssetUrl(assetBaseUrl: string, projectPath: string): string {
+  const normalizedBaseUrl = assetBaseUrl.startsWith('/')
+    ? assetBaseUrl.replace(/\/+$/, '')
+    : `/${assetBaseUrl.replace(/^\/+/, '')}`;
+
+  return `${normalizedBaseUrl}/${projectPath.replace(/^\/+/, '')}`;
 }
 
 function setOptionalQueryParam(

@@ -13,5 +13,5 @@
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true
   },
-  "include": ["vite.config.ts", "server", "types"]
+  "include": ["config.ts", "vite.config.ts", "server", "types"]
 }
