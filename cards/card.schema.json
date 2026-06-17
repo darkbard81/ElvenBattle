@@ -2,7 +2,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://elvenbattle.local/schemas/card.schema.json",
     "title": "ElvenBattle Card Schema",
-    "description": "ElvenBattle card data schema v0.2",
+    "description": "ElvenBattle card data schema v0.3",
     "type": "object",
     "required": [
         "version",
@@ -12,7 +12,7 @@
     "properties": {
         "version": {
             "type": "string",
-            "const": "card-json-v0.2",
+            "const": "card-json-v0.3",
             "description": "카드 JSON 데이터 버전"
         },
         "cards": {
@@ -360,25 +360,6 @@
                 "note": {
                     "type": "string",
                     "description": "카드 일러스트, 외형, 메모 등 비전투 정보"
-                },
-                "assets": {
-                    "type": "object",
-                    "description": "Generated card asset paths.",
-                    "required": [
-                        "png",
-                        "webp"
-                    ],
-                    "additionalProperties": false,
-                    "properties": {
-                        "png": {
-                            "type": "string",
-                            "description": "Original PNG card image path."
-                        },
-                        "webp": {
-                            "type": "string",
-                            "description": "50% scale WebP card image path."
-                        }
-                    }
                 }
             }
         }

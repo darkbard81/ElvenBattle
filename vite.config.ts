@@ -11,7 +11,7 @@ const projectRoot = fileURLToPath(new URL('.', import.meta.url));
 const metaPath = path.join(projectRoot, 'cards/card_frame_meta.json');
 const deckPath = path.join(projectRoot, 'cards/deck_test.json');
 const schemaPath = path.join(projectRoot, 'cards/card.schema.json');
-const artAssetsDir = path.join(projectRoot, 'cards/assets/arts');
+const artAssetsDir = path.join(projectRoot, 'assets/cards/arts');
 const referenceAssetsDir = path.join(projectRoot, 'cards/reference');
 const pendingCaptures = new Map<
   string,
@@ -49,6 +49,8 @@ type TextAreaRegion = {
   nameColor: string;
   titleColor: string;
   textColor: string;
+  textStrokeColor: string;
+  textStrokeWidth: number;
   paddingX: number;
   paddingY: number;
   description: string;
@@ -71,7 +73,6 @@ type Card = {
   id: string;
   name: string;
   abilities: Ability[];
-  assets?: CardAssetPaths;
 };
 
 type DeckData = {
@@ -129,6 +130,8 @@ const defaultTextArea: TextAreaRegion = {
   nameColor: '#12351A',
   titleColor: '#7A2D18',
   textColor: '#17251A',
+  textStrokeColor: '#DFDFDF',
+  textStrokeWidth: 0,
   paddingX: 28,
   paddingY: 24,
   description:
@@ -148,6 +151,8 @@ const defaultNameTextArea: TextAreaRegion = {
   fontSize: 42,
   titleFontSize: 42,
   textColor: '#FFFFFF',
+  textStrokeColor: '#222222',
+  textStrokeWidth: 2,
   paddingX: 18,
   paddingY: 18,
   description:
@@ -210,7 +215,7 @@ async function handleCardTextToolRequest(
       const meta = await readFrameMeta();
       const deck = await readJsonFile<DeckData>(deckPath);
       const schema = await readJsonFile<JsonRecord>(schemaPath);
-      const artImages = await listAssetImages(artAssetsDir, 'cards/assets/arts');
+      const artImages = await listAssetImages(artAssetsDir, 'assets/cards/arts');
       const referenceImages = await listAssetImages(referenceAssetsDir, 'cards/reference');
       const requestedCardId = url.searchParams.get('cardId');
       const selectedArtImage =
@@ -266,7 +271,7 @@ async function handleCardTextToolRequest(
       const card = findCard(deck, payload.cardId);
       const area = normalizeTextArea(payload.area);
       const nameArea = normalizeTextArea(payload.nameArea, defaultNameTextArea);
-      const artImages = await listAssetImages(artAssetsDir, 'cards/assets/arts');
+      const artImages = await listAssetImages(artAssetsDir, 'assets/cards/arts');
       const referenceImages = await listAssetImages(referenceAssetsDir, 'cards/reference');
       const artImage =
         selectAssetPath(payload.artImage, artImages, 'art image') ??
@@ -290,14 +295,13 @@ async function handleCardTextToolRequest(
         artOffsetY,
       });
 
-      const assets = await finalizeCardAssets(card.id, outputCardPath);
+      const outputAssets = await finalizeCardAssets(card.id, outputCardPath);
       await clearTempFiles();
 
-      const outputPath = assets.png;
+      const outputPath = outputAssets.png;
       sendJson(response, {
         outputPath,
         outputUrl: `/${outputPath}`,
-        assets,
       });
       return;
     }
@@ -415,8 +419,8 @@ function toProjectPath(targetPath: string): string {
 
 async function finalizeCardAssets(cardId: string, sourcePath: string): Promise<CardAssetPaths> {
   const sharpFactory = sharp as unknown as SharpFactory;
-  const pngDir = path.join(projectRoot, 'cards/assets/png');
-  const webpDir = path.join(projectRoot, 'cards/assets/webp');
+  const pngDir = path.join(projectRoot, 'assets/cards/png');
+  const webpDir = path.join(projectRoot, 'assets/cards/webp');
   await fs.mkdir(pngDir, { recursive: true });
   await fs.mkdir(webpDir, { recursive: true });
 
@@ -440,17 +444,12 @@ async function finalizeCardAssets(cardId: string, sourcePath: string): Promise<C
     .webp({ quality: 90 })
     .toFile(webpPath);
 
-  const assets = {
+  const cardAssets = {
     png: toProjectPath(pngPath),
     webp: toProjectPath(webpPath),
   };
 
-  const deck = await readJsonFile<DeckData>(deckPath);
-  const card = findCard(deck, cardId);
-  card.assets = assets;
-  await fs.writeFile(deckPath, `${JSON.stringify(deck, null, 4)}\n`, 'utf8');
-
-  return assets;
+  return cardAssets;
 }
 
 async function clearTempFiles(): Promise<void> {

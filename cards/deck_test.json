@@ -1,5 +1,5 @@
 {
-    "version": "card-json-v0.2",
+    "version": "card-json-v0.3",
     "cards": [
         {
             "id": "leader_minerva",
@@ -39,11 +39,7 @@
                 "lv9": []
             },
             "description": "기본 테스트 리더. 능력 없이 전투와 승패 조건 검증에 사용한다.",
-            "note": "은빛 머리와 녹색 망토를 두른 엘프 여성 리더. 차분한 표정으로 전장을 지휘한다.",
-            "assets": {
-                "png": "cards/assets/png/leader_minerva.png",
-                "webp": "cards/assets/webp/leader_minerva.webp"
-            }
+            "note": "은빛 머리와 녹색 망토를 두른 엘프 여성 리더. 차분한 표정으로 전장을 지휘한다."
         },
         {
             "id": "unit_elf_guardian_001",
@@ -106,11 +102,7 @@
                 "lv9": []
             },
             "description": "낮은 공격력 대신 버티기에 적합한 전위 유닛.",
-            "note": "잎사귀 문양의 방패와 짧은 검을 든 엘프 여성 기사.",
-            "assets": {
-                "png": "cards/assets/png/unit_elf_guardian_001.png",
-                "webp": "cards/assets/webp/unit_elf_guardian_001.webp"
-            }
+            "note": "잎사귀 문양의 방패와 짧은 검을 든 엘프 여성 기사."
         },
         {
             "id": "unit_elf_archer_001",
@@ -162,11 +154,7 @@
                 "lv9": []
             },
             "description": "저코스트 원거리 공격 역할을 검증하기 위한 궁수.",
-            "note": "푸른 활과 달빛색 망토를 지닌 엘프 여성 궁수.",
-            "assets": {
-                "png": "cards/assets/png/unit_elf_archer_001.png",
-                "webp": "cards/assets/webp/unit_elf_archer_001.webp"
-            }
+            "note": "푸른 활과 달빛색 망토를 지닌 엘프 여성 궁수."
         },
         {
             "id": "unit_elf_scout_001",
@@ -218,11 +206,7 @@
                 "lv9": []
             },
             "description": "이동 후 공격 보정 테스트에 쓰는 기동형 유닛.",
-            "note": "가벼운 가죽 갑옷과 짧은 단검을 착용한 엘프 여성 정찰병.",
-            "assets": {
-                "png": "cards/assets/png/unit_elf_scout_001.png",
-                "webp": "cards/assets/webp/unit_elf_scout_001.webp"
-            }
+            "note": "가벼운 가죽 갑옷과 짧은 단검을 착용한 엘프 여성 정찰병."
         },
         {
             "id": "unit_elf_healer_001",
@@ -279,11 +263,7 @@
                 "lv9": []
             },
             "description": "회복형 행동 능력 검증을 위한 후방 지원 유닛.",
-            "note": "별빛이 담긴 지팡이와 흰 로브를 입은 엘프 여성 치유사.",
-            "assets": {
-                "png": "cards/assets/png/unit_elf_healer_001.png",
-                "webp": "cards/assets/webp/unit_elf_healer_001.webp"
-            }
+            "note": "별빛이 담긴 지팡이와 흰 로브를 입은 엘프 여성 치유사."
         },
         {
             "id": "unit_elf_mage_001",
@@ -335,11 +315,7 @@
                 "lv9": []
             },
             "description": "직접 피해 행동 능력을 가진 공격형 마법 유닛.",
-            "note": "녹색 보석 장식 지팡이를 든 엘프 여성 마법사.",
-            "assets": {
-                "png": "cards/assets/png/unit_elf_mage_001.png",
-                "webp": "cards/assets/webp/unit_elf_mage_001.webp"
-            }
+            "note": "녹색 보석 장식 지팡이를 든 엘프 여성 마법사."
         },
         {
             "id": "unit_elf_bladedancer_001",
@@ -396,11 +372,7 @@
                 "lv9": []
             },
             "description": "공격 조건부 보정을 테스트하는 근접 딜러.",
-            "note": "쌍검과 잎사귀 장식 의상을 갖춘 엘프 여성 검무희.",
-            "assets": {
-                "png": "cards/assets/png/unit_elf_bladedancer_001.png",
-                "webp": "cards/assets/webp/unit_elf_bladedancer_001.webp"
-            }
+            "note": "쌍검과 잎사귀 장식 의상을 갖춘 엘프 여성 검무희."
         },
         {
             "id": "unit_elf_lancer_001",
@@ -457,11 +429,7 @@
                 "lv9": []
             },
             "description": "등장 시 일시 공격 보정을 확인하는 기본 창병.",
-            "note": "청록색 장창과 경갑을 착용한 엘프 여성 창병.",
-            "assets": {
-                "png": "cards/assets/png/unit_elf_lancer_001.png",
-                "webp": "cards/assets/webp/unit_elf_lancer_001.webp"
-            }
+            "note": "청록색 장창과 경갑을 착용한 엘프 여성 창병."
         },
         {
             "id": "unit_elf_bard_001",
@@ -518,11 +486,7 @@
                 "lv9": []
             },
             "description": "전역 버프 효과 검증을 위한 지원 유닛.",
-            "note": "은색 현악기를 들고 노래하는 엘프 여성 음유시인.",
-            "assets": {
-                "png": "cards/assets/png/unit_elf_bard_001.png",
-                "webp": "cards/assets/webp/unit_elf_bard_001.webp"
-            }
+            "note": "은색 현악기를 들고 노래하는 엘프 여성 음유시인."
         },
         {
             "id": "unit_elf_runesmith_001",
@@ -579,11 +543,7 @@
                 "lv9": []
             },
             "description": "장비 슬롯과 아군 강화 능력 테스트에 쓰는 제작 계열 유닛.",
-            "note": "작은 망치와 나무룬 모루를 다루는 엘프 여성 대장장이.",
-            "assets": {
-                "png": "cards/assets/png/unit_elf_runesmith_001.png",
-                "webp": "cards/assets/webp/unit_elf_runesmith_001.webp"
-            }
+            "note": "작은 망치와 나무룬 모루를 다루는 엘프 여성 대장장이."
         },
         {
             "id": "unit_elf_assassin_001",
@@ -635,11 +595,7 @@
                 "lv9": []
             },
             "description": "낮은 체력의 대상을 마무리하는 고공격 저코스트 유닛.",
-            "note": "어두운 녹색 후드와 짧은 쌍단검을 지닌 엘프 여성 암살자.",
-            "assets": {
-                "png": "cards/assets/png/unit_elf_assassin_001.png",
-                "webp": "cards/assets/webp/unit_elf_assassin_001.webp"
-            }
+            "note": "어두운 녹색 후드와 짧은 쌍단검을 지닌 엘프 여성 암살자."
         }
     ]
 }
