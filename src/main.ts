@@ -22,11 +22,25 @@ type MainMenuSceneData = {
   failedCount: number;
 };
 
+type SaveSlotSummary = {
+  slotNumber: number;
+  saveName: string;
+  savedAt: string | null;
+  deckCardCount: number | null;
+  leaderName: string | null;
+  isEmpty: boolean;
+};
+
+type StoredSaveSlotSummary = Partial<SaveSlotSummary> & {
+  slotNumber?: number;
+};
+
 const GAME_WIDTH = 1280;
 const GAME_HEIGHT = 800;
 const TITLE_BACKGROUND_URL = new URL('../assets/ui/title-screen.png', import.meta.url).href;
 const DEFAULT_FONT_URL = new URL('../assets/fonts/CookieRun Bold.ttf', import.meta.url).href;
 const DEFAULT_ASSET_BASE_URL = '/tcg';
+const SAVE_SLOT_STORAGE_KEY = 'elvenbattle.save-slots.v1';
 
 const app = document.querySelector<HTMLDivElement>('#app');
 
@@ -60,7 +74,7 @@ function createGameConfig(): Phaser.Types.Core.GameConfig {
     width: GAME_WIDTH,
     height: GAME_HEIGHT,
     backgroundColor: '#071018',
-    scene: [BootScene, TitleScene, LoaderScene, MainMenuScene],
+    scene: [BootScene, TitleScene, LoaderScene, MainMenuScene, SaveSlotScene],
     scale: {
       mode: Phaser.Scale.FIT,
       autoCenter: Phaser.Scale.CENTER_BOTH,
@@ -368,8 +382,11 @@ class MainMenuScene extends Phaser.Scene {
       y: 394,
       width: 360,
       height: 72,
-      label: 'New Game',
-      enabled: false,
+      label: 'Start Game',
+      enabled: true,
+      onClick: () => {
+        this.scene.start('SaveSlotScene');
+      },
     });
 
     createMenuButton(this, {
@@ -402,7 +419,7 @@ class MainMenuScene extends Phaser.Scene {
       .setAlpha(0.92);
 
     this.add
-      .text(GAME_WIDTH / 2, 652, 'New Game is intentionally disabled in this phase.', {
+      .text(GAME_WIDTH / 2, 652, 'Start Game opens the save slot screen in this phase.', {
         fontFamily: DEFAULT_FONT_FAMILY,
         fontSize: '16px',
         color: '#b7c9ba',
@@ -410,6 +427,233 @@ class MainMenuScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
       .setAlpha(0.9);
+  }
+}
+
+/**
+ * `Start Game` 진입 후 3개의 저장 슬롯을 보여주는 선택 화면이다.
+ * 실제 저장 API가 아직 없으므로, 현재는 로컬 저장소나 기본 빈 슬롯 데이터를 렌더링한다.
+ */
+class SaveSlotScene extends Phaser.Scene {
+  private statusText!: Phaser.GameObjects.Text;
+  private retryButton: Phaser.GameObjects.Rectangle | null = null;
+  private slotUiElements: Phaser.GameObjects.GameObject[] = [];
+
+  constructor() {
+    super({ key: 'SaveSlotScene' });
+  }
+
+  create(): void {
+    this.addBackground();
+    this.addTitle();
+    this.addBackButton();
+    this.showLoadingState();
+
+    void this.loadSaveSlots();
+  }
+
+  private addBackground(): void {
+    this.add
+      .image(0, 0, 'title-background')
+      .setOrigin(0, 0)
+      .setDisplaySize(GAME_WIDTH, GAME_HEIGHT);
+    this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x071018, 0.56).setOrigin(0, 0);
+    this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.14).setOrigin(0, 0);
+  }
+
+  private addTitle(): void {
+    this.add
+      .text(GAME_WIDTH / 2, 104, 'START GAME', {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '56px',
+        fontStyle: '700',
+        color: '#f5faf0',
+        stroke: '#182e27',
+        strokeThickness: 7,
+        align: 'center',
+      })
+      .setOrigin(0.5);
+
+    this.add
+      .text(GAME_WIDTH / 2, 166, 'Choose a save slot', {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '24px',
+        color: '#d9ebd1',
+        align: 'center',
+      })
+      .setOrigin(0.5)
+      .setAlpha(0.9);
+  }
+
+  private addBackButton(): void {
+    createMenuButton(this, {
+      x: 160,
+      y: 86,
+      width: 180,
+      height: 58,
+      label: 'Back',
+      enabled: true,
+      onClick: () => {
+        this.scene.start('MainMenuScene', {
+          loadedCount: 0,
+          failedCount: 0,
+        } satisfies MainMenuSceneData);
+      },
+    });
+  }
+
+  private showLoadingState(): void {
+    this.clearSlotCards();
+    this.statusText = this.add
+      .text(GAME_WIDTH / 2, 232, 'Loading save slots...', {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '24px',
+        color: '#e6f4df',
+        align: 'center',
+      })
+      .setOrigin(0.5);
+  }
+
+  private async loadSaveSlots(): Promise<void> {
+    try {
+      const slots = await readSaveSlotSummaries();
+      this.renderSlotCards(slots);
+      this.setStatus('Select a slot to continue or create a new save.');
+    } catch (error: unknown) {
+      this.showFailureState(error);
+    }
+  }
+
+  private renderSlotCards(slots: SaveSlotSummary[]): void {
+    this.clearSlotCards();
+
+    const cardWidth = 330;
+    const cardHeight = 260;
+    const cardGap = 28;
+    const totalWidth = cardWidth * 3 + cardGap * 2;
+    const startX = (GAME_WIDTH - totalWidth) / 2 + cardWidth / 2;
+    const y = 392;
+
+    slots.forEach((slot, index) => {
+      const x = startX + index * (cardWidth + cardGap);
+      this.createSlotCard(x, y, cardWidth, cardHeight, slot);
+    });
+  }
+
+  private createSlotCard(
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    slot: SaveSlotSummary,
+  ): void {
+    const fillColor = slot.isEmpty ? 0x12211c : 0x1a3a2d;
+    const strokeColor = slot.isEmpty ? 0x4e5d57 : 0xbfeec5;
+    const background = this.add.rectangle(x, y, width, height, fillColor, 0.96);
+    background.setStrokeStyle(2, strokeColor, slot.isEmpty ? 0.7 : 0.94);
+    background.setInteractive({ useHandCursor: true });
+    this.slotUiElements.push(background);
+
+    const titleColor = slot.isEmpty ? '#8e9a95' : '#f5fff0';
+    const detailColor = slot.isEmpty ? '#7f8b85' : '#d7ead4';
+    const accentColor = slot.isEmpty ? '#9cadb0' : '#a6d9b0';
+    const slotLabel = `Slot ${slot.slotNumber}`;
+    const title = slot.isEmpty ? 'Empty Slot' : slot.saveName;
+    const subtitle = slot.isEmpty ? 'Create New Save' : formatSaveSlotSubtitle(slot);
+
+    const slotLabelText = this.add
+      .text(x, y - 88, slotLabel, {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '20px',
+        color: accentColor,
+        align: 'center',
+      })
+      .setOrigin(0.5);
+    this.slotUiElements.push(slotLabelText);
+
+    const titleText = this.add
+      .text(x, y - 36, title, {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: slot.isEmpty ? '28px' : '26px',
+        color: titleColor,
+        align: 'center',
+        wordWrap: { width: width - 48 },
+      })
+      .setOrigin(0.5);
+    this.slotUiElements.push(titleText);
+
+    const subtitleText = this.add
+      .text(x, y + 6, subtitle, {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '16px',
+        color: detailColor,
+        align: 'center',
+        wordWrap: { width: width - 48 },
+      })
+      .setOrigin(0.5);
+    this.slotUiElements.push(subtitleText);
+
+    const footerText = this.add
+      .text(x, y + 74, slot.isEmpty ? 'Click to create' : 'Click to load', {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '15px',
+        color: slot.isEmpty ? '#b7c9ba' : '#dff3de',
+        align: 'center',
+      })
+      .setOrigin(0.5)
+      .setAlpha(0.92);
+    this.slotUiElements.push(footerText);
+
+    background.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OVER, () => {
+      background.setFillStyle(slot.isEmpty ? 0x173027 : 0x24513d, 0.99);
+    });
+    background.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OUT, () => {
+      background.setFillStyle(fillColor, 0.96);
+    });
+    background.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
+      if (slot.isEmpty) {
+        this.setStatus(`Slot ${slot.slotNumber} is empty. Create flow will connect in the next issue.`);
+        return;
+      }
+
+      this.setStatus(
+        `${slot.saveName} is selected. Load flow will connect after the save API lands.`,
+      );
+    });
+  }
+
+  private showFailureState(error: unknown): void {
+    this.clearSlotCards();
+    const message = error instanceof Error ? error.message : String(error);
+    this.setStatus(`Failed to load save slots: ${message}`);
+    this.retryButton = this.add.rectangle(GAME_WIDTH / 2, 478, 280, 64, 0x1d3f31, 0.96);
+    this.retryButton.setStrokeStyle(2, 0xdaf6d3, 0.9);
+    this.retryButton.setInteractive({ useHandCursor: true });
+    this.slotUiElements.push(this.retryButton);
+    const retryText = this.add
+      .text(GAME_WIDTH / 2, 478, 'Retry', {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '26px',
+        color: '#f5fff0',
+        align: 'center',
+      })
+      .setOrigin(0.5);
+    this.slotUiElements.push(retryText);
+    this.retryButton.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
+      this.scene.restart();
+    });
+  }
+
+  private setStatus(message: string): void {
+    this.statusText.setText(message);
+  }
+
+  private clearSlotCards(): void {
+    this.slotUiElements.forEach((child) => {
+      child.destroy();
+    });
+    this.slotUiElements = [];
+    this.retryButton = null;
   }
 }
 
@@ -463,6 +707,11 @@ function createMenuButton(
     return;
   }
 
+  if (!config.onClick) {
+    throw new Error(`Enabled menu button "${config.label}" requires onClick`);
+  }
+  const onClick = config.onClick;
+
   background.setInteractive();
   background.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OVER, () => {
     background.setFillStyle(0x2f5b44, 0.98);
@@ -473,7 +722,7 @@ function createMenuButton(
     label.setColor(labelColor);
   });
   background.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
-    config.onClick?.();
+    onClick();
   });
 }
 
@@ -522,6 +771,91 @@ function formatError(error: unknown): string {
   }
 
   return String(error);
+}
+
+async function readSaveSlotSummaries(): Promise<SaveSlotSummary[]> {
+  const storedSlots = readStoredSaveSlotSummaries();
+  if (storedSlots.length > 0) {
+    return normalizeSaveSlots(storedSlots);
+  }
+
+  return createDefaultSaveSlots();
+}
+
+function readStoredSaveSlotSummaries(): StoredSaveSlotSummary[] {
+  const rawValue = window.localStorage.getItem(SAVE_SLOT_STORAGE_KEY);
+  if (!rawValue) {
+    return [];
+  }
+
+  const parsed = JSON.parse(rawValue) as unknown;
+  if (!Array.isArray(parsed)) {
+    throw new Error('Save slot storage must be an array');
+  }
+
+  return parsed.filter((value): value is StoredSaveSlotSummary => isRecord(value));
+}
+
+function normalizeSaveSlots(storedSlots: StoredSaveSlotSummary[]): SaveSlotSummary[] {
+  return [1, 2, 3].map((slotNumber, index) => {
+    const stored = storedSlots.find((entry) => entry.slotNumber === slotNumber) ?? storedSlots[index] ?? {};
+    const hasSave =
+      Boolean(stored.saveName?.trim()) ||
+      Boolean(stored.savedAt?.trim()) ||
+      typeof stored.deckCardCount === 'number' ||
+      Boolean(stored.leaderName?.trim());
+
+    return {
+      slotNumber,
+      saveName: stored.saveName?.trim() || `Slot ${slotNumber}`,
+      savedAt: stored.savedAt ?? null,
+      deckCardCount: typeof stored.deckCardCount === 'number' ? stored.deckCardCount : null,
+      leaderName: stored.leaderName?.trim() || null,
+      isEmpty: !hasSave,
+    };
+  });
+}
+
+function createDefaultSaveSlots(): SaveSlotSummary[] {
+  return [1, 2, 3].map((slotNumber) => ({
+    slotNumber,
+    saveName: `Slot ${slotNumber}`,
+    savedAt: null,
+    deckCardCount: null,
+    leaderName: null,
+    isEmpty: true,
+  }));
+}
+
+function formatSaveSlotSubtitle(slot: SaveSlotSummary): string {
+  const lines: string[] = [];
+  if (slot.savedAt) {
+    lines.push(`Saved ${formatSaveSlotDate(slot.savedAt)}`);
+  }
+  if (slot.deckCardCount !== null) {
+    lines.push(`${slot.deckCardCount} cards`);
+  }
+  if (slot.leaderName) {
+    lines.push(`Leader: ${slot.leaderName}`);
+  }
+
+  return lines.length > 0 ? lines.join(' · ') : 'Ready to load';
+}
+
+function formatSaveSlotDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat('ko-KR', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(date);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 
 void bootstrap();
