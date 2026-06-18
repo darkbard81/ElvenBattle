@@ -41,10 +41,18 @@ document.body.style.background = '#071018';
 app.style.width = '100vw';
 app.style.height = '100vh';
 
+/**
+ * Phaser 게임 인스턴스를 생성해 브라우저에 붙인다.
+ * 이 진입점은 씬 생성만 담당하고, 게임 상태는 씬 내부로 넘긴다.
+ */
 async function bootstrap(): Promise<void> {
   new Phaser.Game(createGameConfig());
 }
 
+/**
+ * 현재 화면 정책과 씬 구성을 기준으로 Phaser 게임 설정을 만든다.
+ * 이 프로젝트는 1280x800 가상 해상도를 FIT 방식으로 스케일한다.
+ */
 function createGameConfig(): Phaser.Types.Core.GameConfig {
   return {
     type: Phaser.AUTO,
@@ -118,7 +126,10 @@ class TitleScene extends Phaser.Scene {
   }
 
   private addBackground(): void {
-    this.add.image(0, 0, 'title-background').setOrigin(0, 0).setDisplaySize(GAME_WIDTH, GAME_HEIGHT);
+    this.add
+      .image(0, 0, 'title-background')
+      .setOrigin(0, 0)
+      .setDisplaySize(GAME_WIDTH, GAME_HEIGHT);
     this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x050b11, 0.22).setOrigin(0, 0);
     this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.08).setOrigin(0, 0);
   }
@@ -160,12 +171,17 @@ class TitleScene extends Phaser.Scene {
       .setAlpha(0.95);
 
     this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT - 54, 'the archive will preload webp textures before the menu opens', {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '16px',
-        color: '#b8cbb7',
-        align: 'center',
-      })
+      .text(
+        GAME_WIDTH / 2,
+        GAME_HEIGHT - 54,
+        'the archive will preload webp textures before the menu opens',
+        {
+          fontFamily: DEFAULT_FONT_FAMILY,
+          fontSize: '16px',
+          color: '#b8cbb7',
+          align: 'center',
+        },
+      )
       .setOrigin(0.5)
       .setAlpha(0.9);
   }
@@ -206,8 +222,12 @@ class LoaderScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
-    this.progressTrack = this.add.rectangle(GAME_WIDTH / 2, 404, 560, 20, 0x13221d, 0.95).setOrigin(0.5);
-    this.progressFill = this.add.rectangle(GAME_WIDTH / 2 - 280, 404, 0, 20, 0xa8e6b2, 0.95).setOrigin(0, 0.5);
+    this.progressTrack = this.add
+      .rectangle(GAME_WIDTH / 2, 404, 560, 20, 0x13221d, 0.95)
+      .setOrigin(0.5);
+    this.progressFill = this.add
+      .rectangle(GAME_WIDTH / 2 - 280, 404, 0, 20, 0xa8e6b2, 0.95)
+      .setOrigin(0, 0.5);
     this.statusText = this.add
       .text(GAME_WIDTH / 2, 458, 'Requesting assets.json', {
         fontFamily: DEFAULT_FONT_FAMILY,
@@ -239,7 +259,9 @@ class LoaderScene extends Phaser.Scene {
 
   private async preloadWebpTextures(assetBaseUrl: string): Promise<void> {
     const manifest = await fetchAssetsManifest(assetBaseUrl);
-    const webpTextures = manifest.textures.filter((texture) => texture.path.toLowerCase().endsWith('.webp'));
+    const webpTextures = manifest.textures.filter((texture) =>
+      texture.path.toLowerCase().endsWith('.webp'),
+    );
     const failedKeys = new Set<string>();
 
     this.statusText.setText(`Preloading ${webpTextures.length} webp textures`);
@@ -308,7 +330,10 @@ class MainMenuScene extends Phaser.Scene {
   }
 
   private addBackground(): void {
-    this.add.image(0, 0, 'title-background').setOrigin(0, 0).setDisplaySize(GAME_WIDTH, GAME_HEIGHT);
+    this.add
+      .image(0, 0, 'title-background')
+      .setOrigin(0, 0)
+      .setDisplaySize(GAME_WIDTH, GAME_HEIGHT);
     this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x071018, 0.48).setOrigin(0, 0);
     this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.12).setOrigin(0, 0);
   }
@@ -405,7 +430,14 @@ function createMenuButton(
   const fillAlpha = config.enabled ? 0.96 : 0.72;
   const labelColor = config.enabled ? '#f5fff0' : '#7e8b84';
 
-  const background = scene.add.rectangle(config.x, config.y, config.width, config.height, fillColor, fillAlpha);
+  const background = scene.add.rectangle(
+    config.x,
+    config.y,
+    config.width,
+    config.height,
+    fillColor,
+    fillAlpha,
+  );
   background.setStrokeStyle(2, strokeColor, config.enabled ? 0.92 : 0.58);
 
   const label = scene.add.text(config.x, config.y, config.label, {
@@ -441,6 +473,10 @@ function createMenuButton(
   });
 }
 
+/**
+ * 서버가 제공하는 `assets.json`을 읽어 텍스처 로딩용 manifest로 해석한다.
+ * 응답 실패는 로딩 씬에서 잡아내며, 여기서는 유효한 manifest만 돌려준다.
+ */
 async function fetchAssetsManifest(assetBaseUrl: string): Promise<AssetsManifest> {
   const response = await fetch(joinAssetUrl(assetBaseUrl, 'assets.json'));
   if (!response.ok) {
