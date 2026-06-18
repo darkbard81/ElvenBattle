@@ -186,6 +186,10 @@ export function createCardTextApiHandler(): (
   };
 }
 
+/**
+ * `/api/card-text-tool/...` 요청을 분기 처리한다.
+ * 데이터 조회, 저장, 이미지 생성은 모두 이 경로에서만 다룬다.
+ */
 async function handleCardTextToolRequest(
   request: IncomingMessage,
   response: ServerResponse,
@@ -356,6 +360,10 @@ function readPendingCapture(captureId: string | null, cardId: string) {
   return pendingCapture;
 }
 
+/**
+ * 브라우저 캡처로 카드 합성 이미지를 만든다.
+ * 렌더링 실패는 그대로 예외로 올려서 상위 요청이 중단되게 한다.
+ */
 async function renderCardByScreenshot(input: {
   request: IncomingMessage;
   area: TextAreaRegion;
@@ -419,6 +427,10 @@ function toProjectPath(targetPath: string): string {
   return path.relative(projectRoot, targetPath).split(path.sep).join('/');
 }
 
+/**
+ * 생성된 합성 이미지를 repo-root 기준 PNG와 WEBP로 정리한다.
+ * 카드는 2:3 비율을 강제하며, 실패하면 바로 예외를 던진다.
+ */
 async function finalizeCardAssets(cardId: string, sourcePath: string): Promise<CardAssetPaths> {
   const sharpFactory = sharp as unknown as SharpFactory;
   const pngDir = path.join(projectRoot, 'assets/cards/png');
@@ -522,6 +534,10 @@ function readDefaultArtOffsetY(meta: FrameMeta): number {
   return Math.round(toInteger(chromaArea.y, 0) / 2);
 }
 
+/**
+ * 자산 디렉터리에서 카드 이미지 후보만 모아 정렬한다.
+ * 비어 있으면 요청이 더 진행되지 않도록 즉시 예외를 던진다.
+ */
 async function listAssetImages(directoryPath: string, assetDir: string): Promise<AssetImage[]> {
   let entries: string[];
   try {
@@ -572,6 +588,10 @@ function selectFirstAssetPath(images: AssetImage[], label: string): string {
   return firstImage.path;
 }
 
+/**
+ * 카드 ID에 맞는 일러스트를 찾고, 없으면 첫 번째 후보를 사용한다.
+ * 파일명 규칙이 카드 ID와 일치한다는 전제를 따른다.
+ */
 function selectArtImageForCard(cardId: string | null | undefined, images: AssetImage[]): string {
   if (cardId) {
     const matchingImage = images.find((image) => cardIdFromAssetPath(image.path) === cardId);
@@ -596,6 +616,10 @@ function readOptionalInteger(value: string | null, fallback: number): number {
   return Number.isFinite(numericValue) ? Math.round(numericValue) : fallback;
 }
 
+/**
+ * 메타와 요청 payload를 텍스트 영역 구조로 정규화한다.
+ * 누락된 수치는 기본값으로 보정하고, 타입 태그는 항상 고정한다.
+ */
 function normalizeTextArea(
   area: JsonRecord | TextAreaRegion,
   fallback: TextAreaRegion = defaultTextArea,
@@ -676,6 +700,10 @@ function escapeBBCode(value: string): string {
   return value.replace(/\[/g, '[esc][').replace(/\]/g, '][/esc]');
 }
 
+/**
+ * 저장/생성 요청 본문이 카드 편집 payload인지 검증한다.
+ * 필요한 필드가 하나라도 비면 즉시 거절한다.
+ */
 function validateAreaPayload(value: unknown): SaveAreaPayload {
   if (
     !isRecord(value) ||
@@ -696,6 +724,10 @@ function validateAreaPayload(value: unknown): SaveAreaPayload {
   };
 }
 
+/**
+ * 요청 본문을 스트림에서 읽어 JSON으로 파싱한다.
+ * 파싱 실패는 호출자에게 그대로 전달한다.
+ */
 function readRequestJson(request: IncomingMessage): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
