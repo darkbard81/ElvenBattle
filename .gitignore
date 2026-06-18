@@ -8,4 +8,5 @@ generated/*
 # Ignore image/output folders under cards, but keep JSON files directly in /cards
 /cards/*/
 assets/*
+!assets/README.md
 .env
