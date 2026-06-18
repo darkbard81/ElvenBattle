@@ -1,11 +1,3 @@
-@font-face {
-  font-family: 'CardTextRuntime';
-  src: url('/fonts/CookieRun Bold.ttf') format('truetype');
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
-}
-
 :root {
   color: #182019;
   background: #20251f;
