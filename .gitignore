@@ -9,4 +9,5 @@ generated/*
 /cards/*/
 assets/*
 !assets/README.md
+.data/
 .env

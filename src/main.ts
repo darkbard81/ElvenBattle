@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import type { SaveSlotState, SaveSlotSummary } from './game/save/types';
 import { DEFAULT_FONT_FAMILY } from './theme';
 
 type AssetsManifest = {
@@ -22,25 +23,11 @@ type MainMenuSceneData = {
   failedCount: number;
 };
 
-type SaveSlotSummary = {
-  slotNumber: number;
-  saveName: string;
-  savedAt: string | null;
-  deckCardCount: number | null;
-  leaderName: string | null;
-  isEmpty: boolean;
-};
-
-type StoredSaveSlotSummary = Partial<SaveSlotSummary> & {
-  slotNumber?: number;
-};
-
 const GAME_WIDTH = 1280;
 const GAME_HEIGHT = 800;
 const TITLE_BACKGROUND_URL = new URL('../assets/ui/title-screen.png', import.meta.url).href;
 const DEFAULT_FONT_URL = new URL('../assets/fonts/CookieRun Bold.ttf', import.meta.url).href;
 const DEFAULT_ASSET_BASE_URL = '/tcg';
-const SAVE_SLOT_STORAGE_KEY = 'elvenbattle.save-slots.v1';
 
 const app = document.querySelector<HTMLDivElement>('#app');
 
@@ -432,12 +419,13 @@ class MainMenuScene extends Phaser.Scene {
 
 /**
  * `Start Game` 진입 후 3개의 저장 슬롯을 보여주는 선택 화면이다.
- * 실제 저장 API가 아직 없으므로, 현재는 로컬 저장소나 기본 빈 슬롯 데이터를 렌더링한다.
+ * 서버의 `/api/save-slots` 응답을 읽어 실제 저장 상태를 렌더링한다.
  */
 class SaveSlotScene extends Phaser.Scene {
   private statusText!: Phaser.GameObjects.Text;
   private retryButton: Phaser.GameObjects.Rectangle | null = null;
   private slotUiElements: Phaser.GameObjects.GameObject[] = [];
+  private selectedSaveSlot: SaveSlotState | null = null;
 
   constructor() {
     super({ key: 'SaveSlotScene' });
@@ -516,7 +504,7 @@ class SaveSlotScene extends Phaser.Scene {
 
   private async loadSaveSlots(): Promise<void> {
     try {
-      const slots = await readSaveSlotSummaries();
+      const slots = await fetchSaveSlotSummaries();
       this.renderSlotCards(slots);
       this.setStatus('Select a slot to continue or create a new save.');
     } catch (error: unknown) {
@@ -557,8 +545,8 @@ class SaveSlotScene extends Phaser.Scene {
     const titleColor = slot.isEmpty ? '#8e9a95' : '#f5fff0';
     const detailColor = slot.isEmpty ? '#7f8b85' : '#d7ead4';
     const accentColor = slot.isEmpty ? '#9cadb0' : '#a6d9b0';
-    const slotLabel = `Slot ${slot.slotNumber}`;
-    const title = slot.isEmpty ? 'Empty Slot' : slot.saveName;
+    const slotLabel = `Slot ${slot.slotId}`;
+    const title = slot.isEmpty ? 'Empty Slot' : slot.saveName ?? slotLabel;
     const subtitle = slot.isEmpty ? 'Create New Save' : formatSaveSlotSubtitle(slot);
 
     const slotLabelText = this.add
@@ -611,14 +599,7 @@ class SaveSlotScene extends Phaser.Scene {
       background.setFillStyle(fillColor, 0.96);
     });
     background.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
-      if (slot.isEmpty) {
-        this.setStatus(`Slot ${slot.slotNumber} is empty. Create flow will connect in the next issue.`);
-        return;
-      }
-
-      this.setStatus(
-        `${slot.saveName} is selected. Load flow will connect after the save API lands.`,
-      );
+      void this.handleSlotSelection(slot);
     });
   }
 
@@ -654,6 +635,27 @@ class SaveSlotScene extends Phaser.Scene {
     });
     this.slotUiElements = [];
     this.retryButton = null;
+  }
+
+  private async handleSlotSelection(slot: SaveSlotSummary): Promise<void> {
+    try {
+      if (slot.isEmpty) {
+        this.setStatus(`Initializing Slot ${slot.slotId}...`);
+        const result = await initializeSaveSlot(slot.slotId);
+        this.selectedSaveSlot = result.state;
+        const slots = await fetchSaveSlotSummaries();
+        this.renderSlotCards(slots);
+        this.setStatus(`Slot ${slot.slotId} initialized.`);
+        return;
+      }
+
+      this.setStatus(`Loading Slot ${slot.slotId}...`);
+      const state = await fetchSaveSlot(slot.slotId);
+      this.selectedSaveSlot = state;
+      this.setStatus(`${state.saveName} is loaded. Game handoff will connect next.`);
+    } catch (error: unknown) {
+      this.showFailureState(error);
+    }
   }
 }
 
@@ -773,64 +775,65 @@ function formatError(error: unknown): string {
   return String(error);
 }
 
-async function readSaveSlotSummaries(): Promise<SaveSlotSummary[]> {
-  const storedSlots = readStoredSaveSlotSummaries();
-  if (storedSlots.length > 0) {
-    return normalizeSaveSlots(storedSlots);
-  }
-
-  return createDefaultSaveSlots();
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 
-function readStoredSaveSlotSummaries(): StoredSaveSlotSummary[] {
-  const rawValue = window.localStorage.getItem(SAVE_SLOT_STORAGE_KEY);
-  if (!rawValue) {
-    return [];
+async function fetchSaveSlotSummaries(): Promise<SaveSlotSummary[]> {
+  const response = await fetch('/api/save-slots');
+  if (!response.ok) {
+    throw new Error(`Failed to load save slots: ${response.status} ${response.statusText}`);
   }
 
-  const parsed = JSON.parse(rawValue) as unknown;
-  if (!Array.isArray(parsed)) {
-    throw new Error('Save slot storage must be an array');
+  const data = (await response.json()) as unknown;
+  if (!isSaveSlotsResponse(data)) {
+    throw new Error('Invalid save slot summary response');
   }
 
-  return parsed.filter((value): value is StoredSaveSlotSummary => isRecord(value));
+  return data.slots;
 }
 
-function normalizeSaveSlots(storedSlots: StoredSaveSlotSummary[]): SaveSlotSummary[] {
-  return [1, 2, 3].map((slotNumber, index) => {
-    const stored = storedSlots.find((entry) => entry.slotNumber === slotNumber) ?? storedSlots[index] ?? {};
-    const hasSave =
-      Boolean(stored.saveName?.trim()) ||
-      Boolean(stored.savedAt?.trim()) ||
-      typeof stored.deckCardCount === 'number' ||
-      Boolean(stored.leaderName?.trim());
+async function fetchSaveSlot(slotId: number): Promise<SaveSlotState> {
+  const response = await fetch(`/api/save-slots/${slotId}`);
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
 
-    return {
-      slotNumber,
-      saveName: stored.saveName?.trim() || `Slot ${slotNumber}`,
-      savedAt: stored.savedAt ?? null,
-      deckCardCount: typeof stored.deckCardCount === 'number' ? stored.deckCardCount : null,
-      leaderName: stored.leaderName?.trim() || null,
-      isEmpty: !hasSave,
-    };
+  const data = (await response.json()) as unknown;
+  if (!isSaveSlotState(data)) {
+    throw new Error('Invalid save slot state response');
+  }
+
+  return data;
+}
+
+async function initializeSaveSlot(slotId: number): Promise<{ state: SaveSlotState; summary: SaveSlotSummary }> {
+  const response = await fetch(`/api/save-slots/${slotId}/initialize`, {
+    method: 'POST',
   });
-}
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
 
-function createDefaultSaveSlots(): SaveSlotSummary[] {
-  return [1, 2, 3].map((slotNumber) => ({
-    slotNumber,
-    saveName: `Slot ${slotNumber}`,
-    savedAt: null,
-    deckCardCount: null,
-    leaderName: null,
-    isEmpty: true,
-  }));
+  const data = (await response.json()) as unknown;
+  if (!isRecord(data) || !isSaveSlotState(data.state) || !isSaveSlotSummary(data.summary)) {
+    throw new Error('Invalid initialize save slot response');
+  }
+
+  return {
+    state: data.state,
+    summary: data.summary,
+  };
 }
 
 function formatSaveSlotSubtitle(slot: SaveSlotSummary): string {
+  if (slot.isEmpty) {
+    return 'Create New Save';
+  }
+
   const lines: string[] = [];
-  if (slot.savedAt) {
-    lines.push(`Saved ${formatSaveSlotDate(slot.savedAt)}`);
+  if (slot.updatedAt) {
+    lines.push(`Updated ${formatSaveSlotDate(slot.updatedAt)}`);
   }
   if (slot.deckCardCount !== null) {
     lines.push(`${slot.deckCardCount} cards`);
@@ -854,8 +857,53 @@ function formatSaveSlotDate(value: string): string {
   }).format(date);
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
+function isSaveSlotsResponse(value: unknown): value is { slots: SaveSlotSummary[] } {
+  return isRecord(value) && Array.isArray(value.slots) && value.slots.every((slot) => isSaveSlotSummary(slot));
+}
+
+function isSaveSlotSummary(value: unknown): value is SaveSlotSummary {
+  return (
+    isRecord(value) &&
+    (value.slotId === 1 || value.slotId === 2 || value.slotId === 3) &&
+    (typeof value.saveName === 'string' || value.saveName === null) &&
+    (typeof value.updatedAt === 'string' || value.updatedAt === null) &&
+    (typeof value.deckCardCount === 'number' || value.deckCardCount === null) &&
+    (typeof value.leaderName === 'string' || value.leaderName === null) &&
+    typeof value.isEmpty === 'boolean'
+  );
+}
+
+function isSaveSlotState(value: unknown): value is SaveSlotState {
+  return (
+    isRecord(value) &&
+    value.schemaVersion === 1 &&
+    (value.slotId === 1 || value.slotId === 2 || value.slotId === 3) &&
+    typeof value.createdAt === 'string' &&
+    typeof value.updatedAt === 'string' &&
+    typeof value.saveName === 'string' &&
+    isRecord(value.deck) &&
+    typeof value.deck.id === 'string' &&
+    isCardInstance(value.deck.leader) &&
+    Array.isArray(value.deck.cards) &&
+    value.deck.cards.every((entry) => isCardInstance(entry))
+  );
+}
+
+function isCardInstance(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.instanceId === 'string' &&
+    typeof value.definitionId === 'string' &&
+    typeof value.definitionName === 'string' &&
+    value.owner === 'PLAYER' &&
+    (value.zone === 'LEADER' || value.zone === 'DECK') &&
+    Number.isInteger(value.level) &&
+    Number.isInteger(value.exp) &&
+    Number.isInteger(value.baseHp) &&
+    Number.isInteger(value.currentHp) &&
+    Number.isInteger(value.baseAttack) &&
+    Number.isInteger(value.currentAttack)
+  );
 }
 
 void bootstrap();
