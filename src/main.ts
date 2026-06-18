@@ -67,26 +67,44 @@ function createGameConfig(): Phaser.Types.Core.GameConfig {
   };
 }
 
+/**
+ * 게임 시작 시 공용 리소스를 먼저 올리고 첫 타이틀 씬으로 넘기는 부트 씬이다.
+ * 폰트와 타이틀 배경처럼 이후 모든 씬에서 공유할 자산을 이 단계에서 준비한다.
+ */
 class BootScene extends Phaser.Scene {
   constructor() {
     super({ key: 'BootScene', active: true });
   }
 
+  /**
+   * 타이틀 화면에 필요한 공용 리소스를 선로딩한다.
+   * 이 단계에서 불러온 폰트와 배경은 이후 씬에서 바로 재사용된다.
+   */
   preload(): void {
     this.load.image('title-background', TITLE_BACKGROUND_URL);
     this.load.font(DEFAULT_FONT_FAMILY, DEFAULT_FONT_URL, 'truetype');
   }
 
+  /**
+   * 부트가 끝나면 타이틀 씬으로 전환한다.
+   */
   create(): void {
     this.scene.start('TitleScene');
   }
 }
 
+/**
+ * 첫 진입 화면을 담당하는 타이틀 씬이다.
+ * 클릭 전까지는 시작 안내만 보여주고, 클릭하면 자산 로딩 씬으로 보낸다.
+ */
 class TitleScene extends Phaser.Scene {
   constructor() {
     super({ key: 'TitleScene' });
   }
 
+  /**
+   * 타이틀 배경과 안내 문구를 배치하고, 아무 곳이나 클릭하면 로딩 씬으로 이동시킨다.
+   */
   create(): void {
     this.addBackground();
     this.addTitleText();
@@ -153,6 +171,10 @@ class TitleScene extends Phaser.Scene {
   }
 }
 
+/**
+ * 서버의 `assets.json`을 읽고 필요한 `webp` 텍스처만 순차적으로 로딩하는 씬이다.
+ * 로딩 실패는 치명적으로 끊지 않고, 가능한 자산만 살려서 메인 메뉴로 넘긴다.
+ */
 class LoaderScene extends Phaser.Scene {
   private progressTrack!: Phaser.GameObjects.Rectangle;
   private progressFill!: Phaser.GameObjects.Rectangle;
@@ -163,6 +185,10 @@ class LoaderScene extends Phaser.Scene {
     super({ key: 'LoaderScene' });
   }
 
+  /**
+   * manifest를 읽고 webp 텍스처를 로딩하는 동안 진행률과 상태 메시지를 갱신한다.
+   * 실패한 텍스처가 있어도 전체 흐름은 계속 유지한다.
+   */
   create(data: LoaderSceneData): void {
     this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x041018, 1).setOrigin(0, 0);
     this.add
@@ -262,11 +288,18 @@ class LoaderScene extends Phaser.Scene {
   }
 }
 
+/**
+ * 자산 로딩이 끝난 뒤 사용자가 실제로 진입할 메인 메뉴를 보여주는 씬이다.
+ * 현재 단계에서는 새 게임은 비활성화하고, 카드 텍스트 툴 진입만 허용한다.
+ */
 class MainMenuScene extends Phaser.Scene {
   constructor() {
     super({ key: 'MainMenuScene' });
   }
 
+  /**
+   * 메뉴 배경, 제목, 버튼과 로딩 결과 요약을 화면에 구성한다.
+   */
   create(data: MainMenuSceneData): void {
     this.addBackground();
     this.addTitle();
