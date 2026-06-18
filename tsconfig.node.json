@@ -16,6 +16,7 @@
   "include": [
     "src/config.ts",
     "vite.config.ts",
+    "src/game/save/**/*",
     "src/server",
     "src/tools/card-text/server",
     "src/type"

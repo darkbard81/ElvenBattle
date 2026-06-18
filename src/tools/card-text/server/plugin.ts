@@ -1,5 +1,6 @@
 import type { Plugin, ViteDevServer } from 'vite';
 import { createAssetsMiddleware } from '../../../server/assets-middleware';
+import { createSaveSlotsApiHandler } from '../../../server/save-slots-api';
 import { createCardTextApiHandler } from './api';
 
 /**
@@ -20,12 +21,18 @@ export function cardTextToolPlugin(): Plugin {
 
 function registerMiddlewares(middlewares: ViteDevServer['middlewares']): void {
   const handleAssets = createAssetsMiddleware();
+  const handleSaveSlotsApi = createSaveSlotsApiHandler();
   const handleApi = createCardTextApiHandler();
 
   middlewares.use((request, response, next) => {
     void (async () => {
       const handled = await handleAssets(request, response, next);
       if (handled) {
+        return;
+      }
+
+      const saveSlotsHandled = await handleSaveSlotsApi(request, response, next);
+      if (saveSlotsHandled) {
         return;
       }
 

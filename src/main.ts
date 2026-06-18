@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import type { SaveSlotState, SaveSlotSummary } from './game/save/types';
 import { DEFAULT_FONT_FAMILY } from './theme';
 
 type AssetsManifest = {
@@ -60,7 +61,7 @@ function createGameConfig(): Phaser.Types.Core.GameConfig {
     width: GAME_WIDTH,
     height: GAME_HEIGHT,
     backgroundColor: '#071018',
-    scene: [BootScene, TitleScene, LoaderScene, MainMenuScene],
+    scene: [BootScene, TitleScene, LoaderScene, MainMenuScene, SaveSlotScene],
     scale: {
       mode: Phaser.Scale.FIT,
       autoCenter: Phaser.Scale.CENTER_BOTH,
@@ -368,8 +369,11 @@ class MainMenuScene extends Phaser.Scene {
       y: 394,
       width: 360,
       height: 72,
-      label: 'New Game',
-      enabled: false,
+      label: 'Start Game',
+      enabled: true,
+      onClick: () => {
+        this.scene.start('SaveSlotScene');
+      },
     });
 
     createMenuButton(this, {
@@ -402,7 +406,7 @@ class MainMenuScene extends Phaser.Scene {
       .setAlpha(0.92);
 
     this.add
-      .text(GAME_WIDTH / 2, 652, 'New Game is intentionally disabled in this phase.', {
+      .text(GAME_WIDTH / 2, 652, 'Start Game opens the save slot screen in this phase.', {
         fontFamily: DEFAULT_FONT_FAMILY,
         fontSize: '16px',
         color: '#b7c9ba',
@@ -410,6 +414,248 @@ class MainMenuScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
       .setAlpha(0.9);
+  }
+}
+
+/**
+ * `Start Game` 진입 후 3개의 저장 슬롯을 보여주는 선택 화면이다.
+ * 서버의 `/api/save-slots` 응답을 읽어 실제 저장 상태를 렌더링한다.
+ */
+class SaveSlotScene extends Phaser.Scene {
+  private statusText!: Phaser.GameObjects.Text;
+  private retryButton: Phaser.GameObjects.Rectangle | null = null;
+  private slotUiElements: Phaser.GameObjects.GameObject[] = [];
+  private selectedSaveSlot: SaveSlotState | null = null;
+
+  constructor() {
+    super({ key: 'SaveSlotScene' });
+  }
+
+  create(): void {
+    this.addBackground();
+    this.addTitle();
+    this.addBackButton();
+    this.showLoadingState();
+
+    void this.loadSaveSlots();
+  }
+
+  private addBackground(): void {
+    this.add
+      .image(0, 0, 'title-background')
+      .setOrigin(0, 0)
+      .setDisplaySize(GAME_WIDTH, GAME_HEIGHT);
+    this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x071018, 0.56).setOrigin(0, 0);
+    this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.14).setOrigin(0, 0);
+  }
+
+  private addTitle(): void {
+    this.add
+      .text(GAME_WIDTH / 2, 104, 'START GAME', {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '56px',
+        fontStyle: '700',
+        color: '#f5faf0',
+        stroke: '#182e27',
+        strokeThickness: 7,
+        align: 'center',
+      })
+      .setOrigin(0.5);
+
+    this.add
+      .text(GAME_WIDTH / 2, 166, 'Choose a save slot', {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '24px',
+        color: '#d9ebd1',
+        align: 'center',
+      })
+      .setOrigin(0.5)
+      .setAlpha(0.9);
+  }
+
+  private addBackButton(): void {
+    createMenuButton(this, {
+      x: 160,
+      y: 86,
+      width: 180,
+      height: 58,
+      label: 'Back',
+      enabled: true,
+      onClick: () => {
+        this.scene.start('MainMenuScene', {
+          loadedCount: 0,
+          failedCount: 0,
+        } satisfies MainMenuSceneData);
+      },
+    });
+  }
+
+  private showLoadingState(): void {
+    this.clearSlotCards();
+    this.statusText = this.add
+      .text(GAME_WIDTH / 2, 232, 'Loading save slots...', {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '24px',
+        color: '#e6f4df',
+        align: 'center',
+      })
+      .setOrigin(0.5);
+  }
+
+  private async loadSaveSlots(): Promise<void> {
+    try {
+      const slots = await fetchSaveSlotSummaries();
+      this.renderSlotCards(slots);
+      this.setStatus('Select a slot to continue or create a new save.');
+    } catch (error: unknown) {
+      this.showFailureState(error);
+    }
+  }
+
+  private renderSlotCards(slots: SaveSlotSummary[]): void {
+    this.clearSlotCards();
+
+    const cardWidth = 330;
+    const cardHeight = 260;
+    const cardGap = 28;
+    const totalWidth = cardWidth * 3 + cardGap * 2;
+    const startX = (GAME_WIDTH - totalWidth) / 2 + cardWidth / 2;
+    const y = 392;
+
+    slots.forEach((slot, index) => {
+      const x = startX + index * (cardWidth + cardGap);
+      this.createSlotCard(x, y, cardWidth, cardHeight, slot);
+    });
+  }
+
+  private createSlotCard(
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    slot: SaveSlotSummary,
+  ): void {
+    const fillColor = slot.isEmpty ? 0x12211c : 0x1a3a2d;
+    const strokeColor = slot.isEmpty ? 0x4e5d57 : 0xbfeec5;
+    const background = this.add.rectangle(x, y, width, height, fillColor, 0.96);
+    background.setStrokeStyle(2, strokeColor, slot.isEmpty ? 0.7 : 0.94);
+    background.setInteractive({ useHandCursor: true });
+    this.slotUiElements.push(background);
+
+    const titleColor = slot.isEmpty ? '#8e9a95' : '#f5fff0';
+    const detailColor = slot.isEmpty ? '#7f8b85' : '#d7ead4';
+    const accentColor = slot.isEmpty ? '#9cadb0' : '#a6d9b0';
+    const slotLabel = `Slot ${slot.slotId}`;
+    const title = slot.isEmpty ? 'Empty Slot' : slot.saveName ?? slotLabel;
+    const subtitle = slot.isEmpty ? 'Create New Save' : formatSaveSlotSubtitle(slot);
+
+    const slotLabelText = this.add
+      .text(x, y - 88, slotLabel, {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '20px',
+        color: accentColor,
+        align: 'center',
+      })
+      .setOrigin(0.5);
+    this.slotUiElements.push(slotLabelText);
+
+    const titleText = this.add
+      .text(x, y - 36, title, {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: slot.isEmpty ? '28px' : '26px',
+        color: titleColor,
+        align: 'center',
+        wordWrap: { width: width - 48 },
+      })
+      .setOrigin(0.5);
+    this.slotUiElements.push(titleText);
+
+    const subtitleText = this.add
+      .text(x, y + 6, subtitle, {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '16px',
+        color: detailColor,
+        align: 'center',
+        wordWrap: { width: width - 48 },
+      })
+      .setOrigin(0.5);
+    this.slotUiElements.push(subtitleText);
+
+    const footerText = this.add
+      .text(x, y + 74, slot.isEmpty ? 'Click to create' : 'Click to load', {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '15px',
+        color: slot.isEmpty ? '#b7c9ba' : '#dff3de',
+        align: 'center',
+      })
+      .setOrigin(0.5)
+      .setAlpha(0.92);
+    this.slotUiElements.push(footerText);
+
+    background.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OVER, () => {
+      background.setFillStyle(slot.isEmpty ? 0x173027 : 0x24513d, 0.99);
+    });
+    background.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OUT, () => {
+      background.setFillStyle(fillColor, 0.96);
+    });
+    background.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
+      void this.handleSlotSelection(slot);
+    });
+  }
+
+  private showFailureState(error: unknown): void {
+    this.clearSlotCards();
+    const message = error instanceof Error ? error.message : String(error);
+    this.setStatus(`Failed to load save slots: ${message}`);
+    this.retryButton = this.add.rectangle(GAME_WIDTH / 2, 478, 280, 64, 0x1d3f31, 0.96);
+    this.retryButton.setStrokeStyle(2, 0xdaf6d3, 0.9);
+    this.retryButton.setInteractive({ useHandCursor: true });
+    this.slotUiElements.push(this.retryButton);
+    const retryText = this.add
+      .text(GAME_WIDTH / 2, 478, 'Retry', {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '26px',
+        color: '#f5fff0',
+        align: 'center',
+      })
+      .setOrigin(0.5);
+    this.slotUiElements.push(retryText);
+    this.retryButton.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
+      this.scene.restart();
+    });
+  }
+
+  private setStatus(message: string): void {
+    this.statusText.setText(message);
+  }
+
+  private clearSlotCards(): void {
+    this.slotUiElements.forEach((child) => {
+      child.destroy();
+    });
+    this.slotUiElements = [];
+    this.retryButton = null;
+  }
+
+  private async handleSlotSelection(slot: SaveSlotSummary): Promise<void> {
+    try {
+      if (slot.isEmpty) {
+        this.setStatus(`Initializing Slot ${slot.slotId}...`);
+        const result = await initializeSaveSlot(slot.slotId);
+        this.selectedSaveSlot = result.state;
+        const slots = await fetchSaveSlotSummaries();
+        this.renderSlotCards(slots);
+        this.setStatus(`Slot ${slot.slotId} initialized.`);
+        return;
+      }
+
+      this.setStatus(`Loading Slot ${slot.slotId}...`);
+      const state = await fetchSaveSlot(slot.slotId);
+      this.selectedSaveSlot = state;
+      this.setStatus(`${state.saveName} is loaded. Game handoff will connect next.`);
+    } catch (error: unknown) {
+      this.showFailureState(error);
+    }
   }
 }
 
@@ -463,6 +709,11 @@ function createMenuButton(
     return;
   }
 
+  if (!config.onClick) {
+    throw new Error(`Enabled menu button "${config.label}" requires onClick`);
+  }
+  const onClick = config.onClick;
+
   background.setInteractive();
   background.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OVER, () => {
     background.setFillStyle(0x2f5b44, 0.98);
@@ -473,7 +724,7 @@ function createMenuButton(
     label.setColor(labelColor);
   });
   background.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
-    config.onClick?.();
+    onClick();
   });
 }
 
@@ -522,6 +773,137 @@ function formatError(error: unknown): string {
   }
 
   return String(error);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+async function fetchSaveSlotSummaries(): Promise<SaveSlotSummary[]> {
+  const response = await fetch('/api/save-slots');
+  if (!response.ok) {
+    throw new Error(`Failed to load save slots: ${response.status} ${response.statusText}`);
+  }
+
+  const data = (await response.json()) as unknown;
+  if (!isSaveSlotsResponse(data)) {
+    throw new Error('Invalid save slot summary response');
+  }
+
+  return data.slots;
+}
+
+async function fetchSaveSlot(slotId: number): Promise<SaveSlotState> {
+  const response = await fetch(`/api/save-slots/${slotId}`);
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  const data = (await response.json()) as unknown;
+  if (!isSaveSlotState(data)) {
+    throw new Error('Invalid save slot state response');
+  }
+
+  return data;
+}
+
+async function initializeSaveSlot(slotId: number): Promise<{ state: SaveSlotState; summary: SaveSlotSummary }> {
+  const response = await fetch(`/api/save-slots/${slotId}/initialize`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  const data = (await response.json()) as unknown;
+  if (!isRecord(data) || !isSaveSlotState(data.state) || !isSaveSlotSummary(data.summary)) {
+    throw new Error('Invalid initialize save slot response');
+  }
+
+  return {
+    state: data.state,
+    summary: data.summary,
+  };
+}
+
+function formatSaveSlotSubtitle(slot: SaveSlotSummary): string {
+  if (slot.isEmpty) {
+    return 'Create New Save';
+  }
+
+  const lines: string[] = [];
+  if (slot.updatedAt) {
+    lines.push(`Updated ${formatSaveSlotDate(slot.updatedAt)}`);
+  }
+  if (slot.deckCardCount !== null) {
+    lines.push(`${slot.deckCardCount} cards`);
+  }
+  if (slot.leaderName) {
+    lines.push(`Leader: ${slot.leaderName}`);
+  }
+
+  return lines.length > 0 ? lines.join(' · ') : 'Ready to load';
+}
+
+function formatSaveSlotDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat('ko-KR', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(date);
+}
+
+function isSaveSlotsResponse(value: unknown): value is { slots: SaveSlotSummary[] } {
+  return isRecord(value) && Array.isArray(value.slots) && value.slots.every((slot) => isSaveSlotSummary(slot));
+}
+
+function isSaveSlotSummary(value: unknown): value is SaveSlotSummary {
+  return (
+    isRecord(value) &&
+    (value.slotId === 1 || value.slotId === 2 || value.slotId === 3) &&
+    (typeof value.saveName === 'string' || value.saveName === null) &&
+    (typeof value.updatedAt === 'string' || value.updatedAt === null) &&
+    (typeof value.deckCardCount === 'number' || value.deckCardCount === null) &&
+    (typeof value.leaderName === 'string' || value.leaderName === null) &&
+    typeof value.isEmpty === 'boolean'
+  );
+}
+
+function isSaveSlotState(value: unknown): value is SaveSlotState {
+  return (
+    isRecord(value) &&
+    value.schemaVersion === 1 &&
+    (value.slotId === 1 || value.slotId === 2 || value.slotId === 3) &&
+    typeof value.createdAt === 'string' &&
+    typeof value.updatedAt === 'string' &&
+    typeof value.saveName === 'string' &&
+    isRecord(value.deck) &&
+    typeof value.deck.id === 'string' &&
+    isCardInstance(value.deck.leader) &&
+    Array.isArray(value.deck.cards) &&
+    value.deck.cards.every((entry) => isCardInstance(entry))
+  );
+}
+
+function isCardInstance(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.instanceId === 'string' &&
+    typeof value.definitionId === 'string' &&
+    typeof value.definitionName === 'string' &&
+    value.owner === 'PLAYER' &&
+    (value.zone === 'LEADER' || value.zone === 'DECK') &&
+    Number.isInteger(value.level) &&
+    Number.isInteger(value.exp) &&
+    Number.isInteger(value.baseHp) &&
+    Number.isInteger(value.currentHp) &&
+    Number.isInteger(value.baseAttack) &&
+    Number.isInteger(value.currentAttack)
+  );
 }
 
 void bootstrap();
