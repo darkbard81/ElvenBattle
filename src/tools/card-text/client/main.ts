@@ -2,6 +2,7 @@ import './styles.css';
 
 const RUNTIME_FONT_FAMILY = 'CardTextRuntime';
 const urlParams = new URLSearchParams(window.location.search);
+const INITIAL_DECK_ID = urlParams.get('deckId');
 const INITIAL_CARD_ID = urlParams.get('cardId');
 const captureId = urlParams.get('captureId');
 const isCaptureMode = urlParams.get('capture') === '1';
@@ -45,6 +46,12 @@ type AssetImage = {
   path: string;
 };
 
+type DeckOption = {
+  id: string;
+  name: string;
+  cardCount: number;
+};
+
 type TextAreaRegion = {
   type: 'text_area';
   x: number;
@@ -75,6 +82,8 @@ type EditorData = {
     height: number;
   };
   assetBaseUrl: string;
+  deckOptions: DeckOption[];
+  selectedDeckId: string;
   card: Card;
   abilityText: string;
   nameText: string;
@@ -134,6 +143,10 @@ app.innerHTML = `
       <h1>카드 텍스트 영역</h1>
       <div class="card-summary" data-card-summary></div>
       <div class="asset-controls">
+        <div class="field">
+          <label for="deckId">Deck</label>
+          <select id="deckId" data-deck-select></select>
+        </div>
         <div class="field">
           <label for="artImage">Art</label>
           <select id="artImage" data-art-select></select>
@@ -197,6 +210,7 @@ const saveButton = mustQuery<HTMLButtonElement>('[data-save]');
 const generateButton = mustQuery<HTMLButtonElement>('[data-generate]');
 const generateAllButton = mustQuery<HTMLButtonElement>('[data-generate-all]');
 const resetButton = mustQuery<HTMLButtonElement>('[data-reset]');
+const deckSelect = mustQuery<HTMLSelectElement>('[data-deck-select]');
 const artSelect = mustQuery<HTMLSelectElement>('[data-art-select]');
 const referenceSelect = mustQuery<HTMLSelectElement>('[data-reference-select]');
 const artOffsetYInput = mustQuery<HTMLInputElement>('[data-art-offset-y]');
@@ -217,12 +231,17 @@ let selectedArtImage = '';
 let selectedReferenceImage = '';
 let artOffsetY = 0;
 let defaultArtOffsetY = 0;
+let currentDeckId = INITIAL_DECK_ID ?? '';
 let currentCardId = INITIAL_CARD_ID ?? '';
 let activeAreaKey: AreaKey = 'ability';
 let dragState: DragState | null = null;
 
 void initialize();
 
+/**
+ * 편집기 초기 데이터와 폰트를 준비한 뒤, 상호작용 가능한 화면 상태를 만든다.
+ * 폰트 로드에 실패해도 폴백 표시로 계속 진행하고, 이벤트 바인딩은 반드시 유지한다.
+ */
 async function initialize(): Promise<void> {
   window.__CARD_TEXT_TOOL_READY = false;
   document.body.classList.toggle('capture', isCaptureMode);
@@ -231,6 +250,7 @@ async function initialize(): Promise<void> {
 
   try {
     const initialData = await fetchEditorData({
+      deckId: INITIAL_DECK_ID,
       cardId: INITIAL_CARD_ID,
       captureId,
       artImage: urlParams.get('artImage'),
@@ -241,11 +261,18 @@ async function initialize(): Promise<void> {
     if (!abilityArea) {
       throw new Error('Ability text area was not initialized.');
     }
-    await loadRuntimeFont(abilityArea.fontFile);
-    await document.fonts.ready;
-    syncBBCodePreviews();
     bindEvents();
-    setStatus('마우스로 흰색 영역을 드래그하거나 우하단 핸들로 크기를 조정할 수 있습니다.');
+    try {
+      await loadRuntimeFont(abilityArea.fontFile);
+      await document.fonts.ready;
+      syncBBCodePreviews();
+      setStatus('마우스로 흰색 영역을 드래그하거나 우하단 핸들로 크기를 조정할 수 있습니다.');
+    } catch {
+      syncBBCodePreviews();
+      setStatus(
+        '기본 폰트로 표시 중입니다. 마우스로 흰색 영역을 드래그하거나 우하단 핸들로 크기를 조정할 수 있습니다.',
+      );
+    }
   } catch (error) {
     setStatus(formatError(error));
   } finally {
@@ -253,9 +280,17 @@ async function initialize(): Promise<void> {
   }
 }
 
+/**
+ * 드래그, 선택, 생성, 저장에 필요한 UI 이벤트를 한 번에 연결한다.
+ * 초기화 이후 재호출하지 않는다는 전제로 직접 DOM 상태를 갱신한다.
+ */
 function bindEvents(): void {
   bindAreaDrag('ability', textAreaElement, resizeHandle);
   bindAreaDrag('name', nameTextAreaElement, nameResizeHandle);
+
+  deckSelect.addEventListener('change', () => {
+    void selectDeck(deckSelect.value);
+  });
 
   artSelect.addEventListener('change', () => {
     void selectArtImage(artSelect.value);
@@ -396,6 +431,10 @@ function finishDrag(event: PointerEvent, areaElement: HTMLDivElement): void {
   }
 }
 
+/**
+ * 현재 편집 중인 텍스트 영역을 서버의 `card_frame_meta.json`에 저장한다.
+ * 두 영역이 모두 준비되지 않으면 아무 작업도 하지 않는다.
+ */
 async function saveArea(): Promise<void> {
   if (!abilityArea || !nameArea) {
     return;
@@ -406,6 +445,7 @@ async function saveArea(): Promise<void> {
 
   try {
     const response = await postJson('/api/card-text-tool/save-area', {
+      deckId: currentDeckId,
       cardId: currentCardId,
       area: abilityArea,
       nameArea,
@@ -419,6 +459,10 @@ async function saveArea(): Promise<void> {
   }
 }
 
+/**
+ * 현재 선택된 카드와 텍스트 영역을 서버에 보내 PNG와 WEBP 생성을 요청한다.
+ * 저장된 편집 상태를 기준으로 합성하므로, UI에 보이는 값이 그대로 결과물에 반영된다.
+ */
 async function generateCard(): Promise<void> {
   if (!abilityArea || !nameArea) {
     return;
@@ -430,6 +474,7 @@ async function generateCard(): Promise<void> {
   try {
     const result = await generateCardImage({
       cardId: currentCardId,
+      deckId: currentDeckId,
       artImage: selectedArtImage,
       area: cloneArea(abilityArea),
       nameArea: cloneArea(nameArea),
@@ -451,6 +496,10 @@ async function generateCard(): Promise<void> {
   }
 }
 
+/**
+ * 현재 art 목록 전체를 순회하며 카드 이미지를 일괄 생성한다.
+ * 개별 카드 실패는 중단하지 않고 수집만 하며, 마지막 성공 결과는 별도 링크로 남긴다.
+ */
 async function generateAllCards(): Promise<void> {
   if (!editorData || !abilityArea || !nameArea) {
     return;
@@ -482,6 +531,7 @@ async function generateAllCards(): Promise<void> {
 
       try {
         const result = await generateCardImage({
+          deckId: currentDeckId,
           cardId,
           artImage: artImage.path,
           area,
@@ -519,7 +569,12 @@ async function generateAllCards(): Promise<void> {
   }
 }
 
+/**
+ * 단일 카드의 합성을 서버에 요청하고 결과 경로를 돌려받는다.
+ * 클라이언트는 실제 이미지 생성 대신 요청 payload만 구성한다.
+ */
 async function generateCardImage(input: {
+  deckId: string;
   cardId: string;
   artImage: string;
   area: TextAreaRegion;
@@ -528,6 +583,7 @@ async function generateCardImage(input: {
   artOffsetY: number;
 }): Promise<{ outputPath: string; outputUrl: string }> {
   const response = await postJson('/api/card-text-tool/generate', {
+    deckId: input.deckId,
     cardId: input.cardId,
     area: input.area,
     nameArea: input.nameArea,
@@ -539,6 +595,10 @@ async function generateCardImage(input: {
   return (await response.json()) as { outputPath: string; outputUrl: string };
 }
 
+/**
+ * JSON 요청을 보내고 실패 응답은 본문까지 포함해 예외로 올린다.
+ * 서버 오류 메시지를 그대로 상태줄에 보여주기 위한 얇은 래퍼다.
+ */
 async function postJson(path: string, body: unknown): Promise<Response> {
   const response = await fetch(path, {
     method: 'POST',
@@ -555,7 +615,12 @@ async function postJson(path: string, body: unknown): Promise<Response> {
   return response;
 }
 
+/**
+ * 현재 카드 ID와 선택 상태를 기준으로 서버에서 편집 데이터를 다시 읽는다.
+ * query string이 결과를 결정하므로, 변경된 선택값은 모두 여기에 반영해야 한다.
+ */
 async function fetchEditorData(input: {
+  deckId?: string | null;
   cardId?: string | null;
   captureId?: string | null;
   artImage?: string | null;
@@ -563,6 +628,7 @@ async function fetchEditorData(input: {
   artOffsetY?: string | number | null;
 }): Promise<EditorData> {
   const query = new URLSearchParams();
+  setOptionalQueryParam(query, 'deckId', input.deckId);
   setOptionalQueryParam(query, 'cardId', input.cardId);
   setOptionalQueryParam(query, 'captureId', input.captureId);
   setOptionalQueryParam(query, 'artImage', input.artImage);
@@ -577,11 +643,16 @@ async function fetchEditorData(input: {
   return (await response.json()) as EditorData;
 }
 
+/**
+ * 서버 응답을 현재 편집 상태에 반영하고, 필요하면 기본값 스냅샷도 다시 잡는다.
+ * 같은 카드로 돌아오는 경우에는 기존 드래그 상태보다 서버값을 우선한다.
+ */
 function applyEditorData(
   data: EditorData,
   options: { resetAreas: boolean; resetDefaults: boolean },
 ): void {
   editorData = data;
+  currentDeckId = data.selectedDeckId;
   currentCardId = data.card.id;
   if (options.resetAreas || !abilityArea || !nameArea) {
     abilityArea = cloneArea(data.textArea);
@@ -609,6 +680,10 @@ function applyEditorData(
   renderAreas();
 }
 
+/**
+ * 드롭다운에서 선택한 일러스트에 맞는 카드 정보를 다시 불러온다.
+ * 카드 ID는 파일명에서 유도하므로, 없는 카드를 고르면 서버에서 바로 거절된다.
+ */
 async function selectArtImage(artImage: string): Promise<void> {
   setBusy(true);
   setStatus('선택한 일러스트의 카드 정보를 불러오는 중입니다.');
@@ -616,6 +691,7 @@ async function selectArtImage(artImage: string): Promise<void> {
   try {
     const nextCardId = cardIdFromAssetPath(artImage);
     const nextData = await fetchEditorData({
+      deckId: currentDeckId,
       cardId: nextCardId,
       artImage,
       referenceImage: selectedReferenceImage,
@@ -630,16 +706,64 @@ async function selectArtImage(artImage: string): Promise<void> {
   }
 }
 
+/**
+ * 선택한 덱의 첫 번째 사용 가능한 일러스트와 카드 정보를 불러온다.
+ * 텍스트 영역 좌표는 덱과 무관한 프레임 메타이므로 현재 편집값을 유지한다.
+ */
+async function selectDeck(deckId: string): Promise<void> {
+  setBusy(true);
+  setStatus('선택한 덱 정보를 불러오는 중입니다.');
+
+  try {
+    const nextData = await fetchEditorData({
+      deckId,
+      referenceImage: selectedReferenceImage,
+      artOffsetY,
+    });
+    applyEditorData(nextData, { resetAreas: false, resetDefaults: false });
+    setStatus(`${nextData.selectedDeckId} / ${nextData.card.name} 정보를 반영했습니다.`);
+  } catch (error) {
+    setStatus(formatError(error));
+  } finally {
+    setBusy(false);
+  }
+}
+
+/**
+ * 현재 카드와 활성 영역의 텍스트를 화면에 다시 그린다.
+ * 카드 이름, BBCode 미리보기, 활성 입력 필드를 함께 맞춘다.
+ */
 function renderCardText(data: EditorData): void {
   cardSummaryElement.textContent = `${data.card.name} / ${data.card.id}`;
   renderActiveAreaFields();
   syncBBCodePreviews();
 }
 
+/**
+ * 일러스트, 레퍼런스, Y 오프셋 선택 상태를 컨트롤 UI에 동기화한다.
+ * 실제 렌더링은 별도 함수에서 처리하므로 여기서는 입력값만 맞춘다.
+ */
 function renderAssetControls(data: EditorData): void {
+  renderDeckOptions(deckSelect, data.deckOptions, currentDeckId);
   renderAssetOptions(artSelect, data.artImages, selectedArtImage);
   renderAssetOptions(referenceSelect, data.referenceImages, selectedReferenceImage);
   artOffsetYInput.value = String(artOffsetY);
+}
+
+function renderDeckOptions(
+  select: HTMLSelectElement,
+  deckOptions: DeckOption[],
+  selectedDeckId: string,
+): void {
+  select.replaceChildren(
+    ...deckOptions.map((deck) => {
+      const option = document.createElement('option');
+      option.value = deck.id;
+      option.textContent = `${deck.name} (${deck.cardCount})`;
+      option.selected = deck.id === selectedDeckId;
+      return option;
+    }),
+  );
 }
 
 function renderAssetOptions(
@@ -658,6 +782,10 @@ function renderAssetOptions(
   );
 }
 
+/**
+ * 카드 아트와 레퍼런스 프레임을 현재 선택값으로 다시 배치한다.
+ * 캔버스 비율과 실제 이미지 비율이 다를 수 있으므로, DOM 레이어는 화면 크기에 맞춘다.
+ */
 function renderImageLayers(): void {
   if (!editorData) {
     return;
@@ -674,6 +802,10 @@ function renderImageLayers(): void {
   artOffsetYInput.value = String(artOffsetY);
 }
 
+/**
+ * 편집 중인 텍스트 영역의 위치와 미리보기를 다시 계산한다.
+ * 레이아웃 변경 뒤에는 BBCode 렌더가 다음 프레임에서 다시 수행된다.
+ */
 function renderAreas(): void {
   if (!editorData || !abilityArea || !nameArea) {
     return;
@@ -704,6 +836,10 @@ function renderAreaElement(element: HTMLDivElement, area: TextAreaRegion): void 
   element.style.borderColor = area.stroke;
 }
 
+/**
+ * 현재 활성 영역과 탭 상태를 다시 그린다.
+ * 숫자 입력과 미리보기 텍스트는 활성 영역 기준으로만 맞춘다.
+ */
 function renderActiveAreaFields(): void {
   const area = getActiveArea();
   if (!area) {
@@ -722,19 +858,34 @@ function renderActiveAreaFields(): void {
   textPreviewElement.textContent = getActiveTextPreview();
 }
 
+/**
+ * 사용자가 편집 중인 영역을 바꾸고, 그에 맞는 입력 필드를 다시 표시한다.
+ */
 function setActiveArea(key: AreaKey): void {
   activeAreaKey = key;
   renderActiveAreaFields();
 }
 
+/**
+ * 현재 활성화된 텍스트 영역을 돌려준다.
+ * 탭 상태에 따라 능력치 영역 또는 이름 영역을 선택한다.
+ */
 function getActiveArea(): TextAreaRegion | null {
   return getArea(activeAreaKey);
 }
 
+/**
+ * 지정된 키에 해당하는 편집 영역을 찾는다.
+ * 두 영역 외의 키는 허용하지 않는다.
+ */
 function getArea(key: AreaKey): TextAreaRegion | null {
   return key === 'ability' ? abilityArea : nameArea;
 }
 
+/**
+ * 활성 영역에 대응하는 미리보기 텍스트를 꺼낸다.
+ * 화면 표시용 텍스트와 실제 편집 좌표를 분리해 둔다.
+ */
 function getActiveTextPreview(): string {
   if (!editorData) {
     return '';
@@ -743,6 +894,10 @@ function getActiveTextPreview(): string {
   return activeAreaKey === 'ability' ? editorData.abilityText : editorData.nameText;
 }
 
+/**
+ * BBCode 미리보기를 양쪽 영역 모두 다시 렌더링하고 준비 상태를 갱신한다.
+ * 캡처 모드에서는 폰트가 완전히 올라간 뒤에만 완료 플래그를 세운다.
+ */
 function syncBBCodePreviews(): void {
   syncAbilityBBCodePreview();
   syncNameBBCodePreview();
@@ -751,6 +906,10 @@ function syncBBCodePreviews(): void {
   });
 }
 
+/**
+ * 능력치 텍스트 영역의 미리보기를 실제 렌더링 폰트 규칙에 맞춰 출력한다.
+ * 글자 외곽선은 화면 축소 비율에 맞춰 다시 계산한다.
+ */
 function syncAbilityBBCodePreview(): void {
   if (!editorData || !abilityArea) {
     return;
@@ -771,6 +930,10 @@ function syncAbilityBBCodePreview(): void {
   renderInlineBBCode(bbcodePreviewElement, editorData.abilityText);
 }
 
+/**
+ * 이름 텍스트 영역의 미리보기를 가운데 정렬 규칙에 맞춰 출력한다.
+ * 카드 이름은 능력치 텍스트와 달리 수직 중앙 배치를 유지한다.
+ */
 function syncNameBBCodePreview(): void {
   if (!editorData || !nameArea) {
     return;
@@ -957,6 +1120,10 @@ function rgbaFromHex(hex: string, alpha: number): string {
   return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
 }
 
+/**
+ * 현재 선택된 폰트를 브라우저에서 사용할 수 있도록 등록한다.
+ * 로컬 파일이 없거나 손상된 경우에는 호출자에서 폴백 처리한다.
+ */
 async function loadRuntimeFont(fontFile: string): Promise<void> {
   if (!editorData) {
     return;
@@ -973,6 +1140,10 @@ function setBusy(isBusy: boolean): void {
   generateButton.disabled = isBusy;
   generateAllButton.disabled = isBusy;
   resetButton.disabled = isBusy;
+  deckSelect.disabled = isBusy;
+  artSelect.disabled = isBusy;
+  referenceSelect.disabled = isBusy;
+  artOffsetYInput.disabled = isBusy;
 }
 
 function setStatus(message: string): void {

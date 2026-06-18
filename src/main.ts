@@ -413,6 +413,10 @@ class MainMenuScene extends Phaser.Scene {
   }
 }
 
+/**
+ * 메뉴 버튼의 시각적 상태와 클릭 가능 여부를 함께 구성한다.
+ * 비활성 버튼은 상호작용을 제거하고, 활성 버튼만 전달된 콜백을 실행한다.
+ */
 function createMenuButton(
   scene: Phaser.Scene,
   config: {
@@ -486,12 +490,20 @@ async function fetchAssetsManifest(assetBaseUrl: string): Promise<AssetsManifest
   return (await response.json()) as AssetsManifest;
 }
 
+/**
+ * `/tcg` 하위 경로와 개별 자산 경로를 안전하게 합친다.
+ * 이미 절대 경로처럼 들어온 조각은 앞쪽 슬래시만 정리한다.
+ */
 function joinAssetUrl(assetBaseUrl: string, assetPath: string): string {
   const normalizedBase = normalizeAssetBaseUrl(assetBaseUrl);
   const normalizedPath = assetPath.replace(/^\/+/, '');
   return `${normalizedBase}/${normalizedPath}`;
 }
 
+/**
+ * 자산 base URL이 요청 경로와 비교 가능한 형태가 되도록 정규화한다.
+ * 루트 경로는 `/`로 유지하고, 그 외 경로는 앞뒤 중복 슬래시를 정리한다.
+ */
 function normalizeAssetBaseUrl(assetBaseUrl: string): string {
   if (!assetBaseUrl.startsWith('/')) {
     return `/${assetBaseUrl.replace(/^\/+/, '')}`.replace(/\/+$/, '');
@@ -500,6 +512,10 @@ function normalizeAssetBaseUrl(assetBaseUrl: string): string {
   return assetBaseUrl.replace(/\/+$/, '') || '/';
 }
 
+/**
+ * 화면에 표시할 에러를 문자열로 바꾼다.
+ * 사용자에게는 네트워크/런타임 실패가 그대로 보이므로, 여기서는 추상화하지 않는다.
+ */
 function formatError(error: unknown): string {
   if (error instanceof Error) {
     return error.message;

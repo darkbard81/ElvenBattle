@@ -3,21 +3,21 @@ import fs from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { appConfig } from '../config';
+import { appConfig } from '../../../config';
 import sharp from 'sharp';
-import type { Plugin, ViteDevServer } from 'vite';
 
-const projectRoot = fileURLToPath(new URL('../..', import.meta.url));
+const projectRoot = fileURLToPath(new URL('../../../../', import.meta.url));
 const assetsRoot = path.join(projectRoot, 'assets');
 const assetsManifestPath = path.join(assetsRoot, 'assets.json');
 const metaPath = path.join(projectRoot, 'cards/card_frame_meta.json');
-const deckPath = path.join(projectRoot, 'cards/deck_test.json');
+const cardsRoot = path.join(projectRoot, 'cards');
 const schemaPath = path.join(projectRoot, 'cards/card.schema.json');
 const artAssetsDir = path.join(assetsRoot, 'cards/arts');
-const referenceAssetsDir = path.join(projectRoot, 'cards/reference');
+const referenceAssetsDir = path.join(assetsRoot, 'cards/reference');
 const pendingCaptures = new Map<
   string,
   {
+    deckId: string;
     cardId: string;
     area: TextAreaRegion;
     nameArea: TextAreaRegion;
@@ -93,6 +93,13 @@ type DeckData = {
   cards: Card[];
 };
 
+type DeckOption = {
+  id: string;
+  name: string;
+  cardCount: number;
+  filePath: string;
+};
+
 type CardAssetPaths = {
   png: string;
   webp: string;
@@ -119,6 +126,7 @@ type AssetImage = {
 };
 
 type SaveAreaPayload = {
+  deckId?: string;
   cardId: string;
   area: TextAreaRegion;
   nameArea: TextAreaRegion;
@@ -173,83 +181,24 @@ const defaultNameTextArea: TextAreaRegion = {
     '카드 이름을 하단 중앙 영역에 배치하는 텍스트 영역. 브라우저 편집 도구에서 위치와 크기를 조정한다.',
 };
 
-export function cardTextToolPlugin(): Plugin {
-  return {
-    name: 'card-text-tool',
-    configureServer(server: ViteDevServer) {
-      registerMiddlewares(server.middlewares);
-    },
-    configurePreviewServer(server) {
-      registerMiddlewares(server.middlewares);
-    },
-  };
-}
-
-function registerMiddlewares(middlewares: ViteDevServer['middlewares']): void {
-  middlewares.use((request, response, next) => {
-    void (async () => {
-      const handled = await handleAssetRequest(request, response, next);
-      if (handled) {
-        return;
-      }
-
-      await handleCardTextToolRequest(request, response, next);
-    })().catch((error) => {
-      next(error as Error);
-    });
-  });
-}
-
-async function handleAssetRequest(
+/**
+ * `/api/card-text-tool/...` 요청을 처리하는 전용 API 핸들러를 만든다.
+ * 카드 메타 저장, PNG/WEBP 생성, capture용 합성까지 이 경로에서만 처리한다.
+ */
+export function createCardTextApiHandler(): (
   request: IncomingMessage,
   response: ServerResponse,
   next: () => void,
-): Promise<boolean> {
-  const url = new URL(request.url ?? '/', 'http://localhost');
-  const assetBaseUrl = normalizeAssetBaseUrl(appConfig.assets.assetBaseUrl);
-
-  if (!isAssetRoute(url.pathname, assetBaseUrl)) {
-    return false;
-  }
-
-  if (request.method !== 'GET' && request.method !== 'HEAD') {
-    response.statusCode = 405;
-    response.end('Method Not Allowed');
-    return true;
-  }
-
-  const requestedPath = url.pathname.slice(assetBaseUrl.length).replace(/^\/+/, '');
-  if (!requestedPath || requestedPath === 'assets.json') {
-    try {
-      const manifest = await readAssetsManifest();
-      sendJson(response, manifest);
-    } catch {
-      response.statusCode = 404;
-      response.end('Not found');
-    }
-    return true;
-  }
-
-  const filePath = path.resolve(assetsRoot, requestedPath);
-  if (!isWithinDirectory(filePath, assetsRoot)) {
-    response.statusCode = 403;
-    response.end('Forbidden');
-    return true;
-  }
-
-  try {
-    const file = await fs.readFile(filePath);
-    response.statusCode = 200;
-    response.setHeader('Content-Type', getMimeType(filePath));
-    response.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
-    response.end(request.method === 'HEAD' ? undefined : file);
-    return true;
-  } catch {
-    next();
-    return true;
-  }
+) => Promise<void> {
+  return async (request, response, next) => {
+    await handleCardTextToolRequest(request, response, next);
+  };
 }
 
+/**
+ * `/api/card-text-tool/...` 요청을 분기 처리한다.
+ * 데이터 조회, 저장, 이미지 생성은 모두 이 경로에서만 다룬다.
+ */
 async function handleCardTextToolRequest(
   request: IncomingMessage,
   response: ServerResponse,
@@ -267,9 +216,14 @@ async function handleCardTextToolRequest(
       const meta = await readFrameMeta();
       const manifest = await readAssetsManifest();
       const assetBaseUrl = normalizeAssetBaseUrl(manifest.assetBaseUrl);
-      const deck = await readJsonFile<DeckData>(deckPath);
+      const deckOptions = await listDeckOptions();
+      const selectedDeck = selectDeckOption(url.searchParams.get('deckId'), deckOptions);
+      const deck = await readJsonFile<DeckData>(selectedDeck.filePath);
       const schema = await readJsonFile<JsonRecord>(schemaPath);
-      const artImages = await listAssetImages(artAssetsDir, 'cards/arts');
+      const artImages = filterAssetImagesForDeck(
+        deck,
+        await listAssetImages(artAssetsDir, 'cards/arts'),
+      );
       const referenceImages = await listAssetImages(referenceAssetsDir, 'cards/reference');
       const requestedCardId = url.searchParams.get('cardId');
       const selectedArtImage =
@@ -278,7 +232,11 @@ async function handleCardTextToolRequest(
       const resolvedCardId = requestedCardId ?? cardIdFromAssetPath(selectedArtImage);
       const card = findCard(deck, resolvedCardId);
       const abilityTitles = getAbilityCategoryTitles(schema);
-      const pendingCapture = readPendingCapture(url.searchParams.get('captureId'), card.id);
+      const pendingCapture = readPendingCapture(
+        url.searchParams.get('captureId'),
+        selectedDeck.id,
+        card.id,
+      );
       const textArea = pendingCapture?.area ?? readTextArea(meta);
       const nameTextArea = pendingCapture?.nameArea ?? readNameTextArea(meta, textArea);
       const selectedReferenceImage =
@@ -297,6 +255,8 @@ async function handleCardTextToolRequest(
       sendJson(response, {
         canvas: meta.canvas,
         assetBaseUrl,
+        deckOptions: deckOptions.map(toPublicDeckOption),
+        selectedDeckId: selectedDeck.id,
         card,
         abilityText: formatAbilityText(card, abilityTitles, textArea),
         nameText: formatNameText(card, nameTextArea),
@@ -329,11 +289,16 @@ async function handleCardTextToolRequest(
       const meta = await readFrameMeta();
       const manifest = await readAssetsManifest();
       const assetBaseUrl = normalizeAssetBaseUrl(manifest.assetBaseUrl);
-      const deck = await readJsonFile<DeckData>(deckPath);
+      const deckOptions = await listDeckOptions();
+      const selectedDeck = selectDeckOption(payload.deckId, deckOptions);
+      const deck = await readJsonFile<DeckData>(selectedDeck.filePath);
       const card = findCard(deck, payload.cardId);
       const area = normalizeTextArea(payload.area);
       const nameArea = normalizeTextArea(payload.nameArea, defaultNameTextArea);
-      const artImages = await listAssetImages(artAssetsDir, 'cards/arts');
+      const artImages = filterAssetImagesForDeck(
+        deck,
+        await listAssetImages(artAssetsDir, 'cards/arts'),
+      );
       const referenceImages = await listAssetImages(referenceAssetsDir, 'cards/reference');
       const artImage =
         selectAssetPath(payload.artImage, artImages, 'art image', assetBaseUrl) ??
@@ -349,6 +314,7 @@ async function handleCardTextToolRequest(
         request,
         area,
         nameArea,
+        deckId: selectedDeck.id,
         cardId: card.id,
         canvas: meta.canvas,
         outputCardPath,
@@ -389,6 +355,74 @@ async function readAssetsManifest(): Promise<AssetsManifest> {
   return readJsonFile<AssetsManifest>(assetsManifestPath);
 }
 
+/**
+ * 작업 가능한 덱 파일을 `cards/deck_*.json` 규칙으로만 수집한다.
+ * 카드 텍스트 툴은 임의 경로를 받지 않고, repo-root cards 폴더의 덱만 대상으로 삼는다.
+ */
+async function listDeckOptions(): Promise<DeckOption[]> {
+  const entries = await fs.readdir(cardsRoot);
+  const deckFiles = entries
+    .filter((entry) => /^deck_[a-z0-9_-]+\.json$/i.test(entry))
+    .sort((left, right) => left.localeCompare(right));
+
+  if (deckFiles.length === 0) {
+    throw new Error('No deck JSON files found in cards/deck_*.json');
+  }
+
+  return Promise.all(
+    deckFiles.map(async (entry) => {
+      const filePath = path.join(cardsRoot, entry);
+      const deck = await readJsonFile<DeckData>(filePath);
+      return {
+        id: path.basename(entry, '.json'),
+        name: entry,
+        cardCount: Array.isArray(deck.cards) ? deck.cards.length : 0,
+        filePath,
+      };
+    }),
+  );
+}
+
+/**
+ * 요청된 덱 ID를 실제 덱 파일 옵션으로 해석한다.
+ * 선택값이 없으면 기존 동작과 호환되도록 `deck_test`를 우선 사용하고, 허용되지 않은 이름은 즉시 거절한다.
+ */
+function selectDeckOption(
+  requestedDeckId: string | null | undefined,
+  deckOptions: DeckOption[],
+): DeckOption {
+  const firstDeck = deckOptions[0];
+  if (!firstDeck) {
+    throw new Error('No deck JSON files found in cards/deck_*.json');
+  }
+
+  const fallbackDeck = deckOptions.find((option) => option.id === 'deck_test') ?? firstDeck;
+  const deckId = requestedDeckId?.trim();
+
+  if (!deckId) {
+    return fallbackDeck;
+  }
+
+  if (!/^deck_[a-z0-9_-]+$/i.test(deckId)) {
+    throw new Error(`Invalid deck id: ${requestedDeckId}`);
+  }
+
+  const selectedDeck = deckOptions.find((option) => option.id === deckId);
+  if (!selectedDeck) {
+    throw new Error(`Deck not found: ${deckId}`);
+  }
+
+  return selectedDeck;
+}
+
+function toPublicDeckOption(option: DeckOption): Omit<DeckOption, 'filePath'> {
+  return {
+    id: option.id,
+    name: option.name,
+    cardCount: option.cardCount,
+  };
+}
+
 function readTextArea(meta: FrameMeta): TextAreaRegion {
   const maybeRegion = meta.regions.ability_text_area;
   return normalizeTextArea(isRecord(maybeRegion) ? maybeRegion : defaultTextArea);
@@ -407,23 +441,28 @@ function readNameTextArea(meta: FrameMeta, abilityArea: TextAreaRegion): TextAre
   };
 }
 
-function readPendingCapture(captureId: string | null, cardId: string) {
+function readPendingCapture(captureId: string | null, deckId: string, cardId: string) {
   if (!captureId) {
     return null;
   }
 
   const pendingCapture = pendingCaptures.get(captureId);
-  if (!pendingCapture || pendingCapture.cardId !== cardId) {
+  if (!pendingCapture || pendingCapture.deckId !== deckId || pendingCapture.cardId !== cardId) {
     return null;
   }
 
   return pendingCapture;
 }
 
+/**
+ * 브라우저 캡처로 카드 합성 이미지를 만든다.
+ * 렌더링 실패는 그대로 예외로 올려서 상위 요청이 중단되게 한다.
+ */
 async function renderCardByScreenshot(input: {
   request: IncomingMessage;
   area: TextAreaRegion;
   nameArea: TextAreaRegion;
+  deckId: string;
   cardId: string;
   canvas: CanvasMeta;
   outputCardPath: string;
@@ -433,6 +472,7 @@ async function renderCardByScreenshot(input: {
 }): Promise<void> {
   const captureId = crypto.randomUUID();
   pendingCaptures.set(captureId, {
+    deckId: input.deckId,
     cardId: input.cardId,
     area: input.area,
     nameArea: input.nameArea,
@@ -442,10 +482,10 @@ async function renderCardByScreenshot(input: {
   });
 
   const host = input.request.headers.host ?? `${appConfig.capture.host}:${appConfig.server.port}`;
-  // const captureUrl = new URL(`http://${host}/`);
   const captureUrl = new URL('/tools/card-text/', `http://${host}`);
   captureUrl.searchParams.set('capture', '1');
   captureUrl.searchParams.set('captureId', captureId);
+  captureUrl.searchParams.set('deckId', input.deckId);
   captureUrl.searchParams.set('cardId', input.cardId);
   captureUrl.searchParams.set('artImage', input.artImage);
   captureUrl.searchParams.set('referenceImage', input.referenceImage);
@@ -484,6 +524,10 @@ function toProjectPath(targetPath: string): string {
   return path.relative(projectRoot, targetPath).split(path.sep).join('/');
 }
 
+/**
+ * 생성된 합성 이미지를 repo-root 기준 PNG와 WEBP로 정리한다.
+ * 카드는 2:3 비율을 강제하며, 실패하면 바로 예외를 던진다.
+ */
 async function finalizeCardAssets(cardId: string, sourcePath: string): Promise<CardAssetPaths> {
   const sharpFactory = sharp as unknown as SharpFactory;
   const pngDir = path.join(projectRoot, 'assets/cards/png');
@@ -527,10 +571,6 @@ function normalizeAssetBaseUrl(assetBaseUrl: string): string {
   return assetBaseUrl.replace(/\/+$/, '') || '/';
 }
 
-function isAssetRoute(pathname: string, assetBaseUrl: string): boolean {
-  return pathname === assetBaseUrl || pathname.startsWith(`${assetBaseUrl}/`);
-}
-
 function normalizeAssetPath(requestedPath: string, assetBaseUrl: string): string {
   const stripped = requestedPath.replace(/^https?:\/\/[^/]+/i, '').replace(/^\/+/, '');
   const normalizedBaseUrl = normalizeAssetBaseUrl(assetBaseUrl).replace(/^\/+/, '');
@@ -556,48 +596,15 @@ function toAssetUrl(assetBaseUrl: string, assetPath: string): string {
   return `${normalizedBaseUrl}/${normalizedPath}`;
 }
 
-function isWithinDirectory(targetPath: string, directoryPath: string): boolean {
-  const relativePath = path.relative(directoryPath, targetPath);
-  return relativePath !== '' && !relativePath.startsWith('..') && !path.isAbsolute(relativePath);
-}
-
-function getMimeType(filePath: string): string {
-  switch (path.extname(filePath).toLowerCase()) {
-    case '.png':
-      return 'image/png';
-    case '.webp':
-      return 'image/webp';
-    case '.jpg':
-    case '.jpeg':
-      return 'image/jpeg';
-    case '.svg':
-      return 'image/svg+xml';
-    case '.json':
-      return 'application/json; charset=utf-8';
-    case '.ttf':
-      return 'font/ttf';
-    case '.otf':
-      return 'font/otf';
-    case '.woff':
-      return 'font/woff';
-    case '.woff2':
-      return 'font/woff2';
-    default:
-      return 'application/octet-stream';
-  }
-}
-
-async function clearTempFiles(): Promise<void> {
-  let entries: string[];
-  try {
-    entries = await fs.readdir(path.join(projectRoot, 'cards/temp'));
-  } catch {
-    return;
-  }
-
-  await Promise.all(
-    entries.map((entry) => fs.rm(path.join(projectRoot, 'cards/temp', entry), { force: true })),
-  );
+function clearTempFiles(): Promise<void> {
+  return fs
+    .readdir(path.join(projectRoot, 'cards/temp'))
+    .catch(() => [])
+    .then((entries) =>
+      Promise.all(
+        entries.map((entry) => fs.rm(path.join(projectRoot, 'cards/temp', entry), { force: true })),
+      ).then(() => undefined),
+    );
 }
 
 function createNameTextAreaFromSafeArea(meta: FrameMeta): TextAreaRegion {
@@ -624,6 +631,10 @@ function readDefaultArtOffsetY(meta: FrameMeta): number {
   return Math.round(toInteger(chromaArea.y, 0) / 2);
 }
 
+/**
+ * 자산 디렉터리에서 카드 이미지 후보만 모아 정렬한다.
+ * 비어 있으면 요청이 더 진행되지 않도록 즉시 예외를 던진다.
+ */
 async function listAssetImages(directoryPath: string, assetDir: string): Promise<AssetImage[]> {
   let entries: string[];
   try {
@@ -645,6 +656,21 @@ async function listAssetImages(directoryPath: string, assetDir: string): Promise
   }
 
   return images;
+}
+
+/**
+ * 선택된 덱에 포함된 카드 ID와 일치하는 일러스트만 남긴다.
+ * 덱별 일괄 생성이 다른 덱의 아트를 섞어 처리하지 않도록 하는 서버 측 방어선이다.
+ */
+function filterAssetImagesForDeck(deck: DeckData, images: AssetImage[]): AssetImage[] {
+  const cardIds = new Set(deck.cards.map((card) => card.id));
+  const deckImages = images.filter((image) => cardIds.has(cardIdFromAssetPath(image.path)));
+
+  if (deckImages.length === 0) {
+    throw new Error('No art images found for the selected deck');
+  }
+
+  return deckImages;
 }
 
 function selectAssetPath(
@@ -674,6 +700,10 @@ function selectFirstAssetPath(images: AssetImage[], label: string): string {
   return firstImage.path;
 }
 
+/**
+ * 카드 ID에 맞는 일러스트를 찾고, 없으면 첫 번째 후보를 사용한다.
+ * 파일명 규칙이 카드 ID와 일치한다는 전제를 따른다.
+ */
 function selectArtImageForCard(cardId: string | null | undefined, images: AssetImage[]): string {
   if (cardId) {
     const matchingImage = images.find((image) => cardIdFromAssetPath(image.path) === cardId);
@@ -698,6 +728,10 @@ function readOptionalInteger(value: string | null, fallback: number): number {
   return Number.isFinite(numericValue) ? Math.round(numericValue) : fallback;
 }
 
+/**
+ * 메타와 요청 payload를 텍스트 영역 구조로 정규화한다.
+ * 누락된 수치는 기본값으로 보정하고, 타입 태그는 항상 고정한다.
+ */
 function normalizeTextArea(
   area: JsonRecord | TextAreaRegion,
   fallback: TextAreaRegion = defaultTextArea,
@@ -778,6 +812,10 @@ function escapeBBCode(value: string): string {
   return value.replace(/\[/g, '[esc][').replace(/\]/g, '][/esc]');
 }
 
+/**
+ * 저장/생성 요청 본문이 카드 편집 payload인지 검증한다.
+ * 필요한 필드가 하나라도 비면 즉시 거절한다.
+ */
 function validateAreaPayload(value: unknown): SaveAreaPayload {
   if (
     !isRecord(value) ||
@@ -789,6 +827,7 @@ function validateAreaPayload(value: unknown): SaveAreaPayload {
   }
 
   return {
+    ...(typeof value.deckId === 'string' ? { deckId: value.deckId } : {}),
     cardId: value.cardId,
     area: normalizeTextArea(value.area),
     nameArea: normalizeTextArea(value.nameArea, defaultNameTextArea),
@@ -798,6 +837,10 @@ function validateAreaPayload(value: unknown): SaveAreaPayload {
   };
 }
 
+/**
+ * 요청 본문을 스트림에서 읽어 JSON으로 파싱한다.
+ * 파싱 실패는 호출자에게 그대로 전달한다.
+ */
 function readRequestJson(request: IncomingMessage): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];

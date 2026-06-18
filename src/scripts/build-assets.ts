@@ -33,6 +33,10 @@ async function walk(dir: string): Promise<string[]> {
   return files;
 }
 
+/**
+ * 파일 경로를 manifest용 텍스처 키로 바꾼다.
+ * 폴더 구조를 점으로 이어 namespace처럼 취급한다.
+ */
 function buildKey(filePath: string): string {
   const relativePath = path.relative(assetsRoot, filePath);
   const parts = relativePath.split(path.sep);
@@ -43,6 +47,10 @@ function buildKey(filePath: string): string {
   return folderName ? `${namespace}.${folderName}.${baseName}` : `${namespace}.${baseName}`;
 }
 
+/**
+ * `assets/`를 순회해 텍스처 manifest를 다시 생성한다.
+ * 실제 파일 해시와 경로를 함께 넣어 런타임 캐시 무결성을 유지한다.
+ */
 async function main(): Promise<void> {
   const textures: Array<{ key: string; path: string; revision: string }> = [];
   const files = await walk(assetsRoot);
