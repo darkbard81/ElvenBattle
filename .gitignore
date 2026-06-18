@@ -8,7 +8,4 @@ generated/*
 # Ignore image/output folders under cards, but keep JSON files directly in /cards
 /cards/*/
 assets/*
-!assets/fonts/
-!assets/fonts/**
-assets/assets.json
 .env
