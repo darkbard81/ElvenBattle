@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "assets:build": "tsx scripts/build-assets.ts",
+    "assets:build": "tsx src/scripts/build-assets.ts",
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier . --write",

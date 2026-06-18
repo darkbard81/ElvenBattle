@@ -238,16 +238,7 @@
     "card": {
       "type": "object",
       "description": "카드 1장의 정의",
-      "required": [
-        "id",
-        "name",
-        "rarity",
-        "type",
-        "traits",
-        "abilities",
-        "description",
-        "note"
-      ],
+      "required": ["id", "name", "rarity", "type", "traits", "abilities", "description", "note"],
       "additionalProperties": false,
       "properties": {
         "id": {

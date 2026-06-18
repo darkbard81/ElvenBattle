@@ -7,7 +7,7 @@ import { appConfig } from '../config';
 import sharp from 'sharp';
 import type { Plugin, ViteDevServer } from 'vite';
 
-const projectRoot = fileURLToPath(new URL('..', import.meta.url));
+const projectRoot = fileURLToPath(new URL('../..', import.meta.url));
 const assetsRoot = path.join(projectRoot, 'assets');
 const assetsManifestPath = path.join(assetsRoot, 'assets.json');
 const metaPath = path.join(projectRoot, 'cards/card_frame_meta.json');
