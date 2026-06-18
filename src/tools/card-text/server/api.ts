@@ -3,18 +3,17 @@ import fs from 'node:fs/promises';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { appConfig } from '../config';
+import { appConfig } from '../../../config';
 import sharp from 'sharp';
-import type { Plugin, ViteDevServer } from 'vite';
 
-const projectRoot = fileURLToPath(new URL('../..', import.meta.url));
+const projectRoot = fileURLToPath(new URL('../../../../', import.meta.url));
 const assetsRoot = path.join(projectRoot, 'assets');
 const assetsManifestPath = path.join(assetsRoot, 'assets.json');
 const metaPath = path.join(projectRoot, 'cards/card_frame_meta.json');
 const deckPath = path.join(projectRoot, 'cards/deck_test.json');
 const schemaPath = path.join(projectRoot, 'cards/card.schema.json');
 const artAssetsDir = path.join(assetsRoot, 'cards/arts');
-const referenceAssetsDir = path.join(projectRoot, 'cards/reference');
+const referenceAssetsDir = path.join(assetsRoot, 'cards/reference');
 const pendingCaptures = new Map<
   string,
   {
@@ -173,81 +172,18 @@ const defaultNameTextArea: TextAreaRegion = {
     '카드 이름을 하단 중앙 영역에 배치하는 텍스트 영역. 브라우저 편집 도구에서 위치와 크기를 조정한다.',
 };
 
-export function cardTextToolPlugin(): Plugin {
-  return {
-    name: 'card-text-tool',
-    configureServer(server: ViteDevServer) {
-      registerMiddlewares(server.middlewares);
-    },
-    configurePreviewServer(server) {
-      registerMiddlewares(server.middlewares);
-    },
-  };
-}
-
-function registerMiddlewares(middlewares: ViteDevServer['middlewares']): void {
-  middlewares.use((request, response, next) => {
-    void (async () => {
-      const handled = await handleAssetRequest(request, response, next);
-      if (handled) {
-        return;
-      }
-
-      await handleCardTextToolRequest(request, response, next);
-    })().catch((error) => {
-      next(error as Error);
-    });
-  });
-}
-
-async function handleAssetRequest(
+/**
+ * `/api/card-text-tool/...` 요청을 처리하는 전용 API 핸들러를 만든다.
+ * 카드 메타 저장, PNG/WEBP 생성, capture용 합성까지 이 경로에서만 처리한다.
+ */
+export function createCardTextApiHandler(): (
   request: IncomingMessage,
   response: ServerResponse,
   next: () => void,
-): Promise<boolean> {
-  const url = new URL(request.url ?? '/', 'http://localhost');
-  const assetBaseUrl = normalizeAssetBaseUrl(appConfig.assets.assetBaseUrl);
-
-  if (!isAssetRoute(url.pathname, assetBaseUrl)) {
-    return false;
-  }
-
-  if (request.method !== 'GET' && request.method !== 'HEAD') {
-    response.statusCode = 405;
-    response.end('Method Not Allowed');
-    return true;
-  }
-
-  const requestedPath = url.pathname.slice(assetBaseUrl.length).replace(/^\/+/, '');
-  if (!requestedPath || requestedPath === 'assets.json') {
-    try {
-      const manifest = await readAssetsManifest();
-      sendJson(response, manifest);
-    } catch {
-      response.statusCode = 404;
-      response.end('Not found');
-    }
-    return true;
-  }
-
-  const filePath = path.resolve(assetsRoot, requestedPath);
-  if (!isWithinDirectory(filePath, assetsRoot)) {
-    response.statusCode = 403;
-    response.end('Forbidden');
-    return true;
-  }
-
-  try {
-    const file = await fs.readFile(filePath);
-    response.statusCode = 200;
-    response.setHeader('Content-Type', getMimeType(filePath));
-    response.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
-    response.end(request.method === 'HEAD' ? undefined : file);
-    return true;
-  } catch {
-    next();
-    return true;
-  }
+) => Promise<void> {
+  return async (request, response, next) => {
+    await handleCardTextToolRequest(request, response, next);
+  };
 }
 
 async function handleCardTextToolRequest(
@@ -442,7 +378,6 @@ async function renderCardByScreenshot(input: {
   });
 
   const host = input.request.headers.host ?? `${appConfig.capture.host}:${appConfig.server.port}`;
-  // const captureUrl = new URL(`http://${host}/`);
   const captureUrl = new URL('/tools/card-text/', `http://${host}`);
   captureUrl.searchParams.set('capture', '1');
   captureUrl.searchParams.set('captureId', captureId);
@@ -527,10 +462,6 @@ function normalizeAssetBaseUrl(assetBaseUrl: string): string {
   return assetBaseUrl.replace(/\/+$/, '') || '/';
 }
 
-function isAssetRoute(pathname: string, assetBaseUrl: string): boolean {
-  return pathname === assetBaseUrl || pathname.startsWith(`${assetBaseUrl}/`);
-}
-
 function normalizeAssetPath(requestedPath: string, assetBaseUrl: string): string {
   const stripped = requestedPath.replace(/^https?:\/\/[^/]+/i, '').replace(/^\/+/, '');
   const normalizedBaseUrl = normalizeAssetBaseUrl(assetBaseUrl).replace(/^\/+/, '');
@@ -556,48 +487,15 @@ function toAssetUrl(assetBaseUrl: string, assetPath: string): string {
   return `${normalizedBaseUrl}/${normalizedPath}`;
 }
 
-function isWithinDirectory(targetPath: string, directoryPath: string): boolean {
-  const relativePath = path.relative(directoryPath, targetPath);
-  return relativePath !== '' && !relativePath.startsWith('..') && !path.isAbsolute(relativePath);
-}
-
-function getMimeType(filePath: string): string {
-  switch (path.extname(filePath).toLowerCase()) {
-    case '.png':
-      return 'image/png';
-    case '.webp':
-      return 'image/webp';
-    case '.jpg':
-    case '.jpeg':
-      return 'image/jpeg';
-    case '.svg':
-      return 'image/svg+xml';
-    case '.json':
-      return 'application/json; charset=utf-8';
-    case '.ttf':
-      return 'font/ttf';
-    case '.otf':
-      return 'font/otf';
-    case '.woff':
-      return 'font/woff';
-    case '.woff2':
-      return 'font/woff2';
-    default:
-      return 'application/octet-stream';
-  }
-}
-
-async function clearTempFiles(): Promise<void> {
-  let entries: string[];
-  try {
-    entries = await fs.readdir(path.join(projectRoot, 'cards/temp'));
-  } catch {
-    return;
-  }
-
-  await Promise.all(
-    entries.map((entry) => fs.rm(path.join(projectRoot, 'cards/temp', entry), { force: true })),
-  );
+function clearTempFiles(): Promise<void> {
+  return fs
+    .readdir(path.join(projectRoot, 'cards/temp'))
+    .catch(() => [])
+    .then((entries) =>
+      Promise.all(
+        entries.map((entry) => fs.rm(path.join(projectRoot, 'cards/temp', entry), { force: true })),
+      ).then(() => undefined),
+    );
 }
 
 function createNameTextAreaFromSafeArea(meta: FrameMeta): TextAreaRegion {

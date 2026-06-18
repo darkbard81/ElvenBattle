@@ -1,6 +1,6 @@
 import { defineConfig } from 'vitest/config';
 import { appConfig } from './src/config';
-import { cardTextToolPlugin } from './src/server/card-text-tool-plugin';
+import { cardTextToolPlugin } from './src/tools/card-text/server/plugin';
 
 export default defineConfig({
   plugins: [cardTextToolPlugin()],

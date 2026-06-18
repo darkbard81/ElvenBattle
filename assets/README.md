@@ -26,4 +26,5 @@ assets/
   fonts/
   ui/
   cards/
+    reference/
 ```

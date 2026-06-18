@@ -241,11 +241,18 @@ async function initialize(): Promise<void> {
     if (!abilityArea) {
       throw new Error('Ability text area was not initialized.');
     }
-    await loadRuntimeFont(abilityArea.fontFile);
-    await document.fonts.ready;
-    syncBBCodePreviews();
     bindEvents();
-    setStatus('마우스로 흰색 영역을 드래그하거나 우하단 핸들로 크기를 조정할 수 있습니다.');
+    try {
+      await loadRuntimeFont(abilityArea.fontFile);
+      await document.fonts.ready;
+      syncBBCodePreviews();
+      setStatus('마우스로 흰색 영역을 드래그하거나 우하단 핸들로 크기를 조정할 수 있습니다.');
+    } catch {
+      syncBBCodePreviews();
+      setStatus(
+        '기본 폰트로 표시 중입니다. 마우스로 흰색 영역을 드래그하거나 우하단 핸들로 크기를 조정할 수 있습니다.',
+      );
+    }
   } catch (error) {
     setStatus(formatError(error));
   } finally {

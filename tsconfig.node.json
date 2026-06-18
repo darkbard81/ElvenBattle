@@ -13,5 +13,11 @@
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true
   },
-  "include": ["src/config.ts", "vite.config.ts", "src/server", "src/type"]
+  "include": [
+    "src/config.ts",
+    "vite.config.ts",
+    "src/server",
+    "src/tools/card-text/server",
+    "src/type"
+  ]
 }
