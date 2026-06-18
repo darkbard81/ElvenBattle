@@ -10,13 +10,14 @@ const projectRoot = fileURLToPath(new URL('../../../../', import.meta.url));
 const assetsRoot = path.join(projectRoot, 'assets');
 const assetsManifestPath = path.join(assetsRoot, 'assets.json');
 const metaPath = path.join(projectRoot, 'cards/card_frame_meta.json');
-const deckPath = path.join(projectRoot, 'cards/deck_test.json');
+const cardsRoot = path.join(projectRoot, 'cards');
 const schemaPath = path.join(projectRoot, 'cards/card.schema.json');
 const artAssetsDir = path.join(assetsRoot, 'cards/arts');
 const referenceAssetsDir = path.join(assetsRoot, 'cards/reference');
 const pendingCaptures = new Map<
   string,
   {
+    deckId: string;
     cardId: string;
     area: TextAreaRegion;
     nameArea: TextAreaRegion;
@@ -92,6 +93,13 @@ type DeckData = {
   cards: Card[];
 };
 
+type DeckOption = {
+  id: string;
+  name: string;
+  cardCount: number;
+  filePath: string;
+};
+
 type CardAssetPaths = {
   png: string;
   webp: string;
@@ -118,6 +126,7 @@ type AssetImage = {
 };
 
 type SaveAreaPayload = {
+  deckId?: string;
   cardId: string;
   area: TextAreaRegion;
   nameArea: TextAreaRegion;
@@ -207,9 +216,14 @@ async function handleCardTextToolRequest(
       const meta = await readFrameMeta();
       const manifest = await readAssetsManifest();
       const assetBaseUrl = normalizeAssetBaseUrl(manifest.assetBaseUrl);
-      const deck = await readJsonFile<DeckData>(deckPath);
+      const deckOptions = await listDeckOptions();
+      const selectedDeck = selectDeckOption(url.searchParams.get('deckId'), deckOptions);
+      const deck = await readJsonFile<DeckData>(selectedDeck.filePath);
       const schema = await readJsonFile<JsonRecord>(schemaPath);
-      const artImages = await listAssetImages(artAssetsDir, 'cards/arts');
+      const artImages = filterAssetImagesForDeck(
+        deck,
+        await listAssetImages(artAssetsDir, 'cards/arts'),
+      );
       const referenceImages = await listAssetImages(referenceAssetsDir, 'cards/reference');
       const requestedCardId = url.searchParams.get('cardId');
       const selectedArtImage =
@@ -218,7 +232,11 @@ async function handleCardTextToolRequest(
       const resolvedCardId = requestedCardId ?? cardIdFromAssetPath(selectedArtImage);
       const card = findCard(deck, resolvedCardId);
       const abilityTitles = getAbilityCategoryTitles(schema);
-      const pendingCapture = readPendingCapture(url.searchParams.get('captureId'), card.id);
+      const pendingCapture = readPendingCapture(
+        url.searchParams.get('captureId'),
+        selectedDeck.id,
+        card.id,
+      );
       const textArea = pendingCapture?.area ?? readTextArea(meta);
       const nameTextArea = pendingCapture?.nameArea ?? readNameTextArea(meta, textArea);
       const selectedReferenceImage =
@@ -237,6 +255,8 @@ async function handleCardTextToolRequest(
       sendJson(response, {
         canvas: meta.canvas,
         assetBaseUrl,
+        deckOptions: deckOptions.map(toPublicDeckOption),
+        selectedDeckId: selectedDeck.id,
         card,
         abilityText: formatAbilityText(card, abilityTitles, textArea),
         nameText: formatNameText(card, nameTextArea),
@@ -269,11 +289,16 @@ async function handleCardTextToolRequest(
       const meta = await readFrameMeta();
       const manifest = await readAssetsManifest();
       const assetBaseUrl = normalizeAssetBaseUrl(manifest.assetBaseUrl);
-      const deck = await readJsonFile<DeckData>(deckPath);
+      const deckOptions = await listDeckOptions();
+      const selectedDeck = selectDeckOption(payload.deckId, deckOptions);
+      const deck = await readJsonFile<DeckData>(selectedDeck.filePath);
       const card = findCard(deck, payload.cardId);
       const area = normalizeTextArea(payload.area);
       const nameArea = normalizeTextArea(payload.nameArea, defaultNameTextArea);
-      const artImages = await listAssetImages(artAssetsDir, 'cards/arts');
+      const artImages = filterAssetImagesForDeck(
+        deck,
+        await listAssetImages(artAssetsDir, 'cards/arts'),
+      );
       const referenceImages = await listAssetImages(referenceAssetsDir, 'cards/reference');
       const artImage =
         selectAssetPath(payload.artImage, artImages, 'art image', assetBaseUrl) ??
@@ -289,6 +314,7 @@ async function handleCardTextToolRequest(
         request,
         area,
         nameArea,
+        deckId: selectedDeck.id,
         cardId: card.id,
         canvas: meta.canvas,
         outputCardPath,
@@ -329,6 +355,74 @@ async function readAssetsManifest(): Promise<AssetsManifest> {
   return readJsonFile<AssetsManifest>(assetsManifestPath);
 }
 
+/**
+ * 작업 가능한 덱 파일을 `cards/deck_*.json` 규칙으로만 수집한다.
+ * 카드 텍스트 툴은 임의 경로를 받지 않고, repo-root cards 폴더의 덱만 대상으로 삼는다.
+ */
+async function listDeckOptions(): Promise<DeckOption[]> {
+  const entries = await fs.readdir(cardsRoot);
+  const deckFiles = entries
+    .filter((entry) => /^deck_[a-z0-9_-]+\.json$/i.test(entry))
+    .sort((left, right) => left.localeCompare(right));
+
+  if (deckFiles.length === 0) {
+    throw new Error('No deck JSON files found in cards/deck_*.json');
+  }
+
+  return Promise.all(
+    deckFiles.map(async (entry) => {
+      const filePath = path.join(cardsRoot, entry);
+      const deck = await readJsonFile<DeckData>(filePath);
+      return {
+        id: path.basename(entry, '.json'),
+        name: entry,
+        cardCount: Array.isArray(deck.cards) ? deck.cards.length : 0,
+        filePath,
+      };
+    }),
+  );
+}
+
+/**
+ * 요청된 덱 ID를 실제 덱 파일 옵션으로 해석한다.
+ * 선택값이 없으면 기존 동작과 호환되도록 `deck_test`를 우선 사용하고, 허용되지 않은 이름은 즉시 거절한다.
+ */
+function selectDeckOption(
+  requestedDeckId: string | null | undefined,
+  deckOptions: DeckOption[],
+): DeckOption {
+  const firstDeck = deckOptions[0];
+  if (!firstDeck) {
+    throw new Error('No deck JSON files found in cards/deck_*.json');
+  }
+
+  const fallbackDeck = deckOptions.find((option) => option.id === 'deck_test') ?? firstDeck;
+  const deckId = requestedDeckId?.trim();
+
+  if (!deckId) {
+    return fallbackDeck;
+  }
+
+  if (!/^deck_[a-z0-9_-]+$/i.test(deckId)) {
+    throw new Error(`Invalid deck id: ${requestedDeckId}`);
+  }
+
+  const selectedDeck = deckOptions.find((option) => option.id === deckId);
+  if (!selectedDeck) {
+    throw new Error(`Deck not found: ${deckId}`);
+  }
+
+  return selectedDeck;
+}
+
+function toPublicDeckOption(option: DeckOption): Omit<DeckOption, 'filePath'> {
+  return {
+    id: option.id,
+    name: option.name,
+    cardCount: option.cardCount,
+  };
+}
+
 function readTextArea(meta: FrameMeta): TextAreaRegion {
   const maybeRegion = meta.regions.ability_text_area;
   return normalizeTextArea(isRecord(maybeRegion) ? maybeRegion : defaultTextArea);
@@ -347,13 +441,13 @@ function readNameTextArea(meta: FrameMeta, abilityArea: TextAreaRegion): TextAre
   };
 }
 
-function readPendingCapture(captureId: string | null, cardId: string) {
+function readPendingCapture(captureId: string | null, deckId: string, cardId: string) {
   if (!captureId) {
     return null;
   }
 
   const pendingCapture = pendingCaptures.get(captureId);
-  if (!pendingCapture || pendingCapture.cardId !== cardId) {
+  if (!pendingCapture || pendingCapture.deckId !== deckId || pendingCapture.cardId !== cardId) {
     return null;
   }
 
@@ -368,6 +462,7 @@ async function renderCardByScreenshot(input: {
   request: IncomingMessage;
   area: TextAreaRegion;
   nameArea: TextAreaRegion;
+  deckId: string;
   cardId: string;
   canvas: CanvasMeta;
   outputCardPath: string;
@@ -377,6 +472,7 @@ async function renderCardByScreenshot(input: {
 }): Promise<void> {
   const captureId = crypto.randomUUID();
   pendingCaptures.set(captureId, {
+    deckId: input.deckId,
     cardId: input.cardId,
     area: input.area,
     nameArea: input.nameArea,
@@ -389,6 +485,7 @@ async function renderCardByScreenshot(input: {
   const captureUrl = new URL('/tools/card-text/', `http://${host}`);
   captureUrl.searchParams.set('capture', '1');
   captureUrl.searchParams.set('captureId', captureId);
+  captureUrl.searchParams.set('deckId', input.deckId);
   captureUrl.searchParams.set('cardId', input.cardId);
   captureUrl.searchParams.set('artImage', input.artImage);
   captureUrl.searchParams.set('referenceImage', input.referenceImage);
@@ -561,6 +658,21 @@ async function listAssetImages(directoryPath: string, assetDir: string): Promise
   return images;
 }
 
+/**
+ * 선택된 덱에 포함된 카드 ID와 일치하는 일러스트만 남긴다.
+ * 덱별 일괄 생성이 다른 덱의 아트를 섞어 처리하지 않도록 하는 서버 측 방어선이다.
+ */
+function filterAssetImagesForDeck(deck: DeckData, images: AssetImage[]): AssetImage[] {
+  const cardIds = new Set(deck.cards.map((card) => card.id));
+  const deckImages = images.filter((image) => cardIds.has(cardIdFromAssetPath(image.path)));
+
+  if (deckImages.length === 0) {
+    throw new Error('No art images found for the selected deck');
+  }
+
+  return deckImages;
+}
+
 function selectAssetPath(
   requestedPath: string | null | undefined,
   images: AssetImage[],
@@ -715,6 +827,7 @@ function validateAreaPayload(value: unknown): SaveAreaPayload {
   }
 
   return {
+    ...(typeof value.deckId === 'string' ? { deckId: value.deckId } : {}),
     cardId: value.cardId,
     area: normalizeTextArea(value.area),
     nameArea: normalizeTextArea(value.nameArea, defaultNameTextArea),

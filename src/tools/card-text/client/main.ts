@@ -2,6 +2,7 @@ import './styles.css';
 
 const RUNTIME_FONT_FAMILY = 'CardTextRuntime';
 const urlParams = new URLSearchParams(window.location.search);
+const INITIAL_DECK_ID = urlParams.get('deckId');
 const INITIAL_CARD_ID = urlParams.get('cardId');
 const captureId = urlParams.get('captureId');
 const isCaptureMode = urlParams.get('capture') === '1';
@@ -45,6 +46,12 @@ type AssetImage = {
   path: string;
 };
 
+type DeckOption = {
+  id: string;
+  name: string;
+  cardCount: number;
+};
+
 type TextAreaRegion = {
   type: 'text_area';
   x: number;
@@ -75,6 +82,8 @@ type EditorData = {
     height: number;
   };
   assetBaseUrl: string;
+  deckOptions: DeckOption[];
+  selectedDeckId: string;
   card: Card;
   abilityText: string;
   nameText: string;
@@ -134,6 +143,10 @@ app.innerHTML = `
       <h1>카드 텍스트 영역</h1>
       <div class="card-summary" data-card-summary></div>
       <div class="asset-controls">
+        <div class="field">
+          <label for="deckId">Deck</label>
+          <select id="deckId" data-deck-select></select>
+        </div>
         <div class="field">
           <label for="artImage">Art</label>
           <select id="artImage" data-art-select></select>
@@ -197,6 +210,7 @@ const saveButton = mustQuery<HTMLButtonElement>('[data-save]');
 const generateButton = mustQuery<HTMLButtonElement>('[data-generate]');
 const generateAllButton = mustQuery<HTMLButtonElement>('[data-generate-all]');
 const resetButton = mustQuery<HTMLButtonElement>('[data-reset]');
+const deckSelect = mustQuery<HTMLSelectElement>('[data-deck-select]');
 const artSelect = mustQuery<HTMLSelectElement>('[data-art-select]');
 const referenceSelect = mustQuery<HTMLSelectElement>('[data-reference-select]');
 const artOffsetYInput = mustQuery<HTMLInputElement>('[data-art-offset-y]');
@@ -217,6 +231,7 @@ let selectedArtImage = '';
 let selectedReferenceImage = '';
 let artOffsetY = 0;
 let defaultArtOffsetY = 0;
+let currentDeckId = INITIAL_DECK_ID ?? '';
 let currentCardId = INITIAL_CARD_ID ?? '';
 let activeAreaKey: AreaKey = 'ability';
 let dragState: DragState | null = null;
@@ -235,6 +250,7 @@ async function initialize(): Promise<void> {
 
   try {
     const initialData = await fetchEditorData({
+      deckId: INITIAL_DECK_ID,
       cardId: INITIAL_CARD_ID,
       captureId,
       artImage: urlParams.get('artImage'),
@@ -271,6 +287,10 @@ async function initialize(): Promise<void> {
 function bindEvents(): void {
   bindAreaDrag('ability', textAreaElement, resizeHandle);
   bindAreaDrag('name', nameTextAreaElement, nameResizeHandle);
+
+  deckSelect.addEventListener('change', () => {
+    void selectDeck(deckSelect.value);
+  });
 
   artSelect.addEventListener('change', () => {
     void selectArtImage(artSelect.value);
@@ -425,6 +445,7 @@ async function saveArea(): Promise<void> {
 
   try {
     const response = await postJson('/api/card-text-tool/save-area', {
+      deckId: currentDeckId,
       cardId: currentCardId,
       area: abilityArea,
       nameArea,
@@ -453,6 +474,7 @@ async function generateCard(): Promise<void> {
   try {
     const result = await generateCardImage({
       cardId: currentCardId,
+      deckId: currentDeckId,
       artImage: selectedArtImage,
       area: cloneArea(abilityArea),
       nameArea: cloneArea(nameArea),
@@ -509,6 +531,7 @@ async function generateAllCards(): Promise<void> {
 
       try {
         const result = await generateCardImage({
+          deckId: currentDeckId,
           cardId,
           artImage: artImage.path,
           area,
@@ -551,6 +574,7 @@ async function generateAllCards(): Promise<void> {
  * 클라이언트는 실제 이미지 생성 대신 요청 payload만 구성한다.
  */
 async function generateCardImage(input: {
+  deckId: string;
   cardId: string;
   artImage: string;
   area: TextAreaRegion;
@@ -559,6 +583,7 @@ async function generateCardImage(input: {
   artOffsetY: number;
 }): Promise<{ outputPath: string; outputUrl: string }> {
   const response = await postJson('/api/card-text-tool/generate', {
+    deckId: input.deckId,
     cardId: input.cardId,
     area: input.area,
     nameArea: input.nameArea,
@@ -595,6 +620,7 @@ async function postJson(path: string, body: unknown): Promise<Response> {
  * query string이 결과를 결정하므로, 변경된 선택값은 모두 여기에 반영해야 한다.
  */
 async function fetchEditorData(input: {
+  deckId?: string | null;
   cardId?: string | null;
   captureId?: string | null;
   artImage?: string | null;
@@ -602,6 +628,7 @@ async function fetchEditorData(input: {
   artOffsetY?: string | number | null;
 }): Promise<EditorData> {
   const query = new URLSearchParams();
+  setOptionalQueryParam(query, 'deckId', input.deckId);
   setOptionalQueryParam(query, 'cardId', input.cardId);
   setOptionalQueryParam(query, 'captureId', input.captureId);
   setOptionalQueryParam(query, 'artImage', input.artImage);
@@ -625,6 +652,7 @@ function applyEditorData(
   options: { resetAreas: boolean; resetDefaults: boolean },
 ): void {
   editorData = data;
+  currentDeckId = data.selectedDeckId;
   currentCardId = data.card.id;
   if (options.resetAreas || !abilityArea || !nameArea) {
     abilityArea = cloneArea(data.textArea);
@@ -663,6 +691,7 @@ async function selectArtImage(artImage: string): Promise<void> {
   try {
     const nextCardId = cardIdFromAssetPath(artImage);
     const nextData = await fetchEditorData({
+      deckId: currentDeckId,
       cardId: nextCardId,
       artImage,
       referenceImage: selectedReferenceImage,
@@ -670,6 +699,29 @@ async function selectArtImage(artImage: string): Promise<void> {
     });
     applyEditorData(nextData, { resetAreas: false, resetDefaults: false });
     setStatus(`${nextData.card.name} / ${nextData.card.id} 정보를 반영했습니다.`);
+  } catch (error) {
+    setStatus(formatError(error));
+  } finally {
+    setBusy(false);
+  }
+}
+
+/**
+ * 선택한 덱의 첫 번째 사용 가능한 일러스트와 카드 정보를 불러온다.
+ * 텍스트 영역 좌표는 덱과 무관한 프레임 메타이므로 현재 편집값을 유지한다.
+ */
+async function selectDeck(deckId: string): Promise<void> {
+  setBusy(true);
+  setStatus('선택한 덱 정보를 불러오는 중입니다.');
+
+  try {
+    const nextData = await fetchEditorData({
+      deckId,
+      referenceImage: selectedReferenceImage,
+      artOffsetY,
+    });
+    applyEditorData(nextData, { resetAreas: false, resetDefaults: false });
+    setStatus(`${nextData.selectedDeckId} / ${nextData.card.name} 정보를 반영했습니다.`);
   } catch (error) {
     setStatus(formatError(error));
   } finally {
@@ -692,9 +744,26 @@ function renderCardText(data: EditorData): void {
  * 실제 렌더링은 별도 함수에서 처리하므로 여기서는 입력값만 맞춘다.
  */
 function renderAssetControls(data: EditorData): void {
+  renderDeckOptions(deckSelect, data.deckOptions, currentDeckId);
   renderAssetOptions(artSelect, data.artImages, selectedArtImage);
   renderAssetOptions(referenceSelect, data.referenceImages, selectedReferenceImage);
   artOffsetYInput.value = String(artOffsetY);
+}
+
+function renderDeckOptions(
+  select: HTMLSelectElement,
+  deckOptions: DeckOption[],
+  selectedDeckId: string,
+): void {
+  select.replaceChildren(
+    ...deckOptions.map((deck) => {
+      const option = document.createElement('option');
+      option.value = deck.id;
+      option.textContent = `${deck.name} (${deck.cardCount})`;
+      option.selected = deck.id === selectedDeckId;
+      return option;
+    }),
+  );
 }
 
 function renderAssetOptions(
@@ -1071,6 +1140,10 @@ function setBusy(isBusy: boolean): void {
   generateButton.disabled = isBusy;
   generateAllButton.disabled = isBusy;
   resetButton.disabled = isBusy;
+  deckSelect.disabled = isBusy;
+  artSelect.disabled = isBusy;
+  referenceSelect.disabled = isBusy;
+  artOffsetYInput.disabled = isBusy;
 }
 
 function setStatus(message: string): void {
