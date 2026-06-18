@@ -3,19 +3,20 @@
 import { createHash } from 'node:crypto';
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { appConfig } from '../config';
 
 const assetsRoot = path.resolve('assets');
 const outputFile = path.join(assetsRoot, 'assets.json');
 const manifestBase = {
   schemaVersion: 1,
   revisionAlgorithm: 'sha256-12hex',
-  assetBaseUrl: '/tcg',
+  assetBaseUrl: appConfig.assets.assetBaseUrl,
 };
 const textureExtensions = new Set(['.png', '.webp']);
 
-async function walk(dir) {
+async function walk(dir: string): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true });
-  const files = [];
+  const files: string[] = [];
 
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
@@ -32,18 +33,18 @@ async function walk(dir) {
   return files;
 }
 
-function buildKey(filePath) {
+function buildKey(filePath: string): string {
   const relativePath = path.relative(assetsRoot, filePath);
   const parts = relativePath.split(path.sep);
-  const baseName = path.parse(parts.at(-1)).name;
+  const baseName = path.parse(parts.at(-1) ?? '').name;
   const namespace = parts[0];
   const folderName = parts.slice(1, -1).join('.');
 
   return folderName ? `${namespace}.${folderName}.${baseName}` : `${namespace}.${baseName}`;
 }
 
-async function main() {
-  const textures = [];
+async function main(): Promise<void> {
+  const textures: Array<{ key: string; path: string; revision: string }> = [];
   const files = await walk(assetsRoot);
 
   for (const filePath of files) {
@@ -90,7 +91,7 @@ async function main() {
   );
 }
 
-main().catch((error) => {
+main().catch((error: unknown) => {
   console.error(error);
   process.exitCode = 1;
 });

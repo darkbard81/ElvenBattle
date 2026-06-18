@@ -205,9 +205,8 @@ async function handleAssetRequest(
   response: ServerResponse,
   next: () => void,
 ): Promise<boolean> {
-  const manifest = await readAssetsManifest();
-  const assetBaseUrl = normalizeAssetBaseUrl(manifest.assetBaseUrl);
   const url = new URL(request.url ?? '/', 'http://localhost');
+  const assetBaseUrl = normalizeAssetBaseUrl(appConfig.assets.assetBaseUrl);
 
   if (!isAssetRoute(url.pathname, assetBaseUrl)) {
     return false;
@@ -221,7 +220,13 @@ async function handleAssetRequest(
 
   const requestedPath = url.pathname.slice(assetBaseUrl.length).replace(/^\/+/, '');
   if (!requestedPath || requestedPath === 'assets.json') {
-    sendJson(response, manifest);
+    try {
+      const manifest = await readAssetsManifest();
+      sendJson(response, manifest);
+    } catch {
+      response.statusCode = 404;
+      response.end('Not found');
+    }
     return true;
   }
 

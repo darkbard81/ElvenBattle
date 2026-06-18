@@ -11,6 +11,9 @@ type AppConfig = {
   capture: {
     host: string;
   };
+  assets: {
+    assetBaseUrl: string;
+  };
 };
 
 const defaultConfig: AppConfig = {
@@ -22,6 +25,9 @@ const defaultConfig: AppConfig = {
   },
   capture: {
     host: '127.0.0.1',
+  },
+  assets: {
+    assetBaseUrl: '/tcg',
   },
 };
 
@@ -37,6 +43,9 @@ export const appConfig = {
   },
   capture: {
     host: readString(env.ELVEN_BATTLE_CAPTURE_HOST, defaultConfig.capture.host),
+  },
+  assets: {
+    assetBaseUrl: readString(env.ELVEN_BATTLE_ASSET_BASE_URL, defaultConfig.assets.assetBaseUrl),
   },
 } satisfies AppConfig;
 
