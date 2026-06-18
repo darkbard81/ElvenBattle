@@ -33,10 +33,9 @@ export function createSaveSlotsApiHandler(
   const projectRoot = options.projectRoot ?? defaultProjectRoot;
   const saveSlotsRoot = options.saveSlotsRoot ?? defaultSaveSlotsRoot;
 
-  return async (request, response, next) => {
+  return async (request, response) => {
     const url = new URL(request.url ?? '/', 'http://localhost');
     if (!url.pathname.startsWith('/api/save-slots')) {
-      next();
       return false;
     }
 
@@ -47,9 +46,9 @@ export function createSaveSlotsApiHandler(
       }
 
       const slotId = parseSlotId(url.pathname);
-        if (!slotId) {
-          response.statusCode = 404;
-          response.end('Not found');
+      if (!slotId) {
+        response.statusCode = 404;
+        response.end('Not found');
         return true;
       }
 
