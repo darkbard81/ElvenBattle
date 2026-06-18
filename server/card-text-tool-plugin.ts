@@ -713,7 +713,7 @@ function normalizeTextArea(
     cornerRadius: toInteger(area.cornerRadius, fallback.cornerRadius),
     opacity: toNumber(area.opacity, fallback.opacity),
     fontSize: toInteger(area.fontSize, fallback.fontSize),
-    titleFontSize: toInteger(area.fontSize, fallback.fontSize),
+    titleFontSize: toInteger(area.titleFontSize, fallback.titleFontSize),
     paddingX: toInteger(area.paddingX, fallback.paddingX),
     paddingY: toInteger(area.paddingY, fallback.paddingY),
   };

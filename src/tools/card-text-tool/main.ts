@@ -958,7 +958,12 @@ function rgbaFromHex(hex: string, alpha: number): string {
 }
 
 async function loadRuntimeFont(fontFile: string): Promise<void> {
-  const font = new FontFace(RUNTIME_FONT_FAMILY, `url("${encodeURI(`/${fontFile}`)}")`);
+  if (!editorData) {
+    return;
+  }
+
+  const fontUrl = toAssetUrl(editorData.assetBaseUrl, fontFile);
+  const font = new FontFace(RUNTIME_FONT_FAMILY, `url("${encodeURI(fontUrl)}")`);
   await font.load();
   document.fonts.add(font);
 }
