@@ -20,10 +20,12 @@ describe('perspective-field', () => {
   });
 
   it('projects normalized coordinates for the issue #20 quadrilateral skeleton', () => {
-    expect(projectToField(0, 0)).toEqual(PERSPECTIVE_FIELD_QUAD.tl);
-    expect(projectToField(1, 0)).toEqual(PERSPECTIVE_FIELD_QUAD.tr);
-    expect(projectToField(0, 1)).toEqual(PERSPECTIVE_FIELD_QUAD.bl);
-    expect(projectToField(1, 1)).toEqual(PERSPECTIVE_FIELD_QUAD.br);
+    expect(projectToField(0, 0)).toMatchObject(PERSPECTIVE_FIELD_QUAD.tl);
+    expect(projectToField(1, 0)).toMatchObject(PERSPECTIVE_FIELD_QUAD.tr);
+    expect(projectToField(0, 1).x).toBeCloseTo(PERSPECTIVE_FIELD_QUAD.bl.x, 4);
+    expect(projectToField(0, 1).y).toBeCloseTo(PERSPECTIVE_FIELD_QUAD.bl.y, 4);
+    expect(projectToField(1, 1).x).toBeCloseTo(PERSPECTIVE_FIELD_QUAD.br.x, 4);
+    expect(projectToField(1, 1).y).toBeCloseTo(PERSPECTIVE_FIELD_QUAD.br.y, 4);
   });
 
   it('classifies all slot centers through slotQuad polygon hit testing', () => {

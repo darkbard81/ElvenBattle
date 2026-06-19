@@ -1,35 +1,36 @@
 import type { BattleSlotId } from '../../game/battle/types';
+import {
+  createFieldHomography,
+  fieldLocalToScreen,
+  fieldLocalToSlotId,
+  PERSPECTIVE_FIELD_QUAD,
+  PERSPECTIVE_SLOT_ROWS,
+  screenToFieldLocal,
+  UNIT_FIELD_RECT,
+  type FieldPoint,
+  type FieldQuad,
+} from './fieldHomography';
 
-export type FieldPoint = {
-  x: number;
-  y: number;
-};
-
-export type FieldQuad = {
-  tl: FieldPoint;
-  tr: FieldPoint;
-  bl: FieldPoint;
-  br: FieldPoint;
-};
+export {
+  createFieldHomography,
+  fieldLocalToScreen,
+  fieldLocalToSlotId,
+  fieldQuadBounds,
+  PERSPECTIVE_FIELD_QUAD,
+  PERSPECTIVE_SLOT_ROWS,
+  screenToFieldLocal,
+  UNIT_FIELD_RECT,
+  type FieldHomography,
+  type FieldPoint,
+  type FieldQuad,
+  type FieldRect,
+  type HomographyMatrix,
+} from './fieldHomography';
 
 export type FieldPointerIntent = {
   type: 'select-slot';
   slotId: BattleSlotId;
 };
-
-export const PERSPECTIVE_FIELD_QUAD = {
-  tl: { x: 360, y: 145 },
-  tr: { x: 920, y: 145 },
-  bl: { x: 230, y: 610 },
-  br: { x: 1050, y: 610 },
-} as const satisfies FieldQuad;
-
-export const PERSPECTIVE_SLOT_ROWS = [
-  ['enemy:BR', 'enemy:BC', 'enemy:BL'],
-  ['enemy:FR', 'enemy:FC', 'enemy:FL'],
-  ['player:FR', 'player:FC', 'player:FL'],
-  ['player:BR', 'player:BC', 'player:BL'],
-] as const satisfies readonly (readonly BattleSlotId[])[];
 
 /**
  * 정규화된 필드 좌표를 사다리꼴 전장 위의 화면 좌표로 투영한다.
@@ -40,10 +41,7 @@ export function projectToField(
   v: number,
   fieldQuad: FieldQuad = PERSPECTIVE_FIELD_QUAD,
 ): FieldPoint {
-  const top = interpolatePoint(fieldQuad.tl, fieldQuad.tr, u);
-  const bottom = interpolatePoint(fieldQuad.bl, fieldQuad.br, u);
-
-  return interpolatePoint(top, bottom, v);
+  return fieldLocalToScreen({ x: u, y: v }, createFieldHomography(UNIT_FIELD_RECT, fieldQuad));
 }
 
 /**
@@ -55,7 +53,11 @@ export function slotCenter(
   fieldQuad: FieldQuad = PERSPECTIVE_FIELD_QUAD,
 ): FieldPoint {
   const position = findSlotPosition(slotId);
-  return projectToField((position.col + 0.5) / 3, (position.row + 0.5) / 4, fieldQuad);
+  return projectToField(
+    (position.col + 0.5) / PERSPECTIVE_SLOT_ROWS[0]!.length,
+    (position.row + 0.5) / PERSPECTIVE_SLOT_ROWS.length,
+    fieldQuad,
+  );
 }
 
 /**
@@ -67,10 +69,10 @@ export function slotQuad(
   fieldQuad: FieldQuad = PERSPECTIVE_FIELD_QUAD,
 ): FieldPoint[] {
   const position = findSlotPosition(slotId);
-  const u0 = position.col / 3;
-  const u1 = (position.col + 1) / 3;
-  const v0 = position.row / 4;
-  const v1 = (position.row + 1) / 4;
+  const u0 = position.col / PERSPECTIVE_SLOT_ROWS[0]!.length;
+  const u1 = (position.col + 1) / PERSPECTIVE_SLOT_ROWS[0]!.length;
+  const v0 = position.row / PERSPECTIVE_SLOT_ROWS.length;
+  const v1 = (position.row + 1) / PERSPECTIVE_SLOT_ROWS.length;
 
   return [
     projectToField(u0, v0, fieldQuad),
@@ -120,18 +122,17 @@ export function createFieldPointerIntent(
   point: FieldPoint,
   fieldQuad: FieldQuad = PERSPECTIVE_FIELD_QUAD,
 ): FieldPointerIntent | null {
-  for (const row of PERSPECTIVE_SLOT_ROWS) {
-    for (const slotId of row) {
-      if (pointInPoly(point, slotQuad(slotId, fieldQuad))) {
-        return {
-          type: 'select-slot',
-          slotId,
-        };
-      }
-    }
+  const local = screenToFieldLocal(point, createFieldHomography(UNIT_FIELD_RECT, fieldQuad));
+  const slotId = local ? fieldLocalToSlotId(local, UNIT_FIELD_RECT) : null;
+
+  if (!slotId) {
+    return null;
   }
 
-  return null;
+  return {
+    type: 'select-slot',
+    slotId,
+  };
 }
 
 function findSlotPosition(slotId: BattleSlotId): { row: number; col: number } {
@@ -144,17 +145,6 @@ function findSlotPosition(slotId: BattleSlotId): { row: number; col: number } {
   }
 
   throw new Error(`Unknown battle slot id: ${slotId}`);
-}
-
-function interpolatePoint(start: FieldPoint, end: FieldPoint, amount: number): FieldPoint {
-  return {
-    x: linear(start.x, end.x, amount),
-    y: linear(start.y, end.y, amount),
-  };
-}
-
-function linear(start: number, end: number, amount: number): number {
-  return start + (end - start) * amount;
 }
 
 function isPointOnSegment(point: FieldPoint, start: FieldPoint, end: FieldPoint): boolean {

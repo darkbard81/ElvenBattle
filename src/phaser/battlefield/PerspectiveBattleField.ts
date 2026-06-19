@@ -18,6 +18,8 @@ import {
 type PerspectiveBattleFieldOptions = {
   runtime: BattleRuntimeState;
   onIntent: (intent: FieldPointerIntent) => void;
+  fieldLayer?: Phaser.GameObjects.Container;
+  interactionLayer?: Phaser.GameObjects.Container;
 };
 
 /**
@@ -29,6 +31,8 @@ export class PerspectiveBattleField {
   private readonly scene: Phaser.Scene;
   private readonly runtime: BattleRuntimeState;
   private readonly onIntent: (intent: FieldPointerIntent) => void;
+  private readonly fieldLayer: Phaser.GameObjects.Container | null;
+  private readonly interactionLayer: Phaser.GameObjects.Container | null;
   private readonly slotHighlights = new Map<BattleSlotId, Phaser.GameObjects.Graphics>();
   private debugText!: Phaser.GameObjects.Text;
 
@@ -36,6 +40,8 @@ export class PerspectiveBattleField {
     this.scene = scene;
     this.runtime = options.runtime;
     this.onIntent = options.onIntent;
+    this.fieldLayer = options.fieldLayer ?? null;
+    this.interactionLayer = options.interactionLayer ?? null;
   }
 
   /**
@@ -62,6 +68,7 @@ export class PerspectiveBattleField {
     graphics.fillPoints(toVector2Points(quad), true);
     graphics.lineStyle(3, 0xbfeec5, 0.72);
     graphics.strokePoints(toVector2Points(quad), true);
+    this.addToFieldLayer(graphics);
   }
 
   private addSlotMarkers(): void {
@@ -83,13 +90,15 @@ export class PerspectiveBattleField {
     base.fillPoints(toVector2Points(quad), true);
     base.lineStyle(1, hasCard ? 0xcaf3ce : 0x668074, hasCard ? 0.78 : 0.48);
     base.strokePoints(toVector2Points(quad), true);
+    this.addToFieldLayer(base);
 
     const highlight = this.scene.add.graphics();
+    this.addToFieldLayer(highlight);
     this.slotHighlights.set(slotId, highlight);
   }
 
   private addSlotLabel(slotId: BattleSlotId, center: FieldPoint, hasCard: boolean): void {
-    this.scene.add
+    const label = this.scene.add
       .text(center.x, center.y + (hasCard ? 58 : 0), formatSlotLabel(slotId), {
         fontFamily: DEFAULT_FONT_FAMILY,
         fontSize: '15px',
@@ -98,6 +107,7 @@ export class PerspectiveBattleField {
       })
       .setOrigin(0.5)
       .setAlpha(hasCard ? 0.92 : 0.72);
+    this.addToFieldLayer(label);
   }
 
   private addBattlefieldCards(): void {
@@ -124,6 +134,7 @@ export class PerspectiveBattleField {
       const image = this.scene.add.image(center.x, center.y - 8, textureKey);
       image.setDisplaySize(cardWidth, cardHeight);
       image.setDepth(5 + rowIndex);
+      this.addToFieldLayer(image);
     } else {
       const fallback = this.scene.add.rectangle(
         center.x,
@@ -135,9 +146,10 @@ export class PerspectiveBattleField {
       );
       fallback.setStrokeStyle(2, 0xf0f7d6, 0.84);
       fallback.setDepth(5 + rowIndex);
+      this.addToFieldLayer(fallback);
     }
 
-    this.scene.add
+    const nameText = this.scene.add
       .text(center.x, center.y + cardHeight / 2 - 28, card.card.definition.name, {
         fontFamily: DEFAULT_FONT_FAMILY,
         fontSize: '14px',
@@ -149,8 +161,9 @@ export class PerspectiveBattleField {
       })
       .setOrigin(0.5)
       .setDepth(12 + rowIndex);
+    this.addToFieldLayer(nameText);
 
-    this.scene.add
+    const statText = this.scene.add
       .text(
         center.x,
         center.y + cardHeight / 2 - 9,
@@ -166,6 +179,7 @@ export class PerspectiveBattleField {
       )
       .setOrigin(0.5)
       .setDepth(12 + rowIndex);
+    this.addToFieldLayer(statText);
   }
 
   private addDebugText(): void {
@@ -178,6 +192,7 @@ export class PerspectiveBattleField {
       })
       .setOrigin(0.5)
       .setAlpha(0.9);
+    this.addToFieldLayer(this.debugText);
   }
 
   private addInputZone(): void {
@@ -198,6 +213,7 @@ export class PerspectiveBattleField {
         }
       },
     );
+    this.addToInteractionLayer(zone);
   }
 
   private selectSlot(slotId: BattleSlotId): void {
@@ -210,6 +226,16 @@ export class PerspectiveBattleField {
         graphics.strokePoints(toVector2Points(slotQuad(candidateSlotId)), true);
       }
     }
+  }
+
+  private addToFieldLayer<T extends Phaser.GameObjects.GameObject>(gameObject: T): T {
+    this.fieldLayer?.add(gameObject);
+    return gameObject;
+  }
+
+  private addToInteractionLayer<T extends Phaser.GameObjects.GameObject>(gameObject: T): T {
+    this.interactionLayer?.add(gameObject);
+    return gameObject;
   }
 }
 

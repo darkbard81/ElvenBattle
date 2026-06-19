@@ -8,6 +8,7 @@ export type MenuButtonConfig = {
   height: number;
   label: string;
   enabled: boolean;
+  parent?: Phaser.GameObjects.Container;
   onClick?: () => void;
 };
 
@@ -38,6 +39,7 @@ export function createMenuButton(scene: Phaser.Scene, config: MenuButtonConfig):
     align: 'center',
   });
   label.setOrigin(0.5);
+  config.parent?.add([background, label]);
 
   if (!config.enabled) {
     const disabled = scene.add.text(config.x, config.y + 26, 'disabled', {
@@ -47,6 +49,7 @@ export function createMenuButton(scene: Phaser.Scene, config: MenuButtonConfig):
       align: 'center',
     });
     disabled.setOrigin(0.5);
+    config.parent?.add(disabled);
     return;
   }
 

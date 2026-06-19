@@ -12,10 +12,24 @@ import {
   type GameSession,
 } from '../../game/save/session';
 import { DEFAULT_FONT_FAMILY } from '../../theme';
+import { BattlefieldTextureCapture } from '../battlefield/BattlefieldTextureCapture';
+import {
+  BattlefieldWarpView,
+  type BattlefieldRendererMode,
+} from '../battlefield/BattlefieldWarpView';
 import { PerspectiveBattleField } from '../battlefield/PerspectiveBattleField';
+import { SourceBattleFieldContainer } from '../battlefield/SourceBattleFieldContainer';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
 import { createMenuButton } from '../ui/menu-button';
 import type { BattlefieldSceneData } from './scene-data';
+
+type BattlefieldSceneLayers = {
+  backgroundLayer: Phaser.GameObjects.Container;
+  warpedFieldLayer: Phaser.GameObjects.Container;
+  interactionLayer: Phaser.GameObjects.Container;
+  uiLayer: Phaser.GameObjects.Container;
+  handDeckLayer: Phaser.GameObjects.Container;
+};
 
 /**
  * 저장 슬롯에서 전달받은 GameSession을 전투 런타임 Zone으로 변환해 표시하는 전장 씬이다.
@@ -23,6 +37,7 @@ import type { BattlefieldSceneData } from './scene-data';
  */
 export class BattlefieldScene extends Phaser.Scene {
   private handDeckContainer: Phaser.GameObjects.Container | null = null;
+  private layers!: BattlefieldSceneLayers;
   private session!: GameSession;
   private statusText!: Phaser.GameObjects.Text;
   private isSaving = false;
@@ -40,49 +55,105 @@ export class BattlefieldScene extends Phaser.Scene {
     this.handDeckContainer = null;
     const runtime = createInitialBattleRuntime(this.session);
 
-    this.addBackground();
-    this.addTitle();
-    this.addStatusText();
+    this.layers = this.createLayers();
+    this.addBackground(this.layers.backgroundLayer);
+    this.addTitle(this.layers.uiLayer);
+    this.addStatusText(this.layers.uiLayer);
     this.addBattlefieldLayout(this.session, runtime);
-    this.addBackButton();
-    this.addSaveButton();
+    this.addBackButton(this.layers.uiLayer);
+    this.addSaveButton(this.layers.uiLayer);
   }
 
-  private addBackground(): void {
-    this.add
-      .image(0, 0, 'title-background')
-      .setOrigin(0, 0)
-      .setDisplaySize(GAME_WIDTH, GAME_HEIGHT);
-    this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x071018, 0.58).setOrigin(0, 0);
-    this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.16).setOrigin(0, 0);
+  private createLayers(): BattlefieldSceneLayers {
+    return {
+      backgroundLayer: this.add.container(0, 0).setDepth(0),
+      warpedFieldLayer: this.add.container(0, 0).setDepth(10),
+      interactionLayer: this.add.container(0, 0).setDepth(20),
+      uiLayer: this.add.container(0, 0).setDepth(30),
+      handDeckLayer: this.add.container(0, 0).setDepth(40),
+    };
   }
 
-  private addTitle(): void {
-    this.add
-      .text(GAME_WIDTH / 2, 58, 'BATTLEFIELD', {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '44px',
-        fontStyle: '700',
-        color: '#f5faf0',
-        stroke: '#182e27',
-        strokeThickness: 6,
-        align: 'center',
-      })
-      .setOrigin(0.5);
+  private addBackground(parent: Phaser.GameObjects.Container): void {
+    parent.add(
+      this.add
+        .image(0, 0, 'title-background')
+        .setOrigin(0, 0)
+        .setDisplaySize(GAME_WIDTH, GAME_HEIGHT),
+    );
+    parent.add(this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x071018, 0.58).setOrigin(0, 0));
+    parent.add(this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.16).setOrigin(0, 0));
+  }
+
+  private addTitle(parent: Phaser.GameObjects.Container): void {
+    parent.add(
+      this.add
+        .text(GAME_WIDTH / 2, 58, 'BATTLEFIELD', {
+          fontFamily: DEFAULT_FONT_FAMILY,
+          fontSize: '44px',
+          fontStyle: '700',
+          color: '#f5faf0',
+          stroke: '#182e27',
+          strokeThickness: 6,
+          align: 'center',
+        })
+        .setOrigin(0.5),
+    );
   }
 
   private addBattlefieldLayout(session: GameSession, runtime: BattleRuntimeState): void {
-    this.addHudContainer(session, runtime);
-    new PerspectiveBattleField(this, {
-      runtime,
-      onIntent: (intent) => {
-        this.setStatus(`Selected ${intent.slotId}`);
-      },
-    }).render();
-    this.addHandDeckContainer(runtime.player);
+    this.addHudContainer(this.layers.uiLayer, session, runtime);
+    this.addBattlefieldRenderer(runtime);
+    this.addHandDeckContainer(this.layers.handDeckLayer, runtime.player);
   }
 
-  private addBackButton(): void {
+  private addBattlefieldRenderer(runtime: BattleRuntimeState): BattlefieldRendererMode {
+    const onIntent = (intent: { slotId: string }) => {
+      this.setStatus(`Selected ${intent.slotId}`);
+    };
+    let sourceField: SourceBattleFieldContainer | null = null;
+    let capture: BattlefieldTextureCapture | null = null;
+    let warpView: BattlefieldWarpView | null = null;
+
+    try {
+      sourceField = new SourceBattleFieldContainer(this, { runtime });
+      capture = new BattlefieldTextureCapture(this, sourceField);
+      warpView = new BattlefieldWarpView(this, {
+        sourceField,
+        capture,
+        fieldLayer: this.layers.warpedFieldLayer,
+        interactionLayer: this.layers.interactionLayer,
+        onIntent,
+      });
+      warpView.render();
+      const activeSourceField = sourceField;
+      const activeCapture = capture;
+      const activeWarpView = warpView;
+      this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+        activeWarpView.destroy();
+        activeCapture.destroy();
+        activeSourceField.destroy();
+      });
+
+      return 'texture-warp';
+    } catch (error: unknown) {
+      warpView?.destroy();
+      capture?.destroy();
+      sourceField?.destroy();
+      console.warn('Battlefield texture warp unavailable; using fallback renderer.', error);
+      new PerspectiveBattleField(this, {
+        runtime,
+        fieldLayer: this.layers.warpedFieldLayer,
+        interactionLayer: this.layers.interactionLayer,
+        onIntent,
+      }).render();
+      this.setStatus('Perspective fallback ready: select a slot.');
+
+      return 'fallback-2d';
+    }
+  }
+
+  private addBackButton(parent: Phaser.GameObjects.Container): void {
     createMenuButton(this, {
       x: 146,
       y: 64,
@@ -90,13 +161,14 @@ export class BattlefieldScene extends Phaser.Scene {
       height: 52,
       label: 'Back',
       enabled: true,
+      parent,
       onClick: () => {
         this.scene.start('SaveSlotScene');
       },
     });
   }
 
-  private addSaveButton(): void {
+  private addSaveButton(parent: Phaser.GameObjects.Container): void {
     createMenuButton(this, {
       x: GAME_WIDTH - 146,
       y: 64,
@@ -104,15 +176,16 @@ export class BattlefieldScene extends Phaser.Scene {
       height: 52,
       label: 'Save',
       enabled: true,
+      parent,
       onClick: () => {
         void this.saveCurrentSession();
       },
     });
   }
 
-  private addStatusText(): void {
+  private addStatusText(parent: Phaser.GameObjects.Container): void {
     this.statusText = this.add
-      .text(GAME_WIDTH / 2, 104, 'Back returns to the save slots without saving.', {
+      .text(GAME_WIDTH / 2, 96, 'Back returns to the save slots without saving.', {
         fontFamily: DEFAULT_FONT_FAMILY,
         fontSize: '18px',
         color: '#d9ebd1',
@@ -121,6 +194,7 @@ export class BattlefieldScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
       .setAlpha(0.92);
+    parent.add(this.statusText);
   }
 
   private async saveCurrentSession(): Promise<void> {
@@ -149,8 +223,13 @@ export class BattlefieldScene extends Phaser.Scene {
     this.statusText.setText(message);
   }
 
-  private addHudContainer(session: GameSession, runtime: BattleRuntimeState): void {
+  private addHudContainer(
+    parent: Phaser.GameObjects.Container,
+    session: GameSession,
+    runtime: BattleRuntimeState,
+  ): void {
     const container = this.add.container(GAME_WIDTH / 2, 126);
+    parent.add(container);
     const panel = this.add.rectangle(0, 0, 980, 34, 0x12211c, 0.88);
     panel.setStrokeStyle(2, 0x7fa38a, 0.74);
     container.add(panel);
@@ -216,12 +295,16 @@ export class BattlefieldScene extends Phaser.Scene {
     );
   }
 
-  private addHandDeckContainer(runtime: BattleRuntimeState['player']): void {
+  private addHandDeckContainer(
+    parent: Phaser.GameObjects.Container,
+    runtime: BattleRuntimeState['player'],
+  ): void {
     const hiddenY = 735;
     const expandedY = 650;
     const width = 1120;
     const height = 150;
     const container = this.add.container(GAME_WIDTH / 2, hiddenY);
+    parent.add(container);
     this.handDeckContainer = container;
 
     const panel = this.add.rectangle(0, 0, width, height, 0x10211b, 0.96).setOrigin(0.5, 0);
