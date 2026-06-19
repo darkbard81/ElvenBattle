@@ -23,6 +23,7 @@ type PerspectiveBattleFieldOptions = {
 /**
  * 4행 x 3열 원근 전장을 Phaser GameObject로 표시하는 화면 전용 렌더러다.
  * 전투 규칙은 처리하지 않고, 런타임 전장 상태를 카드와 슬롯 마커로 투영하며 클릭은 intent로만 전달한다.
+ * Phaser 4.1.0에서 제거된 Plane/Mesh 대신 Graphics/Image 기반 2D 투영 skeleton으로 유지한다.
  */
 export class PerspectiveBattleField {
   private readonly scene: Phaser.Scene;

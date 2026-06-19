@@ -10,7 +10,7 @@ import {
 } from './perspective-field';
 
 describe('perspective-field', () => {
-  it('keeps the issue #20 slot mapping order', () => {
+  it('keeps the issue #20 2D projection skeleton slot mapping order', () => {
     expect(PERSPECTIVE_SLOT_ROWS).toEqual([
       ['enemy:BR', 'enemy:BC', 'enemy:BL'],
       ['enemy:FR', 'enemy:FC', 'enemy:FL'],
@@ -19,14 +19,14 @@ describe('perspective-field', () => {
     ]);
   });
 
-  it('projects normalized field coordinates to the configured quadrilateral', () => {
+  it('projects normalized coordinates for the issue #20 quadrilateral skeleton', () => {
     expect(projectToField(0, 0)).toEqual(PERSPECTIVE_FIELD_QUAD.tl);
     expect(projectToField(1, 0)).toEqual(PERSPECTIVE_FIELD_QUAD.tr);
     expect(projectToField(0, 1)).toEqual(PERSPECTIVE_FIELD_QUAD.bl);
     expect(projectToField(1, 1)).toEqual(PERSPECTIVE_FIELD_QUAD.br);
   });
 
-  it('classifies all slot centers as their own slot', () => {
+  it('classifies all slot centers through slotQuad polygon hit testing', () => {
     for (const row of PERSPECTIVE_SLOT_ROWS) {
       for (const slotId of row) {
         const center = slotCenter(slotId);
