@@ -1,26 +1,38 @@
 import Phaser from 'phaser';
-import { DEFAULT_FONT_FAMILY } from '../../theme';
+import { createInitialBattleRuntime } from '../../game/battle/create-battle-runtime';
+import {
+  BATTLEFIELD_SLOT_ROWS,
+  INITIAL_HAND_SIZE,
+  type BattleCardRuntimeState,
+  type BattleRuntimeState,
+  type BattlefieldSlot,
+} from '../../game/battle/types';
 import type { GameSession } from '../../game/save/session';
+import { DEFAULT_FONT_FAMILY } from '../../theme';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
 import { createMenuButton } from '../ui/menu-button';
 import type { BattlefieldSceneData } from './scene-data';
 
 /**
- * `SaveSlotScene`에서 전달받은 GameSession을 화면 뼈대로만 보여주는 전장 씬이다.
- * 전투 규칙과 상호작용은 두지 않고, 리더와 배치 영역의 자리만 표시한다.
+ * 저장 슬롯에서 전달받은 GameSession을 전투 런타임 Zone으로 변환해 표시하는 전장 씬이다.
+ * 전투 규칙과 카드 조작은 구현하지 않고, HUD, 전장 슬롯, 손패/덱 영역의 기본 배치를 담당한다.
  */
 export class BattlefieldScene extends Phaser.Scene {
+  private handDeckContainer: Phaser.GameObjects.Container | null = null;
+
   constructor() {
     super({ key: 'BattlefieldScene' });
   }
 
   /**
-   * 세션 요약 레이아웃과 돌아가기 버튼을 구성한다.
+   * 초기 전투 런타임을 만들고 세 영역의 전장 화면과 뒤로 가기 버튼을 구성한다.
    */
   create(data: BattlefieldSceneData): void {
+    const runtime = createInitialBattleRuntime(data.session);
+
     this.addBackground();
     this.addTitle();
-    this.addBattlefieldLayout(data.session);
+    this.addBattlefieldLayout(data.session, runtime);
     this.addBackButton();
   }
 
@@ -35,42 +47,30 @@ export class BattlefieldScene extends Phaser.Scene {
 
   private addTitle(): void {
     this.add
-      .text(GAME_WIDTH / 2, 110, 'BATTLEFIELD', {
+      .text(GAME_WIDTH / 2, 58, 'BATTLEFIELD', {
         fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '56px',
+        fontSize: '44px',
         fontStyle: '700',
         color: '#f5faf0',
         stroke: '#182e27',
-        strokeThickness: 7,
+        strokeThickness: 6,
         align: 'center',
       })
       .setOrigin(0.5);
-
-    this.add
-      .text(GAME_WIDTH / 2, 172, 'session handoff verified', {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '24px',
-        color: '#d9ebd1',
-        align: 'center',
-      })
-      .setOrigin(0.5)
-      .setAlpha(0.9);
   }
 
-  private addBattlefieldLayout(session: GameSession): void {
-    this.addLeaderArea(session);
-    this.addDeckArea(session);
-    this.addHandArea();
-    this.addBattlefieldGrid();
-    this.addSessionFooter(session);
+  private addBattlefieldLayout(session: GameSession, runtime: BattleRuntimeState): void {
+    this.addHudContainer(session, runtime);
+    this.addBattlefieldContainer(runtime);
+    this.addHandDeckContainer(runtime);
   }
 
   private addBackButton(): void {
     createMenuButton(this, {
-      x: 160,
-      y: 86,
-      width: 180,
-      height: 58,
+      x: 146,
+      y: 64,
+      width: 154,
+      height: 52,
       label: 'Back',
       enabled: true,
       onClick: () => {
@@ -79,174 +79,309 @@ export class BattlefieldScene extends Phaser.Scene {
     });
   }
 
-  private addLeaderArea(session: GameSession): void {
-    const x = 322;
-    const y = 286;
-    this.add.rectangle(x, y, 560, 150, 0x12211c, 0.96).setStrokeStyle(2, 0xbfeec5, 0.92);
+  private addHudContainer(session: GameSession, runtime: BattleRuntimeState): void {
+    const container = this.add.container(GAME_WIDTH / 2, 150);
+    const panel = this.add.rectangle(0, 0, 980, 80, 0x12211c, 0.94);
+    panel.setStrokeStyle(2, 0x7fa38a, 0.74);
+    container.add(panel);
 
-    this.add
-      .text(x - 236, y - 58, 'LEADER', {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '22px',
-        color: '#a6d9b0',
-        align: 'left',
-      })
-      .setOrigin(0, 0.5);
-
-    this.add
-      .text(x - 236, y - 22, session.deck.leader.definition.name, {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '30px',
-        color: '#f5fff0',
-        align: 'left',
-      })
-      .setOrigin(0, 0.5);
-
-    this.add
-      .text(
-        x - 236,
-        y + 18,
-        `HP ${session.deck.leader.instance.currentHp}  |  ATK ${session.deck.leader.instance.currentAttack}`,
-        {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '22px',
-          color: '#d7ead4',
-          align: 'left',
-        },
-      )
-      .setOrigin(0, 0.5);
-
-    this.add
-      .text(x - 236, y + 56, `Slot ${session.slotId}  |  ${session.saveName}`, {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '16px',
-        color: '#b7c9ba',
-        align: 'left',
-      })
-      .setOrigin(0, 0.5);
-  }
-
-  private addDeckArea(session: GameSession): void {
-    const x = 995;
-    const y = 286;
-    this.add.rectangle(x, y, 210, 150, 0x12211c, 0.96).setStrokeStyle(2, 0xbfeec5, 0.92);
-
-    this.add
-      .text(x, y - 36, 'DECK', {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '22px',
-        color: '#a6d9b0',
-        align: 'center',
-      })
-      .setOrigin(0.5);
-
-    this.add
-      .text(x, y + 6, `${session.deck.cards.length}`, {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '60px',
-        color: '#f5fff0',
-        align: 'center',
-      })
-      .setOrigin(0.5);
-
-    this.add
-      .text(x, y + 56, 'cards remaining', {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '16px',
-        color: '#b7c9ba',
-        align: 'center',
-      })
-      .setOrigin(0.5);
-  }
-
-  private addHandArea(): void {
-    const x = GAME_WIDTH / 2;
-    const y = 520;
-    this.add.rectangle(x, y, 1060, 150, 0x10211b, 0.9).setStrokeStyle(2, 0x7fa38a, 0.7);
-
-    this.add
-      .text(x - 498, y - 48, 'HAND', {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '22px',
-        color: '#a6d9b0',
-        align: 'left',
-      })
-      .setOrigin(0, 0.5);
-
-    const slotWidth = 176;
-    const slotHeight = 84;
-    const gap = 18;
-    const totalWidth = slotWidth * 5 + gap * 4;
-    const startX = x - totalWidth / 2 + slotWidth / 2;
-
-    for (let index = 0; index < 5; index += 1) {
-      const slotX = startX + index * (slotWidth + gap);
-      const slot = this.add.rectangle(slotX, y + 6, slotWidth, slotHeight, 0x162b24, 0.96);
-      slot.setStrokeStyle(2, 0x4e5d57, 0.9);
-
+    container.add(
       this.add
-        .text(slotX, y + 0, 'EMPTY', {
+        .text(-440, -22, `Slot ${session.slotId} | ${session.saveName}`, {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSize: '18px',
-          color: '#8e9a95',
+          color: '#b7c9ba',
+          align: 'left',
+        })
+        .setOrigin(0, 0.5),
+    );
+
+    container.add(
+      this.add
+        .text(-440, 20, runtime.leader.card.definition.name, {
+          fontFamily: DEFAULT_FONT_FAMILY,
+          fontSize: '24px',
+          color: '#f5fff0',
+          align: 'left',
+        })
+        .setOrigin(0, 0.5),
+    );
+
+    container.add(
+      this.add
+        .text(72, 0, `Deck ${runtime.deck.length}`, {
+          fontFamily: DEFAULT_FONT_FAMILY,
+          fontSize: '28px',
+          color: '#f5fff0',
           align: 'center',
         })
-        .setOrigin(0.5);
-    }
-  }
+        .setOrigin(0.5),
+    );
 
-  private addBattlefieldGrid(): void {
-    const x = GAME_WIDTH / 2;
-    const y = 664;
-    this.add.rectangle(x, y, 1060, 150, 0x10211b, 0.9).setStrokeStyle(2, 0x7fa38a, 0.7);
-
-    this.add
-      .text(x - 498, y - 48, 'BATTLEFIELD', {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '22px',
-        color: '#a6d9b0',
-        align: 'left',
-      })
-      .setOrigin(0, 0.5);
-
-    const cols = 4;
-    const rows = 2;
-    const cellWidth = 220;
-    const cellHeight = 42;
-    const gapX = 18;
-    const gapY = 12;
-    const totalWidth = cols * cellWidth + (cols - 1) * gapX;
-    const totalHeight = rows * cellHeight + (rows - 1) * gapY;
-    const startX = x - totalWidth / 2 + cellWidth / 2;
-    const startY = y - totalHeight / 2 + cellHeight / 2 + 12;
-
-    for (let row = 0; row < rows; row += 1) {
-      for (let col = 0; col < cols; col += 1) {
-        const cellX = startX + col * (cellWidth + gapX);
-        const cellY = startY + row * (cellHeight + gapY);
-        this.add.rectangle(cellX, cellY, cellWidth, cellHeight, 0x162b24, 0.9).setStrokeStyle(
-          2,
-          0x4e5d57,
-          0.85,
-        );
-      }
-    }
-  }
-
-  private addSessionFooter(session: GameSession): void {
-    this.add
-      .text(
-        GAME_WIDTH / 2,
-        744,
-        `Loaded slot ${session.slotId}. Battlefield is a static layout only, with no card placement or combat rules.`,
-        {
+    container.add(
+      this.add
+        .text(228, 0, `Hand ${runtime.hand.length}`, {
           fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '16px',
-          color: '#b7c9ba',
+          fontSize: '28px',
+          color: '#f5fff0',
           align: 'center',
-          wordWrap: { width: 920 },
-        },
-      )
-      .setOrigin(0.5);
+        })
+        .setOrigin(0.5),
+    );
+
+    container.add(
+      this.add
+        .text(
+          382,
+          0,
+          `HP ${runtime.leader.card.instance.currentHp} / ATK ${runtime.leader.card.instance.currentAttack}`,
+          {
+            fontFamily: DEFAULT_FONT_FAMILY,
+            fontSize: '24px',
+            color: '#d7ead4',
+            align: 'center',
+          },
+        )
+        .setOrigin(0.5),
+    );
   }
+
+  private addBattlefieldContainer(runtime: BattleRuntimeState): void {
+    const container = this.add.container(GAME_WIDTH / 2, 422);
+    const panel = this.add.rectangle(0, 0, 1060, 344, 0x10211b, 0.88);
+    panel.setStrokeStyle(2, 0x7fa38a, 0.72);
+    container.add(panel);
+
+    container.add(
+      this.add
+        .text(-500, -148, 'BATTLEFIELD', {
+          fontFamily: DEFAULT_FONT_FAMILY,
+          fontSize: '22px',
+          color: '#a6d9b0',
+          align: 'left',
+        })
+        .setOrigin(0, 0.5),
+    );
+
+    const slotCards = createBattlefieldSlotMap(runtime.battlefield);
+    const cellWidth = 290;
+    const cellHeight = 112;
+    const gapX = 34;
+    const gapY = 28;
+    const totalWidth = cellWidth * 3 + gapX * 2;
+    const totalHeight = cellHeight * 2 + gapY;
+    const startX = -totalWidth / 2 + cellWidth / 2;
+    const startY = -totalHeight / 2 + cellHeight / 2 + 22;
+
+    BATTLEFIELD_SLOT_ROWS.forEach((rowSlots, rowIndex) => {
+      rowSlots.forEach((slot, colIndex) => {
+        const x = startX + colIndex * (cellWidth + gapX);
+        const y = startY + rowIndex * (cellHeight + gapY);
+        this.addBattlefieldSlot(container, x, y, cellWidth, cellHeight, slot, slotCards[slot]);
+      });
+    });
+  }
+
+  private addBattlefieldSlot(
+    container: Phaser.GameObjects.Container,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    slot: BattlefieldSlot,
+    card: BattleCardRuntimeState | null,
+  ): void {
+    const fillColor = card ? 0x1d3f31 : 0x162b24;
+    const strokeColor = card ? 0xbfeec5 : 0x4e5d57;
+    const slotBackground = this.add.rectangle(x, y, width, height, fillColor, 0.94);
+    slotBackground.setStrokeStyle(2, strokeColor, card ? 0.92 : 0.86);
+    container.add(slotBackground);
+
+    container.add(
+      this.add
+        .text(x - width / 2 + 18, y - height / 2 + 18, slot, {
+          fontFamily: DEFAULT_FONT_FAMILY,
+          fontSize: '18px',
+          color: '#a6d9b0',
+          align: 'left',
+        })
+        .setOrigin(0, 0.5),
+    );
+
+    if (!card) {
+      container.add(
+        this.add
+          .text(x, y + 14, 'EMPTY', {
+            fontFamily: DEFAULT_FONT_FAMILY,
+            fontSize: '18px',
+            color: '#8e9a95',
+            align: 'center',
+          })
+          .setOrigin(0.5),
+      );
+      return;
+    }
+
+    container.add(
+      this.add
+        .text(x, y - 10, card.card.definition.name, {
+          fontFamily: DEFAULT_FONT_FAMILY,
+          fontSize: '24px',
+          color: '#f5fff0',
+          align: 'center',
+          wordWrap: { width: width - 34 },
+        })
+        .setOrigin(0.5),
+    );
+
+    container.add(
+      this.add
+        .text(
+          x,
+          y + 30,
+          `HP ${card.card.instance.currentHp}  ATK ${card.card.instance.currentAttack}`,
+          {
+            fontFamily: DEFAULT_FONT_FAMILY,
+            fontSize: '18px',
+            color: '#d7ead4',
+            align: 'center',
+          },
+        )
+        .setOrigin(0.5),
+    );
+  }
+
+  private addHandDeckContainer(runtime: BattleRuntimeState): void {
+    const hiddenY = GAME_HEIGHT - 52;
+    const expandedY = GAME_HEIGHT - 128;
+    const width = 1120;
+    const height = 220;
+    const container = this.add.container(GAME_WIDTH / 2, hiddenY);
+    this.handDeckContainer = container;
+
+    const panel = this.add.rectangle(0, 0, width, height, 0x10211b, 0.96);
+    panel.setStrokeStyle(2, 0xbfeec5, 0.82);
+    container.add(panel);
+
+    container.add(
+      this.add
+        .text(-520, -84, 'HAND', {
+          fontFamily: DEFAULT_FONT_FAMILY,
+          fontSize: '22px',
+          color: '#a6d9b0',
+          align: 'left',
+        })
+        .setOrigin(0, 0.5),
+    );
+
+    container.add(
+      this.add
+        .text(446, -84, `Deck ${runtime.deck.length}`, {
+          fontFamily: DEFAULT_FONT_FAMILY,
+          fontSize: '24px',
+          color: '#f5fff0',
+          align: 'right',
+        })
+        .setOrigin(0, 0.5),
+    );
+
+    this.addHandCards(container, runtime.hand);
+    container.setSize(width, height);
+    container.setInteractive(
+      new Phaser.Geom.Rectangle(-width / 2, -height / 2, width, height),
+      Phaser.Geom.Rectangle.Contains,
+    );
+    container.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OVER, () => {
+      this.moveHandDeckContainer(expandedY);
+    });
+    container.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OUT, () => {
+      this.moveHandDeckContainer(hiddenY);
+    });
+  }
+
+  private addHandCards(
+    container: Phaser.GameObjects.Container,
+    hand: BattleCardRuntimeState[],
+  ): void {
+    const cardWidth = 184;
+    const cardHeight = 122;
+    const gap = 20;
+    const totalWidth = cardWidth * INITIAL_HAND_SIZE + gap * (INITIAL_HAND_SIZE - 1);
+    const startX = -totalWidth / 2 + cardWidth / 2;
+    const y = 20;
+
+    for (let index = 0; index < INITIAL_HAND_SIZE; index += 1) {
+      const card = hand[index] ?? null;
+      const x = startX + index * (cardWidth + gap);
+      const background = this.add.rectangle(x, y, cardWidth, cardHeight, 0x162b24, 0.96);
+      background.setStrokeStyle(2, card ? 0x7fa38a : 0x4e5d57, card ? 0.9 : 0.74);
+      container.add(background);
+
+      const label = card ? card.card.definition.name : 'EMPTY';
+      const labelColor = card ? '#f5fff0' : '#8e9a95';
+      container.add(
+        this.add
+          .text(x, y - 18, label, {
+            fontFamily: DEFAULT_FONT_FAMILY,
+            fontSize: card ? '17px' : '18px',
+            color: labelColor,
+            align: 'center',
+            wordWrap: { width: cardWidth - 24 },
+          })
+          .setOrigin(0.5),
+      );
+
+      container.add(
+        this.add
+          .text(
+            x,
+            y + 38,
+            card
+              ? `HP ${card.card.instance.currentHp}  ATK ${card.card.instance.currentAttack}`
+              : '',
+            {
+              fontFamily: DEFAULT_FONT_FAMILY,
+              fontSize: '15px',
+              color: '#d7ead4',
+              align: 'center',
+            },
+          )
+          .setOrigin(0.5),
+      );
+    }
+  }
+
+  private moveHandDeckContainer(y: number): void {
+    if (!this.handDeckContainer) {
+      return;
+    }
+
+    this.tweens.add({
+      targets: this.handDeckContainer,
+      y,
+      duration: 180,
+      ease: 'Sine.easeOut',
+    });
+  }
+}
+
+function createBattlefieldSlotMap(
+  cards: BattleCardRuntimeState[],
+): Record<BattlefieldSlot, BattleCardRuntimeState | null> {
+  const slotCards: Record<BattlefieldSlot, BattleCardRuntimeState | null> = {
+    FR: null,
+    FC: null,
+    FL: null,
+    BR: null,
+    BC: null,
+    BL: null,
+  };
+
+  cards.forEach((card) => {
+    if (card.battlefieldSlot) {
+      slotCards[card.battlefieldSlot] = card;
+    }
+  });
+
+  return slotCards;
 }
