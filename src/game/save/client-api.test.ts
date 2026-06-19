@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fetchSaveSlotSummaries, fetchSaveSlot, initializeSaveSlot } from './client-api';
+import {
+  fetchSaveSlotSummaries,
+  fetchSaveSlot,
+  initializeSaveSlot,
+  saveSlotState,
+} from './client-api';
+import type { SaveSlotState } from './types';
 
 type FakeResponseInit = {
   ok: boolean;
@@ -16,6 +22,30 @@ function createFakeResponse(init: FakeResponseInit): Response {
     json: async () => init.body,
     text: async () => (typeof init.body === 'string' ? init.body : JSON.stringify(init.body)),
   } as Response;
+}
+
+function createValidSaveSlotState(): SaveSlotState {
+  return {
+    schemaVersion: 1,
+    slotId: 1,
+    createdAt: '2024-01-01T00:00:00.000Z',
+    updatedAt: '2024-01-02T00:00:00.000Z',
+    saveName: 'Slot 1',
+    deck: {
+      id: 'deck-1',
+      leader: {
+        instanceId: 'leader-1',
+        definitionId: 'leader_minerva',
+        owner: 'PLAYER',
+        zone: 'LEADER',
+        level: 1,
+        exp: 0,
+        currentHp: 100,
+        currentAttack: 10,
+      },
+      cards: [],
+    },
+  };
 }
 
 afterEach(() => {
@@ -72,6 +102,45 @@ describe('save slot client api', () => {
     );
 
     await expect(fetchSaveSlot(1)).rejects.toThrow('Invalid save slot state response');
+  });
+
+  it('saves a slot state with PUT and JSON body', async () => {
+    const state = createValidSaveSlotState();
+    const fetchSpy = vi.fn(async () =>
+      createFakeResponse({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        body: state,
+      }),
+    );
+    vi.stubGlobal('fetch', fetchSpy);
+
+    await expect(saveSlotState(state)).resolves.toEqual(state);
+    expect(fetchSpy).toHaveBeenCalledWith('/api/save-slots/1', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(state),
+    });
+  });
+
+  it('rejects invalid save slot state payloads after save', async () => {
+    const state = createValidSaveSlotState();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        createFakeResponse({
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          body: { slotId: 1 },
+        }),
+      ),
+    );
+
+    await expect(saveSlotState(state)).rejects.toThrow('Invalid save slot state response');
   });
 
   it('loads initialized save slots', async () => {

@@ -31,7 +31,11 @@ function isSaveSlotSummary(value: unknown): value is SaveSlotSummary {
 }
 
 function isSaveSlotsResponse(value: unknown): value is { slots: SaveSlotSummary[] } {
-  return isRecord(value) && Array.isArray(value.slots) && value.slots.every((slot) => isSaveSlotSummary(slot));
+  return (
+    isRecord(value) &&
+    Array.isArray(value.slots) &&
+    value.slots.every((slot) => isSaveSlotSummary(slot))
+  );
 }
 
 function isSaveSlotState(value: unknown): value is SaveSlotState {
@@ -74,6 +78,30 @@ export async function fetchSaveSlotSummaries(): Promise<SaveSlotSummary[]> {
  */
 export async function fetchSaveSlot(slotId: SaveSlotId): Promise<SaveSlotState> {
   const response = await fetch(`/api/save-slots/${slotId}`);
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  const data = (await response.json()) as unknown;
+  if (!isSaveSlotState(data)) {
+    throw new Error('Invalid save slot state response');
+  }
+
+  return data;
+}
+
+/**
+ * 저장 슬롯 상태를 서버에 덮어쓰고, 서버가 돌려준 저장 상태를 다시 검증한다.
+ * 클라이언트가 만든 직렬화 결과와 서버 검증 스키마가 어긋나면 예외를 던진다.
+ */
+export async function saveSlotState(state: SaveSlotState): Promise<SaveSlotState> {
+  const response = await fetch(`/api/save-slots/${state.slotId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(state),
+  });
   if (!response.ok) {
     throw new Error(await response.text());
   }

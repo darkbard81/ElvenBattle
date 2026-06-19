@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createInitialSaveState } from './create-initial-save';
-import { createGameSession } from './session';
+import { createGameSession, createSaveSlotStateFromGameSession } from './session';
 
 describe('createGameSession', () => {
   it('attaches card definitions to save instances', async () => {
@@ -27,6 +27,58 @@ describe('createGameSession', () => {
       },
     };
 
-    expect(() => createGameSession(brokenState)).toThrow('Unknown card definitionId: missing_definition');
+    expect(() => createGameSession(brokenState)).toThrow(
+      'Unknown card definitionId: missing_definition',
+    );
+  });
+
+  it('serializes a game session back to save-slot state without runtime fields', async () => {
+    const createdAt = new Date('2024-01-01T00:00:00.000Z');
+    const updatedAt = new Date('2024-01-02T00:00:00.000Z');
+    const state = await createInitialSaveState({ slotId: 1, now: createdAt });
+    const session = createGameSession(state);
+
+    (session.deck.leader.instance as unknown as Record<string, unknown>).battlefieldSlot = 'BC';
+    (session.deck.cards[0]!.instance as unknown as Record<string, unknown>).handIndex = 0;
+
+    const savedState = createSaveSlotStateFromGameSession(session, { now: updatedAt });
+
+    expect(savedState).toMatchObject({
+      schemaVersion: 1,
+      slotId: 1,
+      createdAt: createdAt.toISOString(),
+      updatedAt: updatedAt.toISOString(),
+      saveName: 'Slot 1',
+      deck: {
+        id: state.deck.id,
+      },
+    });
+    expect(savedState.deck.leader.zone).toBe('LEADER');
+    expect(savedState.deck.cards.every((card) => card.zone === 'DECK')).toBe(true);
+    expect(savedState.deck.leader).not.toHaveProperty('definition');
+    expect(savedState.deck.leader).not.toHaveProperty('battlefieldSlot');
+    expect(savedState.deck.cards[0]).not.toHaveProperty('definition');
+    expect(savedState.deck.cards[0]).not.toHaveProperty('handIndex');
+  });
+
+  it('restores card instances and definitions from serialized session state', async () => {
+    const state = await createInitialSaveState({ slotId: 1 });
+    const session = createGameSession(state);
+    const savedState = createSaveSlotStateFromGameSession(session, {
+      now: new Date('2024-01-03T00:00:00.000Z'),
+    });
+
+    const restoredSession = createGameSession(savedState);
+
+    expect(restoredSession.deck.leader.instance.instanceId).toBe(
+      session.deck.leader.instance.instanceId,
+    );
+    expect(restoredSession.deck.leader.definition.id).toBe(session.deck.leader.definition.id);
+    expect(restoredSession.deck.cards.map((card) => card.instance.instanceId)).toEqual(
+      session.deck.cards.map((card) => card.instance.instanceId),
+    );
+    expect(restoredSession.deck.cards.map((card) => card.definition.id)).toEqual(
+      session.deck.cards.map((card) => card.definition.id),
+    );
   });
 });

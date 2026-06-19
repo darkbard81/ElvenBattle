@@ -4,6 +4,7 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { describe, expect, it } from 'vitest';
+import type { SaveSlotState } from '../game/save/types';
 import { createSaveSlotsApiHandler, listSaveSlotSummaries } from './save-slots-api';
 
 function createRequest(method: string, url: string, body?: string): IncomingMessage {
@@ -81,7 +82,7 @@ describe('save slots api', () => {
 
     expect(initRes.statusCode()).toBe(200);
     const initBody = initRes.json() as {
-      state: { slotId: number; deck: { leader: Record<string, unknown>; cards: unknown[] } };
+      state: SaveSlotState;
       summary: { isEmpty: boolean; leaderName: string | null };
     };
     expect(initBody.state.slotId).toBe(1);
@@ -96,15 +97,44 @@ describe('save slots api', () => {
     expect(list.slots[0]?.isEmpty).toBe(false);
     expect(list.slots[0]?.leaderName).toBe('미네르바');
 
+    const savedState: SaveSlotState = {
+      ...initBody.state,
+      updatedAt: '2024-01-02T03:04:05.000Z',
+      saveName: 'Manual Save',
+      deck: {
+        ...initBody.state.deck,
+        leader: {
+          ...initBody.state.deck.leader,
+          currentHp: initBody.state.deck.leader.currentHp - 1,
+        },
+      },
+    };
+    const putReq = createRequest('PUT', '/api/save-slots/1', JSON.stringify(savedState));
+    const putRes = createResponse();
+    await handler(putReq, putRes.response, () => undefined);
+
+    expect(putRes.statusCode()).toBe(200);
+    expect(putRes.json()).toEqual(savedState);
+
     const getReq = createRequest('GET', '/api/save-slots/1');
     const getRes = createResponse();
     await handler(getReq, getRes.response, () => undefined);
 
     expect(getRes.statusCode()).toBe(200);
-    const getBody = getRes.json() as { slotId: number; saveName: string; deck: { leader: Record<string, unknown> } };
+    const getBody = getRes.json() as SaveSlotState;
     expect(getBody.slotId).toBe(1);
-    expect(getBody.saveName).toBe('Slot 1');
+    expect(getBody).toEqual(savedState);
+    expect(getBody.saveName).toBe('Manual Save');
     expect(getBody.deck.leader).not.toHaveProperty('definitionName');
+
+    const updatedList = await listSaveSlotSummaries(slotsRoot);
+    expect(updatedList.slots[0]).toMatchObject({
+      slotId: 1,
+      saveName: 'Manual Save',
+      updatedAt: '2024-01-02T03:04:05.000Z',
+      leaderName: '미네르바',
+      isEmpty: false,
+    });
   });
 
   it('rejects invalid slot numbers', async () => {

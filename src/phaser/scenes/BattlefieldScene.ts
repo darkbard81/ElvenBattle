@@ -7,7 +7,12 @@ import {
   type BattleRuntimeState,
   type BattlefieldSlot,
 } from '../../game/battle/types';
-import type { GameSession } from '../../game/save/session';
+import { fetchSaveSlot, saveSlotState } from '../../game/save/client-api';
+import {
+  createGameSession,
+  createSaveSlotStateFromGameSession,
+  type GameSession,
+} from '../../game/save/session';
 import { DEFAULT_FONT_FAMILY } from '../../theme';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
 import { createMenuButton } from '../ui/menu-button';
@@ -19,6 +24,9 @@ import type { BattlefieldSceneData } from './scene-data';
  */
 export class BattlefieldScene extends Phaser.Scene {
   private handDeckContainer: Phaser.GameObjects.Container | null = null;
+  private session!: GameSession;
+  private statusText!: Phaser.GameObjects.Text;
+  private isSaving = false;
 
   constructor() {
     super({ key: 'BattlefieldScene' });
@@ -28,12 +36,17 @@ export class BattlefieldScene extends Phaser.Scene {
    * 초기 전투 런타임을 만들고 세 영역의 전장 화면과 뒤로 가기 버튼을 구성한다.
    */
   create(data: BattlefieldSceneData): void {
-    const runtime = createInitialBattleRuntime(data.session);
+    this.session = data.session;
+    this.isSaving = false;
+    this.handDeckContainer = null;
+    const runtime = createInitialBattleRuntime(this.session);
 
     this.addBackground();
     this.addTitle();
-    this.addBattlefieldLayout(data.session, runtime);
+    this.addStatusText();
+    this.addBattlefieldLayout(this.session, runtime);
     this.addBackButton();
+    this.addSaveButton();
   }
 
   private addBackground(): void {
@@ -77,6 +90,59 @@ export class BattlefieldScene extends Phaser.Scene {
         this.scene.start('SaveSlotScene');
       },
     });
+  }
+
+  private addSaveButton(): void {
+    createMenuButton(this, {
+      x: GAME_WIDTH - 146,
+      y: 64,
+      width: 154,
+      height: 52,
+      label: 'Save',
+      enabled: true,
+      onClick: () => {
+        void this.saveCurrentSession();
+      },
+    });
+  }
+
+  private addStatusText(): void {
+    this.statusText = this.add
+      .text(GAME_WIDTH / 2, 104, 'Back returns to the save slots without saving.', {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '18px',
+        color: '#d9ebd1',
+        align: 'center',
+        wordWrap: { width: 720 },
+      })
+      .setOrigin(0.5)
+      .setAlpha(0.92);
+  }
+
+  private async saveCurrentSession(): Promise<void> {
+    if (this.isSaving) {
+      return;
+    }
+
+    this.isSaving = true;
+    this.setStatus(`Saving Slot ${this.session.slotId}...`);
+
+    try {
+      const state = createSaveSlotStateFromGameSession(this.session);
+      await saveSlotState(state);
+      const reloadedState = await fetchSaveSlot(state.slotId);
+      this.session = createGameSession(reloadedState);
+      this.setStatus(`Saved ${formatSaveStatusDate(reloadedState.updatedAt)}`);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.setStatus(`Save failed: ${message}`);
+    } finally {
+      this.isSaving = false;
+    }
+  }
+
+  private setStatus(message: string): void {
+    this.statusText.setText(message);
   }
 
   private addHudContainer(session: GameSession, runtime: BattleRuntimeState): void {
@@ -384,4 +450,16 @@ function createBattlefieldSlotMap(
   });
 
   return slotCards;
+}
+
+function formatSaveStatusDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat('ko-KR', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(date);
 }
