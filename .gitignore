@@ -20,9 +20,6 @@ coverage/
 # OS junk
 .DS_Store
 
-# Codex
-AGNETS.md
-
 # Generated card and asset outputs
 /cards/*/
 /assets/*

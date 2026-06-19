@@ -24,7 +24,7 @@ type MainMenuSceneData = {
   failedCount: number;
 };
 
-type BattleSceneData = {
+type BattlefieldSceneData = {
   session: GameSession;
 };
 
@@ -66,7 +66,7 @@ function createGameConfig(): Phaser.Types.Core.GameConfig {
     width: GAME_WIDTH,
     height: GAME_HEIGHT,
     backgroundColor: '#071018',
-    scene: [BootScene, TitleScene, LoaderScene, MainMenuScene, SaveSlotScene, BattleScene],
+    scene: [BootScene, TitleScene, LoaderScene, MainMenuScene, SaveSlotScene, BattlefieldScene],
     scale: {
       mode: Phaser.Scale.FIT,
       autoCenter: Phaser.Scale.CENTER_BOTH,
@@ -647,14 +647,14 @@ class SaveSlotScene extends Phaser.Scene {
         this.setStatus(`Initializing Slot ${slot.slotId}...`);
         const result = await initializeSaveSlot(slot.slotId);
         const session = createGameSession(result.state);
-        this.scene.start('BattleScene', { session } satisfies BattleSceneData);
+        this.scene.start('BattlefieldScene', { session } satisfies BattlefieldSceneData);
         return;
       }
 
       this.setStatus(`Loading Slot ${slot.slotId}...`);
       const state = await fetchSaveSlot(slot.slotId);
       const session = createGameSession(state);
-      this.scene.start('BattleScene', { session } satisfies BattleSceneData);
+      this.scene.start('BattlefieldScene', { session } satisfies BattlefieldSceneData);
     } catch (error: unknown) {
       this.showFailureState(error);
     }
@@ -662,18 +662,18 @@ class SaveSlotScene extends Phaser.Scene {
 }
 
 /**
- * SaveSlotScene에서 전달받은 GameSession이 실제로 다음 씬에 도달했는지 확인하는 최소 배틀 씬이다.
- * 전투 규칙은 두지 않고, 슬롯과 리더 정보를 읽기 전용으로 표시한다.
+ * SaveSlotScene에서 전달받은 GameSession을 화면 뼈대로만 보여주는 Battlefield 씬이다.
+ * 전투 규칙과 상호작용은 두지 않고, 리더와 배치 영역의 자리만 표시한다.
  */
-class BattleScene extends Phaser.Scene {
+class BattlefieldScene extends Phaser.Scene {
   constructor() {
-    super({ key: 'BattleScene' });
+    super({ key: 'BattlefieldScene' });
   }
 
-  create(data: BattleSceneData): void {
+  create(data: BattlefieldSceneData): void {
     this.addBackground();
     this.addTitle();
-    this.addSessionSummary(data.session);
+    this.addBattlefieldLayout(data.session);
     this.addBackButton();
   }
 
@@ -688,7 +688,7 @@ class BattleScene extends Phaser.Scene {
 
   private addTitle(): void {
     this.add
-      .text(GAME_WIDTH / 2, 110, 'BATTLE SCENE', {
+      .text(GAME_WIDTH / 2, 110, 'BATTLEFIELD', {
         fontFamily: DEFAULT_FONT_FAMILY,
         fontSize: '56px',
         fontStyle: '700',
@@ -710,55 +710,12 @@ class BattleScene extends Phaser.Scene {
       .setAlpha(0.9);
   }
 
-  private addSessionSummary(session: GameSession): void {
-    const panelX = GAME_WIDTH / 2;
-    const panelY = 420;
-    const panel = this.add.rectangle(panelX, panelY, 760, 330, 0x12211c, 0.96);
-    panel.setStrokeStyle(2, 0xbfeec5, 0.92);
-
-    const lines = [
-      `Slot: ${session.slotId}`,
-      `Save Name: ${session.saveName}`,
-      `Deck ID: ${session.deck.id}`,
-      `Leader: ${session.deck.leader.definition.name}`,
-      `Leader HP: ${session.deck.leader.instance.currentHp}`,
-      `Leader Attack: ${session.deck.leader.instance.currentAttack}`,
-      `Deck Cards: ${session.deck.cards.length}`,
-    ];
-
-    this.add
-      .text(panelX, 304, 'Loaded session data', {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '28px',
-        color: '#f5fff0',
-        align: 'center',
-      })
-      .setOrigin(0.5);
-
-    this.add
-      .text(panelX, panelY, lines.join('\n'), {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '24px',
-        color: '#d7ead4',
-        align: 'left',
-        lineSpacing: 12,
-      })
-      .setOrigin(0.5);
-
-    this.add
-      .text(
-        GAME_WIDTH / 2,
-        612,
-        'This scene only confirms the session handoff. No battle rules are active yet.',
-        {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '16px',
-          color: '#b7c9ba',
-          align: 'center',
-          wordWrap: { width: 760 },
-        },
-      )
-      .setOrigin(0.5);
+  private addBattlefieldLayout(session: GameSession): void {
+    this.addLeaderArea(session);
+    this.addDeckArea(session);
+    this.addHandArea();
+    this.addBattlefieldGrid();
+    this.addSessionFooter(session);
   }
 
   private addBackButton(): void {
@@ -773,6 +730,182 @@ class BattleScene extends Phaser.Scene {
         this.scene.start('SaveSlotScene');
       },
     });
+  }
+
+  private addLeaderArea(session: GameSession): void {
+    const x = 322;
+    const y = 286;
+    this.add.rectangle(x, y, 560, 150, 0x12211c, 0.96).setStrokeStyle(2, 0xbfeec5, 0.92);
+
+    this.add
+      .text(x - 236, y - 58, 'LEADER', {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '22px',
+        color: '#a6d9b0',
+        align: 'left',
+      })
+      .setOrigin(0, 0.5);
+
+    this.add
+      .text(x - 236, y - 22, session.deck.leader.definition.name, {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '30px',
+        color: '#f5fff0',
+        align: 'left',
+      })
+      .setOrigin(0, 0.5);
+
+    this.add
+      .text(
+        x - 236,
+        y + 18,
+        `HP ${session.deck.leader.instance.currentHp}  |  ATK ${session.deck.leader.instance.currentAttack}`,
+        {
+          fontFamily: DEFAULT_FONT_FAMILY,
+          fontSize: '22px',
+          color: '#d7ead4',
+          align: 'left',
+        },
+      )
+      .setOrigin(0, 0.5);
+
+    this.add
+      .text(
+        x - 236,
+        y + 56,
+        `Slot ${session.slotId}  |  ${session.saveName}`,
+        {
+          fontFamily: DEFAULT_FONT_FAMILY,
+          fontSize: '16px',
+          color: '#b7c9ba',
+          align: 'left',
+        },
+      )
+      .setOrigin(0, 0.5);
+  }
+
+  private addDeckArea(session: GameSession): void {
+    const x = 995;
+    const y = 286;
+    this.add.rectangle(x, y, 210, 150, 0x12211c, 0.96).setStrokeStyle(2, 0xbfeec5, 0.92);
+
+    this.add
+      .text(x, y - 36, 'DECK', {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '22px',
+        color: '#a6d9b0',
+        align: 'center',
+      })
+      .setOrigin(0.5);
+
+    this.add
+      .text(x, y + 6, `${session.deck.cards.length}`, {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '60px',
+        color: '#f5fff0',
+        align: 'center',
+      })
+      .setOrigin(0.5);
+
+    this.add
+      .text(x, y + 56, 'cards remaining', {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '16px',
+        color: '#b7c9ba',
+        align: 'center',
+      })
+      .setOrigin(0.5);
+  }
+
+  private addHandArea(): void {
+    const x = GAME_WIDTH / 2;
+    const y = 520;
+    this.add.rectangle(x, y, 1060, 150, 0x10211b, 0.9).setStrokeStyle(2, 0x7fa38a, 0.7);
+
+    this.add
+      .text(x - 498, y - 48, 'HAND', {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '22px',
+        color: '#a6d9b0',
+        align: 'left',
+      })
+      .setOrigin(0, 0.5);
+
+    const slotWidth = 176;
+    const slotHeight = 84;
+    const gap = 18;
+    const totalWidth = slotWidth * 5 + gap * 4;
+    const startX = x - totalWidth / 2 + slotWidth / 2;
+
+    for (let index = 0; index < 5; index += 1) {
+      const slotX = startX + index * (slotWidth + gap);
+      const slot = this.add.rectangle(slotX, y + 6, slotWidth, slotHeight, 0x162b24, 0.96);
+      slot.setStrokeStyle(2, 0x4e5d57, 0.9);
+
+      this.add
+        .text(slotX, y + 0, 'EMPTY', {
+          fontFamily: DEFAULT_FONT_FAMILY,
+          fontSize: '18px',
+          color: '#8e9a95',
+          align: 'center',
+        })
+        .setOrigin(0.5);
+    }
+  }
+
+  private addBattlefieldGrid(): void {
+    const x = GAME_WIDTH / 2;
+    const y = 664;
+    this.add.rectangle(x, y, 1060, 150, 0x10211b, 0.9).setStrokeStyle(2, 0x7fa38a, 0.7);
+
+    this.add
+      .text(x - 498, y - 48, 'BATTLEFIELD', {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '22px',
+        color: '#a6d9b0',
+        align: 'left',
+      })
+      .setOrigin(0, 0.5);
+
+    const cols = 4;
+    const rows = 2;
+    const cellWidth = 220;
+    const cellHeight = 42;
+    const gapX = 18;
+    const gapY = 12;
+    const totalWidth = cols * cellWidth + (cols - 1) * gapX;
+    const totalHeight = rows * cellHeight + (rows - 1) * gapY;
+    const startX = x - totalWidth / 2 + cellWidth / 2;
+    const startY = y - totalHeight / 2 + cellHeight / 2 + 12;
+
+    for (let row = 0; row < rows; row += 1) {
+      for (let col = 0; col < cols; col += 1) {
+        const cellX = startX + col * (cellWidth + gapX);
+        const cellY = startY + row * (cellHeight + gapY);
+        this.add.rectangle(cellX, cellY, cellWidth, cellHeight, 0x162b24, 0.9).setStrokeStyle(
+          2,
+          0x4e5d57,
+          0.85,
+        );
+      }
+    }
+  }
+
+  private addSessionFooter(session: GameSession): void {
+    this.add
+      .text(
+        GAME_WIDTH / 2,
+        744,
+        `Loaded slot ${session.slotId}. Battlefield is a static layout only, with no card placement or combat rules.`,
+        {
+          fontFamily: DEFAULT_FONT_FAMILY,
+          fontSize: '16px',
+          color: '#b7c9ba',
+          align: 'center',
+          wordWrap: { width: 920 },
+        },
+      )
+      .setOrigin(0.5);
   }
 }
 
