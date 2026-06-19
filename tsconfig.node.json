@@ -19,6 +19,7 @@
     "src/game/save/**/*",
     "src/server",
     "src/tools/card-text/server",
-    "src/type"
+    "src/type",
+    "cards/**/*.json"
   ]
 }

@@ -1,13 +1,30 @@
+# Dependencies
 node_modules/
+
+# Build output
 dist/
 coverage/
-generated/*
-!generated/README.md
-*.local
-.DS_Store
-# Ignore image/output folders under cards, but keep JSON files directly in /cards
-/cards/*/
-assets/*
-!assets/README.md
+.vite/
+*.tsbuildinfo
+/.codex/
+/.agents/
+
+# Local state
 .data/
+
+# Environment files
 .env
+.env.*
+*.local
+
+# OS junk
+.DS_Store
+
+# Generated card and asset outputs
+/cards/*/
+/assets/*
+!/assets/README.md
+
+# Generated helper files
+/generated/
+!/generated/README.md
