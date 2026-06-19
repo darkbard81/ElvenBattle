@@ -13,7 +13,7 @@ import { GAME_HEIGHT, GAME_WIDTH } from './constants';
  */
 export function createGameConfig(parent: HTMLElement): Phaser.Types.Core.GameConfig {
   return {
-    type: Phaser.AUTO,
+    type: Phaser.WEBGL,
     parent,
     width: GAME_WIDTH,
     height: GAME_HEIGHT,

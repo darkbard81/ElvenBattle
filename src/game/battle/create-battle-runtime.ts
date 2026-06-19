@@ -1,49 +1,86 @@
+import darkDeckDefinitionData from '../../../cards/deck_dark.json';
 import type { GameSession, RuntimeCardInstance } from '../save/session';
 import {
+  createRuntimeDeckInstanceFromDefinitions,
+  readCardDefinitionFile,
+} from '../save/deck-instancing';
+import {
+  ENEMY_INITIAL_LEADER_SLOT,
   INITIAL_HAND_SIZE,
+  PLAYER_INITIAL_LEADER_SLOT,
   type BattleCardRuntimeState,
+  type BattleParticipantRuntimeState,
   type BattleRuntimeState,
   type BattleRuntimeZone,
-  type BattlefieldSlot,
+  type BattleSide,
+  type BattleSlotId,
 } from './types';
 
 /**
- * 저장 슬롯의 카드 인스턴스를 전투 중에만 쓰는 런타임 Zone 상태로 변환한다.
- * 저장 호환용 `LEADER` Zone은 사용하지 않고, 리더는 전장 `BC` 슬롯 카드로 배치한다.
+ * 저장 슬롯의 플레이어 덱과 테스트용 적 덱을 전투 중에만 쓰는 런타임 Zone 상태로 변환한다.
+ * 저장 호환용 `LEADER` Zone은 사용하지 않고, 양측 리더는 각자의 `Side:BC` 전장 슬롯에 배치한다.
  */
 export function createInitialBattleRuntime(session: GameSession): BattleRuntimeState {
-  const leader = createBattleCardRuntimeState(session.deck.leader, 'BATTLEFIELD', {
-    battlefieldSlot: 'BC',
+  const player = createBattleParticipantRuntimeState(
+    'player',
+    session.deck,
+    PLAYER_INITIAL_LEADER_SLOT,
+  );
+  const enemyDeck = createRuntimeDeckInstanceFromDefinitions({
+    deckId: 'deck-enemy-dark-test',
+    cardDefinitions: readCardDefinitionFile(darkDeckDefinitionData).cards,
+    owner: 'ENEMY',
+    unitCount: 29,
   });
-  const hand = session.deck.cards
-    .slice(0, INITIAL_HAND_SIZE)
-    .map((card, handIndex) => createBattleCardRuntimeState(card, 'HAND', { handIndex }));
-  const deck = session.deck.cards
-    .slice(INITIAL_HAND_SIZE)
-    .map((card, deckIndex) => createBattleCardRuntimeState(card, 'DECK', { deckIndex }));
+  const enemy = createBattleParticipantRuntimeState('enemy', enemyDeck, ENEMY_INITIAL_LEADER_SLOT);
 
   return {
+    player,
+    enemy,
+    battlefield: [enemy.leader, player.leader],
+    drop: [],
+  };
+}
+
+function createBattleParticipantRuntimeState(
+  side: BattleSide,
+  deck: GameSession['deck'],
+  leaderSlot: BattleSlotId,
+): BattleParticipantRuntimeState {
+  const leader = createBattleCardRuntimeState(side, deck.leader, 'BATTLEFIELD', {
+    battlefieldSlot: leaderSlot,
+  });
+  const hand = deck.cards
+    .slice(0, INITIAL_HAND_SIZE)
+    .map((card, handIndex) => createBattleCardRuntimeState(side, card, 'HAND', { handIndex }));
+  const remainingDeck = deck.cards
+    .slice(INITIAL_HAND_SIZE)
+    .map((card, deckIndex) => createBattleCardRuntimeState(side, card, 'DECK', { deckIndex }));
+
+  return {
+    side,
     leader,
-    deck,
+    deck: remainingDeck,
     hand,
-    battlefield: [leader],
     drop: [],
   };
 }
 
 type CreateBattleCardRuntimeStateOptions = {
-  battlefieldSlot?: BattlefieldSlot;
+  battlefieldSlot?: BattleSlotId;
   handIndex?: number;
   deckIndex?: number;
 };
 
 function createBattleCardRuntimeState(
+  side: BattleSide,
   card: RuntimeCardInstance,
   zone: BattleRuntimeZone,
   options: CreateBattleCardRuntimeStateOptions,
 ): BattleCardRuntimeState {
   return {
     card,
+    side,
     zone,
     battlefieldSlot: options.battlefieldSlot ?? null,
     handIndex: options.handIndex ?? null,

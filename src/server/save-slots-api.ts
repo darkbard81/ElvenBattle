@@ -135,7 +135,11 @@ async function readSaveSlotState(
 
 async function writeSaveSlotState(saveSlotsRoot: string, state: SaveSlotState): Promise<void> {
   await fs.mkdir(saveSlotsRoot, { recursive: true });
-  await fs.writeFile(getSaveSlotPath(saveSlotsRoot, state.slotId), `${JSON.stringify(state, null, 2)}\n`, 'utf8');
+  await fs.writeFile(
+    getSaveSlotPath(saveSlotsRoot, state.slotId),
+    `${JSON.stringify(state, null, 2)}\n`,
+    'utf8',
+  );
 }
 
 function createEmptySummary(slotId: SaveSlotId) {
@@ -259,7 +263,9 @@ function isRecord(value: unknown): value is JsonRecord {
 }
 
 function isFileNotFoundError(error: unknown): boolean {
-  return error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === 'ENOENT';
+  return (
+    error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === 'ENOENT'
+  );
 }
 
 function getErrorStatusCode(error: unknown): number {
@@ -275,8 +281,8 @@ function getErrorStatusCode(error: unknown): number {
       error.message.startsWith('createdAt and updatedAt must be strings') ||
       error.message.startsWith('saveName must be a non-empty string') ||
       error.message.startsWith('deck must be a deck instance') ||
-      error.message.startsWith('Expected exactly one LEADER card in deck_test.json') ||
-      error.message.startsWith('Expected at least one UNIT card in deck_test.json') ||
+      error.message.startsWith('Expected exactly one LEADER card') ||
+      error.message.startsWith('Expected at least one UNIT card') ||
       error.message.startsWith('Invalid ')
     ) {
       return 400;

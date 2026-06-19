@@ -1,11 +1,9 @@
 import Phaser from 'phaser';
 import { createInitialBattleRuntime } from '../../game/battle/create-battle-runtime';
 import {
-  BATTLEFIELD_SLOT_ROWS,
   INITIAL_HAND_SIZE,
   type BattleCardRuntimeState,
   type BattleRuntimeState,
-  type BattlefieldSlot,
 } from '../../game/battle/types';
 import { fetchSaveSlot, saveSlotState } from '../../game/save/client-api';
 import {
@@ -14,6 +12,7 @@ import {
   type GameSession,
 } from '../../game/save/session';
 import { DEFAULT_FONT_FAMILY } from '../../theme';
+import { PerspectiveBattleField } from '../battlefield/PerspectiveBattleField';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
 import { createMenuButton } from '../ui/menu-button';
 import type { BattlefieldSceneData } from './scene-data';
@@ -74,8 +73,13 @@ export class BattlefieldScene extends Phaser.Scene {
 
   private addBattlefieldLayout(session: GameSession, runtime: BattleRuntimeState): void {
     this.addHudContainer(session, runtime);
-    this.addBattlefieldContainer(runtime);
-    this.addHandDeckContainer(runtime);
+    new PerspectiveBattleField(this, {
+      runtime,
+      onIntent: (intent) => {
+        this.setStatus(`Selected ${intent.slotId}`);
+      },
+    }).render();
+    this.addHandDeckContainer(runtime.player);
   }
 
   private addBackButton(): void {
@@ -146,16 +150,16 @@ export class BattlefieldScene extends Phaser.Scene {
   }
 
   private addHudContainer(session: GameSession, runtime: BattleRuntimeState): void {
-    const container = this.add.container(GAME_WIDTH / 2, 150);
-    const panel = this.add.rectangle(0, 0, 980, 80, 0x12211c, 0.94);
+    const container = this.add.container(GAME_WIDTH / 2, 126);
+    const panel = this.add.rectangle(0, 0, 980, 34, 0x12211c, 0.88);
     panel.setStrokeStyle(2, 0x7fa38a, 0.74);
     container.add(panel);
 
     container.add(
       this.add
-        .text(-440, -22, `Slot ${session.slotId} | ${session.saveName}`, {
+        .text(-456, 0, `Slot ${session.slotId} | ${session.saveName}`, {
           fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '18px',
+          fontSize: '16px',
           color: '#b7c9ba',
           align: 'left',
         })
@@ -164,9 +168,9 @@ export class BattlefieldScene extends Phaser.Scene {
 
     container.add(
       this.add
-        .text(-440, 20, runtime.leader.card.definition.name, {
+        .text(-162, 0, `Leader ${runtime.player.leader.card.definition.name}`, {
           fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '24px',
+          fontSize: '17px',
           color: '#f5fff0',
           align: 'left',
         })
@@ -175,127 +179,22 @@ export class BattlefieldScene extends Phaser.Scene {
 
     container.add(
       this.add
-        .text(72, 0, `Deck ${runtime.deck.length}`, {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '28px',
-          color: '#f5fff0',
-          align: 'center',
-        })
-        .setOrigin(0.5),
-    );
-
-    container.add(
-      this.add
-        .text(228, 0, `Hand ${runtime.hand.length}`, {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '28px',
-          color: '#f5fff0',
-          align: 'center',
-        })
-        .setOrigin(0.5),
-    );
-
-    container.add(
-      this.add
-        .text(
-          382,
-          0,
-          `HP ${runtime.leader.card.instance.currentHp} / ATK ${runtime.leader.card.instance.currentAttack}`,
-          {
-            fontFamily: DEFAULT_FONT_FAMILY,
-            fontSize: '24px',
-            color: '#d7ead4',
-            align: 'center',
-          },
-        )
-        .setOrigin(0.5),
-    );
-  }
-
-  private addBattlefieldContainer(runtime: BattleRuntimeState): void {
-    const container = this.add.container(GAME_WIDTH / 2, 422);
-    const panel = this.add.rectangle(0, 0, 1060, 344, 0x10211b, 0.88);
-    panel.setStrokeStyle(2, 0x7fa38a, 0.72);
-    container.add(panel);
-
-    container.add(
-      this.add
-        .text(-500, -148, 'BATTLEFIELD', {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '22px',
-          color: '#a6d9b0',
-          align: 'left',
-        })
-        .setOrigin(0, 0.5),
-    );
-
-    const slotCards = createBattlefieldSlotMap(runtime.battlefield);
-    const cellWidth = 290;
-    const cellHeight = 112;
-    const gapX = 34;
-    const gapY = 28;
-    const totalWidth = cellWidth * 3 + gapX * 2;
-    const totalHeight = cellHeight * 2 + gapY;
-    const startX = -totalWidth / 2 + cellWidth / 2;
-    const startY = -totalHeight / 2 + cellHeight / 2 + 22;
-
-    BATTLEFIELD_SLOT_ROWS.forEach((rowSlots, rowIndex) => {
-      rowSlots.forEach((slot, colIndex) => {
-        const x = startX + colIndex * (cellWidth + gapX);
-        const y = startY + rowIndex * (cellHeight + gapY);
-        this.addBattlefieldSlot(container, x, y, cellWidth, cellHeight, slot, slotCards[slot]);
-      });
-    });
-  }
-
-  private addBattlefieldSlot(
-    container: Phaser.GameObjects.Container,
-    x: number,
-    y: number,
-    width: number,
-    height: number,
-    slot: BattlefieldSlot,
-    card: BattleCardRuntimeState | null,
-  ): void {
-    const fillColor = card ? 0x1d3f31 : 0x162b24;
-    const strokeColor = card ? 0xbfeec5 : 0x4e5d57;
-    const slotBackground = this.add.rectangle(x, y, width, height, fillColor, 0.94);
-    slotBackground.setStrokeStyle(2, strokeColor, card ? 0.92 : 0.86);
-    container.add(slotBackground);
-
-    container.add(
-      this.add
-        .text(x - width / 2 + 18, y - height / 2 + 18, slot, {
+        .text(168, 0, `Deck ${runtime.player.deck.length}`, {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSize: '18px',
-          color: '#a6d9b0',
-          align: 'left',
+          color: '#f5fff0',
+          align: 'center',
         })
-        .setOrigin(0, 0.5),
+        .setOrigin(0.5),
     );
-
-    if (!card) {
-      container.add(
-        this.add
-          .text(x, y + 14, 'EMPTY', {
-            fontFamily: DEFAULT_FONT_FAMILY,
-            fontSize: '18px',
-            color: '#8e9a95',
-            align: 'center',
-          })
-          .setOrigin(0.5),
-      );
-      return;
-    }
 
     container.add(
       this.add
-        .text(x, y - 10, card.card.definition.name, {
+        .text(286, 0, `Hand ${runtime.player.hand.length}`, {
           fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '24px',
+          fontSize: '18px',
           color: '#f5fff0',
           align: 'center',
-          wordWrap: { width: width - 34 },
         })
         .setOrigin(0.5),
     );
@@ -303,12 +202,12 @@ export class BattlefieldScene extends Phaser.Scene {
     container.add(
       this.add
         .text(
-          x,
-          y + 30,
-          `HP ${card.card.instance.currentHp}  ATK ${card.card.instance.currentAttack}`,
+          418,
+          0,
+          `HP ${runtime.player.leader.card.instance.currentHp} / ATK ${runtime.player.leader.card.instance.currentAttack}`,
           {
             fontFamily: DEFAULT_FONT_FAMILY,
-            fontSize: '18px',
+            fontSize: '17px',
             color: '#d7ead4',
             align: 'center',
           },
@@ -317,21 +216,21 @@ export class BattlefieldScene extends Phaser.Scene {
     );
   }
 
-  private addHandDeckContainer(runtime: BattleRuntimeState): void {
-    const hiddenY = GAME_HEIGHT - 52;
-    const expandedY = GAME_HEIGHT - 128;
+  private addHandDeckContainer(runtime: BattleRuntimeState['player']): void {
+    const hiddenY = 735;
+    const expandedY = 650;
     const width = 1120;
-    const height = 220;
+    const height = 150;
     const container = this.add.container(GAME_WIDTH / 2, hiddenY);
     this.handDeckContainer = container;
 
-    const panel = this.add.rectangle(0, 0, width, height, 0x10211b, 0.96);
+    const panel = this.add.rectangle(0, 0, width, height, 0x10211b, 0.96).setOrigin(0.5, 0);
     panel.setStrokeStyle(2, 0xbfeec5, 0.82);
     container.add(panel);
 
     container.add(
       this.add
-        .text(-520, -84, 'HAND', {
+        .text(-520, 25, 'HAND', {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSize: '22px',
           color: '#a6d9b0',
@@ -342,7 +241,7 @@ export class BattlefieldScene extends Phaser.Scene {
 
     container.add(
       this.add
-        .text(446, -84, `Deck ${runtime.deck.length}`, {
+        .text(446, 25, `Deck ${runtime.deck.length}`, {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSize: '24px',
           color: '#f5fff0',
@@ -354,7 +253,7 @@ export class BattlefieldScene extends Phaser.Scene {
     this.addHandCards(container, runtime.hand);
     container.setSize(width, height);
     container.setInteractive(
-      new Phaser.Geom.Rectangle(-width / 2, -height / 2, width, height),
+      new Phaser.Geom.Rectangle(-width / 2, 0, width, height),
       Phaser.Geom.Rectangle.Contains,
     );
     container.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OVER, () => {
@@ -374,7 +273,7 @@ export class BattlefieldScene extends Phaser.Scene {
     const gap = 20;
     const totalWidth = cardWidth * INITIAL_HAND_SIZE + gap * (INITIAL_HAND_SIZE - 1);
     const startX = -totalWidth / 2 + cardWidth / 2;
-    const y = 20;
+    const y = 92;
 
     for (let index = 0; index < INITIAL_HAND_SIZE; index += 1) {
       const card = hand[index] ?? null;
@@ -429,27 +328,6 @@ export class BattlefieldScene extends Phaser.Scene {
       ease: 'Sine.easeOut',
     });
   }
-}
-
-function createBattlefieldSlotMap(
-  cards: BattleCardRuntimeState[],
-): Record<BattlefieldSlot, BattleCardRuntimeState | null> {
-  const slotCards: Record<BattlefieldSlot, BattleCardRuntimeState | null> = {
-    FR: null,
-    FC: null,
-    FL: null,
-    BR: null,
-    BC: null,
-    BL: null,
-  };
-
-  cards.forEach((card) => {
-    if (card.battlefieldSlot) {
-      slotCards[card.battlefieldSlot] = card;
-    }
-  });
-
-  return slotCards;
 }
 
 function formatSaveStatusDate(value: string): string {
