@@ -81,24 +81,30 @@ describe('save slots api', () => {
 
     expect(initRes.statusCode()).toBe(200);
     const initBody = initRes.json() as {
-      state: { slotId: number; deck: { cards: unknown[] } };
-      summary: { isEmpty: boolean };
+      state: { slotId: number; deck: { leader: Record<string, unknown>; cards: unknown[] } };
+      summary: { isEmpty: boolean; leaderName: string | null };
     };
     expect(initBody.state.slotId).toBe(1);
     expect(initBody.state.deck.cards).toHaveLength(29);
+    expect(initBody.state.deck.leader).not.toHaveProperty('definitionName');
+    expect(initBody.state.deck.leader).not.toHaveProperty('baseHp');
+    expect(initBody.state.deck.leader).not.toHaveProperty('baseAttack');
     expect(initBody.summary.isEmpty).toBe(false);
+    expect(initBody.summary.leaderName).toBe('미네르바');
 
     const list = await listSaveSlotSummaries(slotsRoot);
     expect(list.slots[0]?.isEmpty).toBe(false);
+    expect(list.slots[0]?.leaderName).toBe('미네르바');
 
     const getReq = createRequest('GET', '/api/save-slots/1');
     const getRes = createResponse();
     await handler(getReq, getRes.response, () => undefined);
 
     expect(getRes.statusCode()).toBe(200);
-    const getBody = getRes.json() as { slotId: number; saveName: string };
+    const getBody = getRes.json() as { slotId: number; saveName: string; deck: { leader: Record<string, unknown> } };
     expect(getBody.slotId).toBe(1);
     expect(getBody.saveName).toBe('Slot 1');
+    expect(getBody.deck.leader).not.toHaveProperty('definitionName');
   });
 
   it('rejects invalid slot numbers', async () => {

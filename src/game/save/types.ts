@@ -9,14 +9,11 @@ export type CardInstanceZone = 'LEADER' | 'DECK';
 export type CardInstance = {
   instanceId: string;
   definitionId: string;
-  definitionName: string;
   owner: 'PLAYER';
   zone: CardInstanceZone;
   level: number;
   exp: number;
-  baseHp: number;
   currentHp: number;
-  baseAttack: number;
   currentAttack: number;
 };
 

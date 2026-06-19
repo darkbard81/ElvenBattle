@@ -1,28 +1,11 @@
-import crypto from 'node:crypto';
-import fs from 'node:fs/promises';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
   SAVE_SLOT_SCHEMA_VERSION,
   type CardInstance,
   type SaveSlotId,
   type SaveSlotState,
 } from './types';
-
-type DeckDefinitionFile = {
-  version: string;
-  cards: CardDefinition[];
-};
-
-type CardDefinition = {
-  id: string;
-  name: string;
-  type: string;
-  hp?: number;
-  attack?: number;
-  level?: number;
-  exp?: number;
-};
+import { CARD_DEFINITIONS, type CardDefinition } from './card-catalog';
+import crypto from 'node:crypto';
 
 type CreateInitialSaveStateOptions = {
   slotId: SaveSlotId;
@@ -37,15 +20,13 @@ type CreateInitialSaveStateOptions = {
 export async function createInitialSaveState(
   options: CreateInitialSaveStateOptions,
 ): Promise<SaveSlotState> {
-  const projectRoot = options.projectRoot ?? fileURLToPath(new URL('../../../', import.meta.url));
-  const deckDefinition = await readDeckDefinition(projectRoot);
-  const leaderDefinitions = deckDefinition.cards.filter((card) => card.type === 'LEADER');
+  const leaderDefinitions = CARD_DEFINITIONS.filter((card) => card.type === 'LEADER');
 
   if (leaderDefinitions.length !== 1) {
     throw new Error(`Expected exactly one LEADER card in deck_test.json, got ${leaderDefinitions.length}`);
   }
 
-  const unitDefinitions = deckDefinition.cards.filter((card) => card.type === 'UNIT');
+  const unitDefinitions = CARD_DEFINITIONS.filter((card) => card.type === 'UNIT');
   if (unitDefinitions.length === 0) {
     throw new Error('Expected at least one UNIT card in deck_test.json');
   }
@@ -71,11 +52,6 @@ export async function createInitialSaveState(
   };
 }
 
-async function readDeckDefinition(projectRoot: string): Promise<DeckDefinitionFile> {
-  const deckPath = path.join(projectRoot, 'cards/deck_test.json');
-  return JSON.parse(await fs.readFile(deckPath, 'utf8')) as DeckDefinitionFile;
-}
-
 function createCardInstance(definition: CardDefinition, zone: 'LEADER' | 'DECK'): CardInstance {
   const level = readRequiredInteger(definition.level ?? 1, definition.id, 'level');
   const exp = readRequiredInteger(definition.exp ?? 0, definition.id, 'exp');
@@ -85,14 +61,11 @@ function createCardInstance(definition: CardDefinition, zone: 'LEADER' | 'DECK')
   return {
     instanceId: crypto.randomUUID(),
     definitionId: definition.id,
-    definitionName: definition.name,
     owner: 'PLAYER',
     zone,
     level,
     exp,
-    baseHp,
     currentHp: baseHp,
-    baseAttack,
     currentAttack: baseAttack,
   };
 }

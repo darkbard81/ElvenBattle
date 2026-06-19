@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createInitialSaveState } from '../game/save/create-initial-save';
+import { findCardDefinition } from '../game/save/card-catalog';
 import {
   SAVE_SLOT_IDS,
   SAVE_SLOT_SCHEMA_VERSION,
@@ -149,12 +150,14 @@ function createEmptySummary(slotId: SaveSlotId) {
 }
 
 function toSaveSlotSummary(state: SaveSlotState) {
+  const leaderDefinition = findCardDefinition(state.deck.leader.definitionId);
+
   return {
     slotId: state.slotId,
     saveName: state.saveName,
     updatedAt: state.updatedAt,
     deckCardCount: state.deck.cards.length,
-    leaderName: state.deck.leader.definitionName,
+    leaderName: leaderDefinition?.name ?? null,
     isEmpty: false,
   };
 }
@@ -242,14 +245,11 @@ function isCardInstance(value: unknown): value is CardInstance {
   return (
     typeof value.instanceId === 'string' &&
     typeof value.definitionId === 'string' &&
-    typeof value.definitionName === 'string' &&
     value.owner === 'PLAYER' &&
     (value.zone === 'LEADER' || value.zone === 'DECK') &&
     Number.isInteger(value.level) &&
     Number.isInteger(value.exp) &&
-    Number.isInteger(value.baseHp) &&
     Number.isInteger(value.currentHp) &&
-    Number.isInteger(value.baseAttack) &&
     Number.isInteger(value.currentAttack)
   );
 }

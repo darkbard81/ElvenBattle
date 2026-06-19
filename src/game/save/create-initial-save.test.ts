@@ -9,8 +9,12 @@ describe('createInitialSaveState', () => {
     expect(state.slotId).toBe(1);
     expect(state.deck.leader.zone).toBe('LEADER');
     expect(state.deck.leader.definitionId).toBe('leader_minerva');
+    expect(state.deck.leader).not.toHaveProperty('definitionName');
+    expect(state.deck.leader).not.toHaveProperty('baseHp');
+    expect(state.deck.leader).not.toHaveProperty('baseAttack');
     expect(state.deck.cards).toHaveLength(29);
     expect(state.deck.cards.every((card) => card.zone === 'DECK')).toBe(true);
+    expect(state.deck.cards.every((card) => !Object.prototype.hasOwnProperty.call(card, 'definitionName'))).toBe(true);
 
     const instanceIds = new Set([
       state.deck.leader.instanceId,

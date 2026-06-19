@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import type { SaveSlotState, SaveSlotSummary } from './game/save/types';
+import { createGameSession, type GameSession } from './game/save/session';
 import { DEFAULT_FONT_FAMILY } from './theme';
 
 type AssetsManifest = {
@@ -21,6 +22,10 @@ type LoaderSceneData = {
 type MainMenuSceneData = {
   loadedCount: number;
   failedCount: number;
+};
+
+type BattleSceneData = {
+  session: GameSession;
 };
 
 const GAME_WIDTH = 1280;
@@ -61,7 +66,7 @@ function createGameConfig(): Phaser.Types.Core.GameConfig {
     width: GAME_WIDTH,
     height: GAME_HEIGHT,
     backgroundColor: '#071018',
-    scene: [BootScene, TitleScene, LoaderScene, MainMenuScene, SaveSlotScene],
+    scene: [BootScene, TitleScene, LoaderScene, MainMenuScene, SaveSlotScene, BattleScene],
     scale: {
       mode: Phaser.Scale.FIT,
       autoCenter: Phaser.Scale.CENTER_BOTH,
@@ -425,7 +430,6 @@ class SaveSlotScene extends Phaser.Scene {
   private statusText!: Phaser.GameObjects.Text;
   private retryButton: Phaser.GameObjects.Rectangle | null = null;
   private slotUiElements: Phaser.GameObjects.GameObject[] = [];
-  private selectedSaveSlot: SaveSlotState | null = null;
 
   constructor() {
     super({ key: 'SaveSlotScene' });
@@ -642,20 +646,133 @@ class SaveSlotScene extends Phaser.Scene {
       if (slot.isEmpty) {
         this.setStatus(`Initializing Slot ${slot.slotId}...`);
         const result = await initializeSaveSlot(slot.slotId);
-        this.selectedSaveSlot = result.state;
-        const slots = await fetchSaveSlotSummaries();
-        this.renderSlotCards(slots);
-        this.setStatus(`Slot ${slot.slotId} initialized.`);
+        const session = createGameSession(result.state);
+        this.scene.start('BattleScene', { session } satisfies BattleSceneData);
         return;
       }
 
       this.setStatus(`Loading Slot ${slot.slotId}...`);
       const state = await fetchSaveSlot(slot.slotId);
-      this.selectedSaveSlot = state;
-      this.setStatus(`${state.saveName} is loaded. Game handoff will connect next.`);
+      const session = createGameSession(state);
+      this.scene.start('BattleScene', { session } satisfies BattleSceneData);
     } catch (error: unknown) {
       this.showFailureState(error);
     }
+  }
+}
+
+/**
+ * SaveSlotScene에서 전달받은 GameSession이 실제로 다음 씬에 도달했는지 확인하는 최소 배틀 씬이다.
+ * 전투 규칙은 두지 않고, 슬롯과 리더 정보를 읽기 전용으로 표시한다.
+ */
+class BattleScene extends Phaser.Scene {
+  constructor() {
+    super({ key: 'BattleScene' });
+  }
+
+  create(data: BattleSceneData): void {
+    this.addBackground();
+    this.addTitle();
+    this.addSessionSummary(data.session);
+    this.addBackButton();
+  }
+
+  private addBackground(): void {
+    this.add
+      .image(0, 0, 'title-background')
+      .setOrigin(0, 0)
+      .setDisplaySize(GAME_WIDTH, GAME_HEIGHT);
+    this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x071018, 0.58).setOrigin(0, 0);
+    this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.16).setOrigin(0, 0);
+  }
+
+  private addTitle(): void {
+    this.add
+      .text(GAME_WIDTH / 2, 110, 'BATTLE SCENE', {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '56px',
+        fontStyle: '700',
+        color: '#f5faf0',
+        stroke: '#182e27',
+        strokeThickness: 7,
+        align: 'center',
+      })
+      .setOrigin(0.5);
+
+    this.add
+      .text(GAME_WIDTH / 2, 172, 'session handoff verified', {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '24px',
+        color: '#d9ebd1',
+        align: 'center',
+      })
+      .setOrigin(0.5)
+      .setAlpha(0.9);
+  }
+
+  private addSessionSummary(session: GameSession): void {
+    const panelX = GAME_WIDTH / 2;
+    const panelY = 420;
+    const panel = this.add.rectangle(panelX, panelY, 760, 330, 0x12211c, 0.96);
+    panel.setStrokeStyle(2, 0xbfeec5, 0.92);
+
+    const lines = [
+      `Slot: ${session.slotId}`,
+      `Save Name: ${session.saveName}`,
+      `Deck ID: ${session.deck.id}`,
+      `Leader: ${session.deck.leader.definition.name}`,
+      `Leader HP: ${session.deck.leader.instance.currentHp}`,
+      `Leader Attack: ${session.deck.leader.instance.currentAttack}`,
+      `Deck Cards: ${session.deck.cards.length}`,
+    ];
+
+    this.add
+      .text(panelX, 304, 'Loaded session data', {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '28px',
+        color: '#f5fff0',
+        align: 'center',
+      })
+      .setOrigin(0.5);
+
+    this.add
+      .text(panelX, panelY, lines.join('\n'), {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '24px',
+        color: '#d7ead4',
+        align: 'left',
+        lineSpacing: 12,
+      })
+      .setOrigin(0.5);
+
+    this.add
+      .text(
+        GAME_WIDTH / 2,
+        612,
+        'This scene only confirms the session handoff. No battle rules are active yet.',
+        {
+          fontFamily: DEFAULT_FONT_FAMILY,
+          fontSize: '16px',
+          color: '#b7c9ba',
+          align: 'center',
+          wordWrap: { width: 760 },
+        },
+      )
+      .setOrigin(0.5);
+  }
+
+  private addBackButton(): void {
+    createMenuButton(this, {
+      x: 160,
+      y: 86,
+      width: 180,
+      height: 58,
+      label: 'Back',
+      enabled: true,
+      onClick: () => {
+        this.scene.start('SaveSlotScene');
+      },
+    });
   }
 }
 
@@ -894,14 +1011,11 @@ function isCardInstance(value: unknown): boolean {
     isRecord(value) &&
     typeof value.instanceId === 'string' &&
     typeof value.definitionId === 'string' &&
-    typeof value.definitionName === 'string' &&
     value.owner === 'PLAYER' &&
     (value.zone === 'LEADER' || value.zone === 'DECK') &&
     Number.isInteger(value.level) &&
     Number.isInteger(value.exp) &&
-    Number.isInteger(value.baseHp) &&
     Number.isInteger(value.currentHp) &&
-    Number.isInteger(value.baseAttack) &&
     Number.isInteger(value.currentAttack)
   );
 }
