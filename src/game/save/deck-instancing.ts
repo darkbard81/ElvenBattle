@@ -3,6 +3,7 @@ import {
   type CardDefinition,
   type CardDefinitionFile,
 } from './card-catalog';
+import { createRuntimeId } from './runtime-id';
 import type { RuntimeDeckInstance } from './session';
 import type { CardInstance, CardOwner, DeckInstance } from './types';
 
@@ -23,7 +24,7 @@ export function createDeckInstanceFromDefinitions(
 ): DeckInstance {
   const leaderDefinition = findSingleLeaderDefinition(options.cardDefinitions);
   const unitDefinitions = findUnitDefinitions(options.cardDefinitions);
-  const createId = options.createId ?? createRandomId;
+  const createId = options.createId ?? createRuntimeId;
 
   return {
     id: options.deckId,
@@ -134,8 +135,4 @@ function takeRepeated<T>(items: T[], count: number): T[] {
   }
 
   return selected;
-}
-
-function createRandomId(): string {
-  return globalThis.crypto.randomUUID();
 }

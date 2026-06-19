@@ -1,6 +1,7 @@
 import { SAVE_SLOT_SCHEMA_VERSION, type SaveSlotId, type SaveSlotState } from './types';
 import { CARD_DEFINITIONS } from './card-catalog';
 import { createDeckInstanceFromDefinitions } from './deck-instancing';
+import { createRuntimeId } from './runtime-id';
 
 type CreateInitialSaveStateOptions = {
   slotId: SaveSlotId;
@@ -25,7 +26,7 @@ export async function createInitialSaveState(
     updatedAt: timestamp,
     saveName: `Slot ${options.slotId}`,
     deck: createDeckInstanceFromDefinitions({
-      deckId: `deck-${options.slotId}-${globalThis.crypto.randomUUID()}`,
+      deckId: `deck-${options.slotId}-${createRuntimeId()}`,
       cardDefinitions: CARD_DEFINITIONS,
       owner: 'PLAYER',
       unitCount: 29,

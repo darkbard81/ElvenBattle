@@ -167,11 +167,11 @@
       "nameColor": "#12351A",
       "titleColor": "#7A2D18",
       "textColor": "#17251A",
+      "textStrokeColor": "#DFDFDF",
+      "textStrokeWidth": 0,
       "paddingX": 28,
       "paddingY": 24,
-      "description": "카드 능력 텍스트를 배치하는 반투명 흰색 텍스트 영역. textStrokeColor와 textStrokeWidth로 어빌리티 글자 외곽선을 조정한다.",
-      "textStrokeColor": "#DFDFDF",
-      "textStrokeWidth": 0
+      "description": "카드 능력 텍스트를 배치하는 반투명 흰색 텍스트 영역. textStrokeColor와 textStrokeWidth로 어빌리티 글자 외곽선을 조정한다."
     },
     "name_text_area": {
       "type": "text_area",
@@ -190,11 +190,11 @@
       "nameColor": "#12351A",
       "titleColor": "#7A2D18",
       "textColor": "#FFFFFF",
+      "textStrokeColor": "#222222",
+      "textStrokeWidth": 2,
       "paddingX": 18,
       "paddingY": 18,
-      "description": "카드 이름을 하단 중앙 영역에 배치하는 텍스트 영역. textStrokeColor와 textStrokeWidth로 이름 글자 외곽선을 조정한다.",
-      "textStrokeColor": "#222222",
-      "textStrokeWidth": 2
+      "description": "카드 이름을 하단 중앙 영역에 배치하는 텍스트 영역. textStrokeColor와 textStrokeWidth로 이름 글자 외곽선을 조정한다."
     }
   },
   "safeAreas": {
