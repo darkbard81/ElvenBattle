@@ -34,26 +34,26 @@ type BattlefieldSceneLayers = {
   buttonLayer: Phaser.GameObjects.Container;
 };
 
-const FIELD_SLOT_WIDTH = 132;
-const FIELD_SLOT_HEIGHT = 198;
+const FIELD_SLOT_WIDTH = 180;
+const FIELD_SLOT_HEIGHT = 270;
 const HAND_CARD_WIDTH = 144;
 const HAND_CARD_HEIGHT = 216;
 const SLOT_COLUMNS = {
-  FR: GAME_WIDTH / 2 - 170,
+  FR: GAME_WIDTH / 2 - 210,
   FC: GAME_WIDTH / 2,
-  FL: GAME_WIDTH / 2 + 170,
+  FL: GAME_WIDTH / 2 + 210,
 } as const;
 const SLOT_ROWS = {
-  enemyBack: 360,
-  enemyFront: 590,
-  playerFront: 930,
-  playerBack: 1160,
+  enemyBack: 400,
+  enemyFront: 700,
+  playerFront: 1100,
+  playerBack: 1400,
 } as const;
 const BOARD_RECT = {
-  x: 96,
+  x: 44,
   y: 244,
-  width: GAME_WIDTH - 192,
-  height: 1078,
+  width: GAME_WIDTH - 88,
+  height: 1314,
 } as const satisfies Rect;
 const HAND_RECT = {
   x: 190,
@@ -90,10 +90,10 @@ const SLOT_ORDER: readonly BattleSlotId[] = [
   'player:BL',
 ];
 const PILE_RECTS = {
-  enemyDrop: createCenteredRect(210, SLOT_ROWS.enemyFront, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
-  enemyDeck: createCenteredRect(990, SLOT_ROWS.enemyFront, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
-  playerDrop: createCenteredRect(210, SLOT_ROWS.playerFront, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
-  playerDeck: createCenteredRect(990, SLOT_ROWS.playerFront, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
+  enemyDrop: createCenteredRect(160, SLOT_ROWS.enemyFront, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
+  enemyDeck: createCenteredRect(1040, SLOT_ROWS.enemyFront, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
+  playerDrop: createCenteredRect(160, SLOT_ROWS.playerFront, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
+  playerDeck: createCenteredRect(1040, SLOT_ROWS.playerFront, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
 } as const satisfies Record<string, Rect>;
 
 /**
