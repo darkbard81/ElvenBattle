@@ -104,6 +104,7 @@ const PILE_RECTS = {
  */
 export class BattlefieldScene extends Phaser.Scene {
   private handDeckContainer: Phaser.GameObjects.Container | null = null;
+  private handDeckTargetY: number | null = null;
   private highlightGraphics!: Phaser.GameObjects.Graphics;
   private layers!: BattlefieldSceneLayers;
   private runtime!: BattleRuntimeState;
@@ -125,6 +126,7 @@ export class BattlefieldScene extends Phaser.Scene {
     this.isSaving = false;
     this.selectedSlotId = null;
     this.handDeckContainer = null;
+    this.handDeckTargetY = null;
 
     this.layers = this.createLayers();
     this.highlightGraphics = this.add.graphics();
@@ -432,15 +434,21 @@ export class BattlefieldScene extends Phaser.Scene {
         .setOrigin(1, 0.5),
     );
     this.addHandCards(container);
-    container.setSize(HAND_RECT.width, HAND_RECT.height);
-    container.setInteractive(
-      new Phaser.Geom.Rectangle(-HAND_RECT.width / 2, 0, HAND_RECT.width, HAND_RECT.height),
-      Phaser.Geom.Rectangle.Contains,
-    );
-    container.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OVER, () => {
+
+    const hoverZone = this.add
+      .zone(
+        HAND_RECT.x + HAND_RECT.width / 2,
+        expandedY,
+        HAND_RECT.width,
+        hiddenY + HAND_RECT.height - expandedY,
+      )
+      .setOrigin(0.5, 0);
+    hoverZone.setInteractive();
+    this.layers.handLayer.add(hoverZone);
+    hoverZone.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OVER, () => {
       this.moveHandDeckContainer(expandedY);
     });
-    container.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OUT, () => {
+    hoverZone.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OUT, () => {
       this.moveHandDeckContainer(hiddenY);
     });
   }
@@ -492,7 +500,12 @@ export class BattlefieldScene extends Phaser.Scene {
     if (!this.handDeckContainer) {
       return;
     }
+    if (this.handDeckTargetY === y) {
+      return;
+    }
 
+    this.handDeckTargetY = y;
+    this.tweens.killTweensOf(this.handDeckContainer);
     this.tweens.add({
       targets: this.handDeckContainer,
       y,
