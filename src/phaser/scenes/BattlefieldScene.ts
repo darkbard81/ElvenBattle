@@ -370,34 +370,64 @@ export class BattlefieldScene extends Phaser.Scene {
       parent.add(fallback);
     }
 
-    parent.add(
-      this.add
-        .text(centerX, rect.y + rect.height - (mode === 'field' ? 34 : 42), card.card.definition.name, {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: mode === 'field' ? '16px' : '18px',
-          color: '#fff9dc',
-          stroke: '#06100d',
-          strokeThickness: 4,
-          align: 'center',
-          wordWrap: { width: rect.width - 10 },
-        })
-        .setOrigin(0.5),
+    const definition = card.card.definition;
+    const paddingX = mode === 'field' ? 21 : 16;
+    const paddingY = mode === 'field' ? 18 : 14;
+    const badgeSize = mode === 'field' ? 34 : 30;
+    const fontSize = mode === 'field' ? '18px' : '16px';
+
+    this.addCardCornerStat(
+      parent,
+      rect.x + paddingX,
+      rect.y + paddingY,
+      String(definition.dominance ?? 0),
+      badgeSize,
+      fontSize,
     );
+    this.addCardCornerStat(
+      parent,
+      rect.x + rect.width - paddingX - 4,
+      rect.y + paddingY,
+      String(definition.cost ?? 0),
+      badgeSize,
+      fontSize,
+    );
+    this.addCardCornerStat(
+      parent,
+      rect.x + paddingX,
+      rect.y + rect.height - paddingY - 8,
+      String(card.card.instance.currentHp),
+      badgeSize,
+      fontSize,
+    );
+    this.addCardCornerStat(
+      parent,
+      rect.x + rect.width - paddingX - 4,
+      rect.y + rect.height - paddingY - 8,
+      String(card.card.instance.currentAttack),
+      badgeSize,
+      fontSize,
+    );
+  }
+
+  private addCardCornerStat(
+    parent: Phaser.GameObjects.Container,
+    x: number,
+    y: number,
+    value: string,
+    size: number,
+    fontSize: string,
+  ): void {
     parent.add(
       this.add
-        .text(
-          centerX,
-          rect.y + rect.height - (mode === 'field' ? 13 : 16),
-          `HP ${card.card.instance.currentHp} / ATK ${card.card.instance.currentAttack}`,
-          {
-            fontFamily: DEFAULT_FONT_FAMILY,
-            fontSize: mode === 'field' ? '13px' : '14px',
-            color: '#e3f7df',
-            stroke: '#06100d',
-            strokeThickness: 3,
-            align: 'center',
-          },
-        )
+        .text(x, y, value, {
+          fontFamily: DEFAULT_FONT_FAMILY,
+          fontSize,
+          color: '#ffffff',
+          stroke: '#000000',
+          strokeThickness: Math.max(3, Math.round(size / 10)),
+          align: 'center',
+        })
         .setOrigin(0.5),
     );
   }
