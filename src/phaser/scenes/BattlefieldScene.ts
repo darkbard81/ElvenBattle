@@ -57,9 +57,9 @@ const BOARD_RECT = {
 } as const satisfies Rect;
 const HAND_RECT = {
   x: 190,
-  y: 1496,
+  y: 1526,
   width: GAME_WIDTH - 380,
-  height: 334,
+  height: 288,
 } as const satisfies Rect;
 const FIELD_SLOT_RECTS: Record<BattleSlotId, Rect> = {
   'enemy:BR': createCenteredRect(SLOT_COLUMNS.FR, SLOT_ROWS.enemyBack, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
@@ -404,7 +404,7 @@ export class BattlefieldScene extends Phaser.Scene {
 
   private addHandDeckContainer(): void {
     const hiddenY = HAND_RECT.y + HAND_RECT.height - 42;
-    const expandedY = HAND_RECT.y;
+    const expandedY = HAND_RECT.y + 42;
     const container = this.add.container(HAND_RECT.x + HAND_RECT.width / 2, hiddenY);
     this.handDeckContainer = container;
     this.layers.handLayer.add(container);
@@ -412,27 +412,6 @@ export class BattlefieldScene extends Phaser.Scene {
     const panel = this.add.rectangle(0, 0, HAND_RECT.width, HAND_RECT.height, 0x10211b, 0.95).setOrigin(0.5, 0);
     panel.setStrokeStyle(2, 0xcde7cb, 0.78);
     container.add(panel);
-    container.add(this.add.rectangle(0, 0, HAND_RECT.width, 46, 0x1a2f26, 0.94).setOrigin(0.5, 0));
-    container.add(
-      this.add
-        .text(-HAND_RECT.width / 2 + 28, 24, 'HAND', {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '24px',
-          color: '#a6d9b0',
-          align: 'left',
-        })
-        .setOrigin(0, 0.5),
-    );
-    container.add(
-      this.add
-        .text(HAND_RECT.width / 2 - 28, 24, `Deck ${this.runtime.player.deck.length}`, {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '24px',
-          color: '#f5fff0',
-          align: 'right',
-        })
-        .setOrigin(1, 0.5),
-    );
     this.addHandCards(container);
 
     const hoverZone = this.add
@@ -457,7 +436,7 @@ export class BattlefieldScene extends Phaser.Scene {
     const gap = 18;
     const totalWidth = HAND_CARD_WIDTH * INITIAL_HAND_SIZE + gap * (INITIAL_HAND_SIZE - 1);
     const startX = -totalWidth / 2;
-    const y = 176;
+    const y = 146;
 
     for (let index = 0; index < INITIAL_HAND_SIZE; index += 1) {
       const card = this.runtime.player.hand[index] ?? null;
