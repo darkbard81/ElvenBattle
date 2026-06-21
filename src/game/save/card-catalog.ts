@@ -9,6 +9,8 @@ export type CardDefinition = {
   id: string;
   name: string;
   type: string;
+  cost?: number;
+  dominance?: number;
   hp?: number;
   attack?: number;
   level?: number;

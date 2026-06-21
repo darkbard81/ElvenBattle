@@ -39,6 +39,7 @@ export function createInitialBattleRuntime(session: GameSession): BattleRuntimeS
     enemy,
     battlefield: [enemy.leader, player.leader],
     drop: [],
+    exile: [],
   };
 }
 
@@ -63,6 +64,7 @@ function createBattleParticipantRuntimeState(
     deck: remainingDeck,
     hand,
     drop: [],
+    exile: [],
   };
 }
 

@@ -35,6 +35,11 @@ describe('createInitialBattleRuntime', () => {
       ...runtime.enemy.hand.map((card) => card.zone),
       ...runtime.battlefield.map((card) => card.zone),
       ...runtime.drop.map((card) => card.zone),
+      ...runtime.exile.map((card) => card.zone),
+      ...runtime.player.drop.map((card) => card.zone),
+      ...runtime.enemy.drop.map((card) => card.zone),
+      ...runtime.player.exile.map((card) => card.zone),
+      ...runtime.enemy.exile.map((card) => card.zone),
     ];
 
     expect(zones).not.toContain('LEADER');
@@ -80,5 +85,19 @@ describe('createInitialBattleRuntime', () => {
     expect(runtime.player.hand.every((card) => card.battlefieldSlot === null)).toBe(true);
     expect(runtime.enemy.hand.every((card) => card.battlefieldSlot === null)).toBe(true);
     expect(runtime.drop.every((card) => card.battlefieldSlot === null)).toBe(true);
+    expect(runtime.exile.every((card) => card.battlefieldSlot === null)).toBe(true);
+  });
+
+  it('initializes empty drop and exile piles for both sides and shared runtime state', async () => {
+    const state = await createInitialSaveState({ slotId: 1 });
+    const session = createGameSession(state);
+    const runtime = createInitialBattleRuntime(session);
+
+    expect(runtime.drop).toHaveLength(0);
+    expect(runtime.exile).toHaveLength(0);
+    expect(runtime.player.drop).toHaveLength(0);
+    expect(runtime.player.exile).toHaveLength(0);
+    expect(runtime.enemy.drop).toHaveLength(0);
+    expect(runtime.enemy.exile).toHaveLength(0);
   });
 });
