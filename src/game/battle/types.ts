@@ -1,6 +1,6 @@
 import type { RuntimeCardInstance } from '../save/session';
 
-export type BattleRuntimeZone = 'DECK' | 'HAND' | 'BATTLEFIELD' | 'DROP';
+export type BattleRuntimeZone = 'DECK' | 'HAND' | 'BATTLEFIELD' | 'DROP' | 'EXILE';
 
 export type BattleSide = 'player' | 'enemy';
 
@@ -29,6 +29,7 @@ export type BattleParticipantRuntimeState = {
   deck: BattleCardRuntimeState[];
   hand: BattleCardRuntimeState[];
   drop: BattleCardRuntimeState[];
+  exile: BattleCardRuntimeState[];
 };
 
 export type BattleRuntimeState = {
@@ -36,4 +37,5 @@ export type BattleRuntimeState = {
   enemy: BattleParticipantRuntimeState;
   battlefield: BattleCardRuntimeState[];
   drop: BattleCardRuntimeState[];
+  exile: BattleCardRuntimeState[];
 };

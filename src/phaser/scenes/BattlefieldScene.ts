@@ -90,9 +90,11 @@ const SLOT_ORDER: readonly BattleSlotId[] = [
   'player:BL',
 ];
 const PILE_RECTS = {
-  enemyDrop: createCenteredRect(160, SLOT_ROWS.enemyFront, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
-  enemyDeck: createCenteredRect(1040, SLOT_ROWS.enemyFront, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
+  enemyDrop: createCenteredRect(1040, SLOT_ROWS.enemyFront, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
+  enemyExile: createCenteredRect(1040, SLOT_ROWS.enemyBack, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
+  enemyDeck: createCenteredRect(160, SLOT_ROWS.enemyFront, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
   playerDrop: createCenteredRect(160, SLOT_ROWS.playerFront, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
+  playerExile: createCenteredRect(160, SLOT_ROWS.playerBack, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
   playerDeck: createCenteredRect(1040, SLOT_ROWS.playerFront, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
 } as const satisfies Record<string, Rect>;
 
@@ -296,8 +298,10 @@ export class BattlefieldScene extends Phaser.Scene {
   private addPileSlots(): void {
     this.addPilePanel(PILE_RECTS.enemyDrop, `Enemy Drop\n${this.runtime.enemy.drop.length}`);
     this.addPilePanel(PILE_RECTS.enemyDeck, `Enemy Deck\n${this.runtime.enemy.deck.length}`);
+    this.addPilePanel(PILE_RECTS.enemyExile, `Enemy Exile\n${this.runtime.enemy.exile.length}`);
     this.addPilePanel(PILE_RECTS.playerDrop, `Player Drop\n${this.runtime.player.drop.length}`);
     this.addPilePanel(PILE_RECTS.playerDeck, `Player Deck\n${this.runtime.player.deck.length}`);
+    this.addPilePanel(PILE_RECTS.playerExile, `Player Exile\n${this.runtime.player.exile.length}`);
   }
 
   private addPilePanel(rect: Rect, label: string): void {
