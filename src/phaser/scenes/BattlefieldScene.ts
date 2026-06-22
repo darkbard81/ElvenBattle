@@ -1,10 +1,25 @@
 import Phaser from 'phaser';
+import {
+  applyAttackAction,
+  applyAutoTurnEndIfStalled,
+  applyMoveAction,
+  applyPlaceAction,
+  applyTurnEnd,
+  findBattlefieldCardAtSlot,
+  listAttackActions,
+  listMoveActions,
+  listPlaceActions,
+} from '../../game/battle/battle-engine';
 import { createInitialBattleRuntime } from '../../game/battle/create-battle-runtime';
 import {
   INITIAL_HAND_SIZE,
+  type AttackBattleAction,
   type BattleCardRuntimeState,
   type BattleRuntimeState,
+  type BattleSide,
   type BattleSlotId,
+  type MoveBattleAction,
+  type PlaceBattleAction,
 } from '../../game/battle/types';
 import { fetchSaveSlot, saveSlotState } from '../../game/save/client-api';
 import {
@@ -34,10 +49,33 @@ type BattlefieldSceneLayers = {
   buttonLayer: Phaser.GameObjects.Container;
 };
 
+type BattleSelection =
+  | {
+      kind: 'HAND_CARD';
+      cardInstanceId: string;
+      placeActions: PlaceBattleAction[];
+    }
+  | {
+      kind: 'FIELD_CARD';
+      cardInstanceId: string;
+      sourceSlotId: BattleSlotId;
+      moveActions: MoveBattleAction[];
+      attackActions: AttackBattleAction[];
+    };
+
+type CardViewOptions = {
+  highlightColor?: number;
+  onClick?: () => void;
+};
+
 const FIELD_SLOT_WIDTH = 180;
 const FIELD_SLOT_HEIGHT = 270;
 const HAND_CARD_WIDTH = 144;
 const HAND_CARD_HEIGHT = 216;
+const PLACE_HIGHLIGHT_COLOR = 0x71d879;
+const MOVE_HIGHLIGHT_COLOR = 0x79b8ff;
+const ATTACK_HIGHLIGHT_COLOR = 0xff6f6f;
+const SELECTED_HIGHLIGHT_COLOR = 0xfff1a3;
 const SLOT_COLUMNS = {
   FR: GAME_WIDTH / 2 - 210,
   FC: GAME_WIDTH / 2,
@@ -109,9 +147,11 @@ export class BattlefieldScene extends Phaser.Scene {
   private layers!: BattlefieldSceneLayers;
   private runtime!: BattleRuntimeState;
   private session!: GameSession;
-  private statusText!: Phaser.GameObjects.Text;
+  private statusText: Phaser.GameObjects.Text | null = null;
   private isSaving = false;
   private selectedSlotId: BattleSlotId | null = null;
+  private selection: BattleSelection | null = null;
+  private statusMessage = 'Select a hand card or battlefield card.';
 
   constructor() {
     super({ key: 'BattlefieldScene' });
@@ -125,6 +165,8 @@ export class BattlefieldScene extends Phaser.Scene {
     this.runtime = createInitialBattleRuntime(this.session);
     this.isSaving = false;
     this.selectedSlotId = null;
+    this.selection = null;
+    this.statusMessage = 'Select a hand card or battlefield card.';
     this.handDeckContainer = null;
     this.handDeckTargetY = null;
 
@@ -133,6 +175,32 @@ export class BattlefieldScene extends Phaser.Scene {
     this.layers.effectLayer.add(this.highlightGraphics);
 
     this.addBackground();
+    this.renderBattleState();
+  }
+
+  /**
+   * HandDeck 패널의 hover 펼침 상태를 갱신한다.
+   * 별도 interactive hover zone을 두지 않아 손패 카드 선택 입력이 가려지지 않게 한다.
+   */
+  update(): void {
+    this.updateHandDeckHover();
+  }
+
+  private renderBattleState(): void {
+    if (this.handDeckContainer) {
+      this.tweens.killTweensOf(this.handDeckContainer);
+    }
+    this.handDeckContainer = null;
+    this.handDeckTargetY = null;
+    this.statusText = null;
+
+    this.layers.boardLayer.removeAll(true);
+    this.layers.cardLayer.removeAll(true);
+    this.layers.hudLayer.removeAll(true);
+    this.layers.handLayer.removeAll(true);
+    this.layers.buttonLayer.removeAll(true);
+    this.highlightGraphics.clear();
+
     this.addTopHud();
     this.addBoard();
     this.addFieldSlots();
@@ -141,6 +209,7 @@ export class BattlefieldScene extends Phaser.Scene {
     this.addHandDeckContainer();
     this.addUtilityButtons();
     this.addStatusText();
+    this.redrawHighlight();
   }
 
   private createLayers(): BattlefieldSceneLayers {
@@ -181,7 +250,13 @@ export class BattlefieldScene extends Phaser.Scene {
     );
     this.addInfoPanel(
       { x: 440, y: 52, width: 320, height: 138 },
-      ['Phase', 'Turn 01', `Slot ${this.session.slotId}`],
+      [
+        `${formatSideLabel(this.runtime.currentSide)} TURN`,
+        `Round ${this.runtime.turnNumber}`,
+        this.runtime.outcome
+          ? `${formatSideLabel(this.runtime.outcome.winner)} WINS`
+          : this.runtime.phase,
+      ],
     );
     this.addInfoPanel(
       { x: 836, y: 52, width: 320, height: 138 },
@@ -340,7 +415,11 @@ export class BattlefieldScene extends Phaser.Scene {
     for (const slotId of SLOT_ORDER) {
       const card = slotCards.get(slotId);
       if (card) {
-        this.addCardView(this.layers.cardLayer, FIELD_SLOT_RECTS[slotId], card, 'field');
+        this.addCardView(this.layers.cardLayer, FIELD_SLOT_RECTS[slotId], card, 'field', {
+          onClick: () => {
+            this.selectBattlefieldCard(card);
+          },
+        });
       }
     }
   }
@@ -350,6 +429,7 @@ export class BattlefieldScene extends Phaser.Scene {
     rect: Rect,
     card: BattleCardRuntimeState,
     mode: 'field' | 'hand',
+    options: CardViewOptions = {},
   ): void {
     const centerX = rect.x + rect.width / 2;
     const centerY = rect.y + rect.height / 2;
@@ -408,6 +488,26 @@ export class BattlefieldScene extends Phaser.Scene {
       badgeSize,
       fontSize,
     );
+
+    if (options.highlightColor !== undefined) {
+      const highlight = this.add.rectangle(
+        centerX,
+        centerY,
+        rect.width + 8,
+        rect.height + 8,
+        0x000000,
+        0,
+      );
+      highlight.setStrokeStyle(5, options.highlightColor, 0.92);
+      parent.add(highlight);
+    }
+
+    if (options.onClick) {
+      const hitArea = this.add.zone(centerX, centerY, rect.width, rect.height);
+      hitArea.setInteractive({ useHandCursor: true });
+      hitArea.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, options.onClick);
+      parent.add(hitArea);
+    }
   }
 
   private addCardCornerStat(
@@ -434,7 +534,6 @@ export class BattlefieldScene extends Phaser.Scene {
 
   private addHandDeckContainer(): void {
     const hiddenY = HAND_RECT.y + HAND_RECT.height - 42;
-    const expandedY = HAND_RECT.y + 42;
     const container = this.add.container(HAND_RECT.x + HAND_RECT.width / 2, hiddenY);
     this.handDeckContainer = container;
     this.layers.handLayer.add(container);
@@ -443,23 +542,6 @@ export class BattlefieldScene extends Phaser.Scene {
     panel.setStrokeStyle(2, 0xcde7cb, 0.78);
     container.add(panel);
     this.addHandCards(container);
-
-    const hoverZone = this.add
-      .zone(
-        HAND_RECT.x + HAND_RECT.width / 2,
-        expandedY,
-        HAND_RECT.width,
-        hiddenY + HAND_RECT.height - expandedY,
-      )
-      .setOrigin(0.5, 0);
-    hoverZone.setInteractive();
-    this.layers.handLayer.add(hoverZone);
-    hoverZone.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OVER, () => {
-      this.moveHandDeckContainer(expandedY);
-    });
-    hoverZone.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OUT, () => {
-      this.moveHandDeckContainer(hiddenY);
-    });
   }
 
   private addHandCards(container: Phaser.GameObjects.Container): void {
@@ -478,7 +560,20 @@ export class BattlefieldScene extends Phaser.Scene {
       };
 
       if (card) {
-        this.addCardView(container, rect, card, 'hand');
+        const placeActions = listPlaceActions(this.runtime).filter(
+          (action) => action.cardInstanceId === card.card.instance.instanceId,
+        );
+        const cardViewOptions: CardViewOptions = {
+          onClick: () => {
+            this.selectHandCard(card);
+          },
+        };
+        if (placeActions.length > 0 && this.isPlayerControlActive()) {
+          cardViewOptions.highlightColor = PLACE_HIGHLIGHT_COLOR;
+        }
+        this.addCardView(container, rect, card, 'hand', {
+          ...cardViewOptions,
+        });
         continue;
       }
 
@@ -523,6 +618,19 @@ export class BattlefieldScene extends Phaser.Scene {
     });
   }
 
+  private updateHandDeckHover(): void {
+    if (!this.handDeckContainer) {
+      return;
+    }
+
+    const pointer = this.input.activePointer;
+    const expandedY = HAND_RECT.y + 42;
+    const hiddenY = HAND_RECT.y + HAND_RECT.height - 42;
+    this.moveHandDeckContainer(
+      isPointerInHandDeckHoverArea(pointer, expandedY, hiddenY) ? expandedY : hiddenY,
+    );
+  }
+
   private addUtilityButtons(): void {
     createMenuButton(this, {
       x: 82,
@@ -563,8 +671,11 @@ export class BattlefieldScene extends Phaser.Scene {
       width: 152,
       height: 58,
       label: 'Turn End',
-      enabled: false,
+      enabled: this.isPlayerControlActive(),
       parent: this.layers.buttonLayer,
+      onClick: () => {
+        this.endCurrentTurn();
+      },
     });
     createMenuButton(this, {
       x: 1110,
@@ -579,7 +690,7 @@ export class BattlefieldScene extends Phaser.Scene {
 
   private addStatusText(): void {
     this.statusText = this.add
-      .text(GAME_WIDTH / 2, 1408, 'Select a battlefield slot. Save writes the current slot state.', {
+      .text(GAME_WIDTH / 2, 1408, this.statusMessage, {
         fontFamily: DEFAULT_FONT_FAMILY,
         fontSize: '22px',
         color: '#c7d7ca',
@@ -592,22 +703,231 @@ export class BattlefieldScene extends Phaser.Scene {
   }
 
   private selectSlot(slotId: BattleSlotId): void {
+    if (this.runtime.phase === 'GAME_OVER') {
+      this.setStatus('Battle is over.');
+      return;
+    }
+
+    if (this.selection?.kind === 'HAND_CARD') {
+      const action = this.selection.placeActions.find((candidate) => candidate.toSlotId === slotId);
+      if (action) {
+        applyPlaceAction(this.runtime, action);
+        this.finishBattleAction(`Placed ${this.getCardName(action.cardInstanceId)} to ${slotId}.`);
+        return;
+      }
+
+      this.setStatus(`Cannot place selected card on ${slotId}.`);
+      return;
+    }
+
+    if (this.selection?.kind === 'FIELD_CARD') {
+      const moveAction = this.selection.moveActions.find(
+        (candidate) => candidate.toSlotId === slotId,
+      );
+      if (moveAction) {
+        applyMoveAction(this.runtime, moveAction);
+        this.finishBattleAction(`Moved ${this.getCardName(moveAction.cardInstanceId)} to ${slotId}.`);
+        return;
+      }
+
+      const attackAction = this.selection.attackActions.find(
+        (candidate) => candidate.toSlotId === slotId,
+      );
+      if (attackAction) {
+        applyAttackAction(this.runtime, attackAction);
+        this.finishBattleAction(
+          `${this.getCardName(attackAction.attackerInstanceId)} attacked ${this.getCardName(
+            attackAction.targetInstanceId,
+          )}.`,
+        );
+        return;
+      }
+
+      this.setStatus(`Selected card has no action for ${slotId}.`);
+      return;
+    }
+
+    const card = findBattlefieldCardAtSlot(this.runtime, slotId);
+    if (card) {
+      this.selectBattlefieldCard(card);
+      return;
+    }
+
     this.selectedSlotId = slotId;
+    this.selection = null;
     this.redrawHighlight();
     this.setStatus(`Selected ${slotId}`);
   }
 
-  private redrawHighlight(): void {
-    this.highlightGraphics.clear();
-    if (!this.selectedSlotId) {
+  private selectHandCard(card: BattleCardRuntimeState): void {
+    if (!this.isPlayerControlActive()) {
+      this.setStatus('Only the player MAIN turn accepts hand actions.');
       return;
     }
 
-    const rect = FIELD_SLOT_RECTS[this.selectedSlotId];
-    this.highlightGraphics.lineStyle(6, 0xfff1a3, 0.98);
+    const placeActions = listPlaceActions(this.runtime).filter(
+      (action) => action.cardInstanceId === card.card.instance.instanceId,
+    );
+    if (placeActions.length === 0) {
+      this.selection = null;
+      this.selectedSlotId = null;
+      this.redrawHighlight();
+      this.setStatus(`${card.card.instance.name} has no legal place slot.`);
+      return;
+    }
+
+    this.selection = {
+      kind: 'HAND_CARD',
+      cardInstanceId: card.card.instance.instanceId,
+      placeActions,
+    };
+    this.selectedSlotId = null;
+    this.redrawHighlight();
+    this.setStatus(`Select a green slot to place ${card.card.instance.name}.`);
+  }
+
+  private selectBattlefieldCard(card: BattleCardRuntimeState): void {
+    if (
+      this.selection?.kind === 'FIELD_CARD' &&
+      card.battlefieldSlot !== null &&
+      card.side !== this.runtime.currentSide
+    ) {
+      const attackAction = this.selection.attackActions.find(
+        (candidate) => candidate.toSlotId === card.battlefieldSlot,
+      );
+      if (attackAction) {
+        applyAttackAction(this.runtime, attackAction);
+        this.finishBattleAction(
+          `${this.getCardName(attackAction.attackerInstanceId)} attacked ${this.getCardName(
+            attackAction.targetInstanceId,
+          )}.`,
+        );
+        return;
+      }
+    }
+
+    if (!this.isPlayerControlActive()) {
+      this.setStatus('Only the player turn accepts battlefield actions.');
+      return;
+    }
+
+    if (card.side !== this.runtime.currentSide || card.battlefieldSlot === null) {
+      this.setStatus(`${card.card.instance.name} is not a current-side card.`);
+      return;
+    }
+
+    const moveActions = listMoveActions(this.runtime).filter(
+      (action) => action.cardInstanceId === card.card.instance.instanceId,
+    );
+    const attackActions = listAttackActions(this.runtime).filter(
+      (action) => action.attackerInstanceId === card.card.instance.instanceId,
+    );
+    if (moveActions.length === 0 && attackActions.length === 0) {
+      this.selection = null;
+      this.selectedSlotId = card.battlefieldSlot;
+      this.redrawHighlight();
+      this.setStatus(`${card.card.instance.name} has no legal action.`);
+      return;
+    }
+
+    this.selection = {
+      kind: 'FIELD_CARD',
+      cardInstanceId: card.card.instance.instanceId,
+      sourceSlotId: card.battlefieldSlot,
+      moveActions,
+      attackActions,
+    };
+    this.selectedSlotId = null;
+    this.redrawHighlight();
+    this.setStatus(`Select a blue move slot or red attack target for ${card.card.instance.name}.`);
+  }
+
+  private redrawHighlight(): void {
+    this.highlightGraphics.clear();
+
+    if (this.selection?.kind === 'HAND_CARD') {
+      for (const action of this.selection.placeActions) {
+        this.drawSlotHighlight(action.toSlotId, PLACE_HIGHLIGHT_COLOR, 0.94);
+      }
+    }
+
+    if (this.selection?.kind === 'FIELD_CARD') {
+      this.drawSlotHighlight(this.selection.sourceSlotId, SELECTED_HIGHLIGHT_COLOR, 0.98);
+      for (const action of this.selection.moveActions) {
+        this.drawSlotHighlight(action.toSlotId, MOVE_HIGHLIGHT_COLOR, 0.9);
+      }
+      for (const action of this.selection.attackActions) {
+        this.drawSlotHighlight(action.toSlotId, ATTACK_HIGHLIGHT_COLOR, 0.92);
+      }
+    }
+
+    if (this.selectedSlotId) {
+      this.drawSlotHighlight(this.selectedSlotId, SELECTED_HIGHLIGHT_COLOR, 0.98);
+    }
+  }
+
+  private drawSlotHighlight(slotId: BattleSlotId, color: number, alpha: number): void {
+    const rect = FIELD_SLOT_RECTS[slotId];
+    this.highlightGraphics.lineStyle(6, color, alpha);
     this.highlightGraphics.strokeRect(rect.x + 3, rect.y + 3, rect.width - 6, rect.height - 6);
     this.highlightGraphics.lineStyle(2, 0xffffff, 0.72);
     this.highlightGraphics.strokeRect(rect.x + 11, rect.y + 11, rect.width - 22, rect.height - 22);
+  }
+
+  private finishBattleAction(message: string): void {
+    const messages = [message, ...this.settleTurnFlow()];
+    if (this.runtime.outcome) {
+      messages.push(`${formatSideLabel(this.runtime.outcome.winner)} wins.`);
+    }
+    this.selection = null;
+    this.selectedSlotId = null;
+    this.statusMessage = messages.join(' ');
+    this.renderBattleState();
+  }
+
+  private endCurrentTurn(): void {
+    if (!this.isPlayerControlActive()) {
+      return;
+    }
+
+    const endedSide = this.runtime.currentSide;
+    applyTurnEnd(this.runtime);
+    const messages = [`${formatSideLabel(endedSide)} turn ended.`, ...this.settleTurnFlow()];
+    this.selection = null;
+    this.selectedSlotId = null;
+    this.statusMessage = messages.join(' ');
+    this.renderBattleState();
+  }
+
+  private settleTurnFlow(): string[] {
+    const messages: string[] = [];
+    const stalledSide = this.runtime.currentSide;
+    if (applyAutoTurnEndIfStalled(this.runtime)) {
+      messages.push(`${formatSideLabel(stalledSide)} had no actions and ended automatically.`);
+    }
+
+    if (this.runtime.currentSide === 'enemy' && this.runtime.phase !== 'GAME_OVER') {
+      applyTurnEnd(this.runtime);
+      messages.push('Enemy turn passed.');
+    }
+
+    return messages;
+  }
+
+  private isPlayerControlActive(): boolean {
+    return this.runtime.currentSide === 'player' && this.runtime.phase !== 'GAME_OVER';
+  }
+
+  private getCardName(instanceId: string): string {
+    const card = [
+      ...this.runtime.battlefield,
+      ...this.runtime.player.hand,
+      ...this.runtime.enemy.hand,
+      ...this.runtime.player.drop,
+      ...this.runtime.enemy.drop,
+    ].find((entry) => entry.card.instance.instanceId === instanceId);
+
+    return card?.card.instance.name ?? instanceId;
   }
 
   private async saveCurrentSession(): Promise<void> {
@@ -633,7 +953,8 @@ export class BattlefieldScene extends Phaser.Scene {
   }
 
   private setStatus(message: string): void {
-    this.statusText.setText(message);
+    this.statusMessage = message;
+    this.statusText?.setText(message);
   }
 }
 
@@ -650,11 +971,36 @@ function createCenteredRect(x: number, y: number, width: number, height: number)
 }
 
 /**
+ * 포인터가 HandDeck을 펼친 상태로 유지해야 하는 화면 영역 안에 있는지 판정한다.
+ */
+function isPointerInHandDeckHoverArea(
+  pointer: Phaser.Input.Pointer,
+  expandedY: number,
+  hiddenY: number,
+): boolean {
+  const x = pointer.worldX;
+  const y = pointer.worldY;
+  return (
+    x >= HAND_RECT.x &&
+    x <= HAND_RECT.x + HAND_RECT.width &&
+    y >= expandedY &&
+    y <= Math.min(GAME_HEIGHT, hiddenY + HAND_RECT.height)
+  );
+}
+
+/**
  * 도메인 슬롯 id를 화면 슬롯 라벨로 축약한다.
  */
 function formatSlotLabel(slotId: BattleSlotId): string {
   const [side, zone] = slotId.split(':') as ['player' | 'enemy', string];
   return `${side === 'enemy' ? 'E' : 'P'}${zone}`;
+}
+
+/**
+ * 전투 진영을 HUD와 상태 메시지에 표시할 짧은 영문 라벨로 변환한다.
+ */
+function formatSideLabel(side: BattleSide): string {
+  return side === 'player' ? 'PLAYER' : 'ENEMY';
 }
 
 /**
