@@ -5,19 +5,69 @@ export type CardDefinitionFile = {
   cards: CardDefinition[];
 };
 
+export type CardRarity = 'C' | 'UC' | 'R' | 'SR' | 'EU';
+
+export type CardType = 'UNIT' | 'LEADER' | 'EQUIPMENT' | 'ITEM';
+
+export type AbilityCategory =
+  | 'SPECIAL'
+  | 'MOVE'
+  | 'SUMMON'
+  | 'ACTION'
+  | 'ATTACK'
+  | 'RETREAT'
+  | 'FRONT'
+  | 'BACK'
+  | 'GLOBAL';
+
+export type CardTrait = {
+  key: string;
+  text: string;
+};
+
+export type CardAbility = {
+  id: string;
+  category: AbilityCategory;
+  name: string;
+  text: string;
+};
+
+export type CardGrowthValue = {
+  stat: 'hp' | 'attack' | 'slot' | 'dominance';
+  value: number;
+};
+
+export type CardGrowth = {
+  lv2: CardGrowthValue[];
+  lv3: CardGrowthValue[];
+  lv4: CardGrowthValue[];
+  lv5: CardGrowthValue[];
+  lv6: CardGrowthValue[];
+  lv7: CardGrowthValue[];
+  lv8: CardGrowthValue[];
+  lv9: CardGrowthValue[];
+};
+
 export type CardDefinition = {
   id: string;
   name: string;
-  type: string;
+  rarity: CardRarity;
+  type: CardType;
+  traits: CardTrait[];
+  slot?: number;
   cost?: number;
   dominance?: number;
   hp?: number;
   attack?: number;
   level?: number;
   exp?: number;
+  abilities: CardAbility[];
+  growth?: CardGrowth;
+  description: string;
+  note: string;
 };
 
-const deckDefinition = deckDefinitionData as CardDefinitionFile;
+const deckDefinition = deckDefinitionData as unknown as CardDefinitionFile;
 
 export const CARD_DEFINITIONS: CardDefinition[] = deckDefinition.cards;
 

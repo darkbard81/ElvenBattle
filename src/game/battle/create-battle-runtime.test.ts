@@ -100,4 +100,26 @@ describe('createInitialBattleRuntime', () => {
     expect(runtime.enemy.drop).toHaveLength(0);
     expect(runtime.enemy.exile).toHaveLength(0);
   });
+
+  it('initializes turn state and per-card action flags', async () => {
+    const state = await createInitialSaveState({ slotId: 1 });
+    const session = createGameSession(state);
+    const runtime = createInitialBattleRuntime(session);
+    const cards = [
+      runtime.player.leader,
+      runtime.enemy.leader,
+      ...runtime.player.hand,
+      ...runtime.player.deck,
+      ...runtime.enemy.hand,
+      ...runtime.enemy.deck,
+    ];
+
+    expect(runtime.currentSide).toBe('player');
+    expect(runtime.turnNumber).toBe(1);
+    expect(runtime.phase).toBe('MAIN');
+    expect(runtime.outcome).toBeNull();
+    expect(cards.every((card) => !card.hasMovedThisTurn)).toBe(true);
+    expect(cards.every((card) => !card.hasAttackedThisTurn)).toBe(true);
+    expect(cards.every((card) => !card.hasUsedActiveSkillThisTurn)).toBe(true);
+  });
 });

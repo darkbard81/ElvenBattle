@@ -87,9 +87,10 @@ describe('save slots api', () => {
     };
     expect(initBody.state.slotId).toBe(1);
     expect(initBody.state.deck.cards).toHaveLength(29);
-    expect(initBody.state.deck.leader).not.toHaveProperty('definitionName');
-    expect(initBody.state.deck.leader).not.toHaveProperty('baseHp');
-    expect(initBody.state.deck.leader).not.toHaveProperty('baseAttack');
+    expect(initBody.state.deck.leader.id).toBe('leader_minerva');
+    expect(initBody.state.deck.leader.name).toBe('미네르바');
+    expect(initBody.state.deck.leader.description).toBeTypeOf('string');
+    expect(initBody.state.deck.leader.abilities).toEqual([]);
     expect(initBody.summary.isEmpty).toBe(false);
     expect(initBody.summary.leaderName).toBe('미네르바');
 
@@ -105,7 +106,7 @@ describe('save slots api', () => {
         ...initBody.state.deck,
         leader: {
           ...initBody.state.deck.leader,
-          currentHp: initBody.state.deck.leader.currentHp - 1,
+          hp: initBody.state.deck.leader.hp! - 1,
         },
       },
     };
@@ -125,7 +126,7 @@ describe('save slots api', () => {
     expect(getBody.slotId).toBe(1);
     expect(getBody).toEqual(savedState);
     expect(getBody.saveName).toBe('Manual Save');
-    expect(getBody.deck.leader).not.toHaveProperty('definitionName');
+    expect(getBody.deck.leader).not.toHaveProperty('definitionId');
 
     const updatedList = await listSaveSlotSummaries(slotsRoot);
     expect(updatedList.slots[0]).toMatchObject({
@@ -135,6 +136,54 @@ describe('save slots api', () => {
       leaderName: '미네르바',
       isEmpty: false,
     });
+  });
+
+  it('normalizes legacy card instances when reading an existing slot', async () => {
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'save-slots-'));
+    const slotsRoot = path.join(tempRoot, 'slots');
+    await fs.mkdir(slotsRoot, { recursive: true });
+    await fs.writeFile(
+      path.join(slotsRoot, 'slot-1.json'),
+      JSON.stringify({
+        schemaVersion: 1,
+        slotId: 1,
+        createdAt: '2024-01-01T00:00:00.000Z',
+        updatedAt: '2024-01-02T00:00:00.000Z',
+        saveName: 'Legacy Save',
+        deck: {
+          id: 'deck-legacy',
+          leader: {
+            instanceId: 'leader-legacy',
+            definitionId: 'leader_minerva',
+            owner: 'PLAYER',
+            zone: 'LEADER',
+            level: 1,
+            exp: 0,
+            currentHp: 17,
+            currentAttack: 2,
+          },
+          cards: [],
+        },
+      }),
+      'utf8',
+    );
+    const handler = createSaveSlotsApiHandler({ saveSlotsRoot: slotsRoot });
+    const req = createRequest('GET', '/api/save-slots/1');
+    const res = createResponse();
+
+    await handler(req, res.response, () => undefined);
+
+    expect(res.statusCode()).toBe(200);
+    const body = res.json() as SaveSlotState;
+    expect(body.deck.leader).toMatchObject({
+      id: 'leader_minerva',
+      name: '미네르바',
+      instanceId: 'leader-legacy',
+      hp: 17,
+      attack: 2,
+    });
+    expect(body.deck.leader).not.toHaveProperty('definitionId');
+    expect(body.deck.leader.abilities).toEqual([]);
   });
 
   it('rejects invalid slot numbers', async () => {

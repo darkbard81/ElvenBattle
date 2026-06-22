@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createInitialSaveState } from '../game/save/create-initial-save';
-import { findCardDefinition } from '../game/save/card-catalog';
+import { findCardDefinition, requireCardDefinition, type CardDefinition } from '../game/save/card-catalog';
 import {
   SAVE_SLOT_IDS,
   SAVE_SLOT_SCHEMA_VERSION,
@@ -154,7 +154,7 @@ function createEmptySummary(slotId: SaveSlotId) {
 }
 
 function toSaveSlotSummary(state: SaveSlotState) {
-  const leaderDefinition = findCardDefinition(state.deck.leader.definitionId);
+  const leaderDefinition = findCardDefinition(state.deck.leader.id);
 
   return {
     slotId: state.slotId,
@@ -217,6 +217,7 @@ function validateSaveSlotState(value: unknown, slotId: SaveSlotId): SaveSlotStat
   if (!isDeckInstance(value.deck)) {
     throw new Error('deck must be a deck instance');
   }
+  const deck = normalizeDeckInstance(value.deck);
 
   return {
     schemaVersion: SAVE_SLOT_SCHEMA_VERSION,
@@ -224,7 +225,7 @@ function validateSaveSlotState(value: unknown, slotId: SaveSlotId): SaveSlotStat
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
     saveName: value.saveName,
-    deck: value.deck,
+    deck,
   };
 }
 
@@ -241,7 +242,55 @@ function isDeckInstance(value: unknown): value is DeckInstance {
   );
 }
 
+function normalizeDeckInstance(deck: DeckInstance): DeckInstance {
+  return {
+    id: deck.id,
+    leader: normalizeCardInstance(deck.leader),
+    cards: deck.cards.map((card) => normalizeCardInstance(card)),
+  };
+}
+
+function normalizeCardInstance(instance: CardInstance): CardInstance {
+  if (isSchemaCardInstance(instance)) {
+    return instance;
+  }
+
+  const legacy = instance as unknown as JsonRecord;
+  const definition = requireCardDefinition(String(legacy.definitionId));
+  return {
+    ...structuredClone(definition),
+    level: readIntegerOrDefault(legacy.level, definition.level ?? 1),
+    exp: readIntegerOrDefault(legacy.exp, definition.exp ?? 0),
+    hp: readIntegerOrDefault(legacy.currentHp, definition.hp ?? 0),
+    attack: readIntegerOrDefault(legacy.currentAttack, definition.attack ?? 0),
+    instanceId: String(legacy.instanceId),
+    owner: legacy.owner as CardInstance['owner'],
+    zone: legacy.zone as CardInstance['zone'],
+  };
+}
+
 function isCardInstance(value: unknown): value is CardInstance {
+  return isSchemaCardInstance(value) || isLegacyCardInstance(value);
+}
+
+function isSchemaCardInstance(value: unknown): value is CardInstance {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    typeof value.instanceId === 'string' &&
+    value.owner === 'PLAYER' &&
+    (value.zone === 'LEADER' || value.zone === 'DECK') &&
+    isCardDefinition(value) &&
+    Number.isInteger(value.level ?? 1) &&
+    Number.isInteger(value.exp ?? 0) &&
+    Number.isInteger(value.hp) &&
+    Number.isInteger(value.attack)
+  );
+}
+
+function isLegacyCardInstance(value: unknown): value is CardInstance {
   if (!isRecord(value)) {
     return false;
   }
@@ -256,6 +305,23 @@ function isCardInstance(value: unknown): value is CardInstance {
     Number.isInteger(value.currentHp) &&
     Number.isInteger(value.currentAttack)
   );
+}
+
+function isCardDefinition(value: JsonRecord): value is CardDefinition {
+  return (
+    typeof value.id === 'string' &&
+    typeof value.name === 'string' &&
+    typeof value.rarity === 'string' &&
+    typeof value.type === 'string' &&
+    Array.isArray(value.traits) &&
+    Array.isArray(value.abilities) &&
+    typeof value.description === 'string' &&
+    typeof value.note === 'string'
+  );
+}
+
+function readIntegerOrDefault(value: unknown, fallback: number): number {
+  return Number.isInteger(value) ? (value as number) : fallback;
 }
 
 function isRecord(value: unknown): value is JsonRecord {

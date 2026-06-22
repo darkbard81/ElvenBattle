@@ -8,13 +8,15 @@ describe('createInitialSaveState', () => {
     expect(state.schemaVersion).toBe(1);
     expect(state.slotId).toBe(1);
     expect(state.deck.leader.zone).toBe('LEADER');
-    expect(state.deck.leader.definitionId).toBe('leader_minerva');
-    expect(state.deck.leader).not.toHaveProperty('definitionName');
-    expect(state.deck.leader).not.toHaveProperty('baseHp');
-    expect(state.deck.leader).not.toHaveProperty('baseAttack');
+    expect(state.deck.leader.id).toBe('leader_minerva');
+    expect(state.deck.leader.name).toBe('미네르바');
+    expect(state.deck.leader.traits).toEqual(
+      expect.arrayContaining([expect.objectContaining({ key: 'race', text: '엘프' })]),
+    );
+    expect(state.deck.leader.abilities).toEqual([]);
     expect(state.deck.cards).toHaveLength(29);
     expect(state.deck.cards.every((card) => card.zone === 'DECK')).toBe(true);
-    expect(state.deck.cards.every((card) => !Object.prototype.hasOwnProperty.call(card, 'definitionName'))).toBe(true);
+    expect(state.deck.cards.every((card) => typeof card.description === 'string')).toBe(true);
 
     const instanceIds = new Set([
       state.deck.leader.instanceId,

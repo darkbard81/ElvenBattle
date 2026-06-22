@@ -35,6 +35,10 @@ export function createInitialBattleRuntime(session: GameSession): BattleRuntimeS
   const enemy = createBattleParticipantRuntimeState('enemy', enemyDeck, ENEMY_INITIAL_LEADER_SLOT);
 
   return {
+    currentSide: 'player',
+    turnNumber: 1,
+    phase: 'MAIN',
+    outcome: null,
     player,
     enemy,
     battlefield: [enemy.leader, player.leader],
@@ -87,5 +91,8 @@ function createBattleCardRuntimeState(
     battlefieldSlot: options.battlefieldSlot ?? null,
     handIndex: options.handIndex ?? null,
     deckIndex: options.deckIndex ?? null,
+    hasMovedThisTurn: false,
+    hasAttackedThisTurn: false,
+    hasUsedActiveSkillThisTurn: false,
   };
 }

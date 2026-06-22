@@ -5,7 +5,7 @@ import {
   initializeSaveSlot,
   saveSlotState,
 } from './client-api';
-import type { SaveSlotState } from './types';
+import type { CardInstance, SaveSlotState } from './types';
 
 type FakeResponseInit = {
   ok: boolean;
@@ -33,18 +33,42 @@ function createValidSaveSlotState(): SaveSlotState {
     saveName: 'Slot 1',
     deck: {
       id: 'deck-1',
-      leader: {
-        instanceId: 'leader-1',
-        definitionId: 'leader_minerva',
-        owner: 'PLAYER',
-        zone: 'LEADER',
-        level: 1,
-        exp: 0,
-        currentHp: 100,
-        currentAttack: 10,
-      },
+      leader: createValidCardInstance(),
       cards: [],
     },
+  };
+}
+
+function createValidCardInstance(): CardInstance {
+  return {
+    id: 'leader_minerva',
+    name: '미네르바',
+    rarity: 'R',
+    type: 'LEADER',
+    traits: [{ key: 'race', text: '엘프' }],
+    slot: 0,
+    cost: 1,
+    dominance: 1,
+    hp: 100,
+    attack: 10,
+    level: 1,
+    exp: 0,
+    abilities: [],
+    growth: {
+      lv2: [],
+      lv3: [],
+      lv4: [],
+      lv5: [],
+      lv6: [],
+      lv7: [],
+      lv8: [],
+      lv9: [],
+    },
+    description: '테스트 리더',
+    note: '테스트 노트',
+    instanceId: 'leader-1',
+    owner: 'PLAYER',
+    zone: 'LEADER',
   };
 }
 
@@ -160,16 +184,7 @@ describe('save slot client api', () => {
               saveName: 'Slot 1',
               deck: {
                 id: 'deck-1',
-                leader: {
-                  instanceId: 'leader-1',
-                  definitionId: 'leader_minerva',
-                  owner: 'PLAYER',
-                  zone: 'LEADER',
-                  level: 1,
-                  exp: 0,
-                  currentHp: 100,
-                  currentAttack: 10,
-                },
+                leader: createValidCardInstance(),
                 cards: [],
               },
             },

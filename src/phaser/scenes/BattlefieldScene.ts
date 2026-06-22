@@ -1,10 +1,28 @@
 import Phaser from 'phaser';
+import {
+  applyAttackAction,
+  applyAutoTurnEndIfStalled,
+  applyMoveAction,
+  applyPlaceAction,
+  applyTurnEnd,
+  findBattlefieldCardAtSlot,
+  listAttackActions,
+  listMoveActions,
+  listPlaceActions,
+  runAutomatedTurn,
+} from '../../game/battle/battle-engine';
 import { createInitialBattleRuntime } from '../../game/battle/create-battle-runtime';
 import {
   INITIAL_HAND_SIZE,
+  type AttackBattleAction,
+  type BattleAutomationAction,
   type BattleCardRuntimeState,
   type BattleRuntimeState,
+  type BattleSide,
   type BattleSlotId,
+  type BattleTurnEvent,
+  type MoveBattleAction,
+  type PlaceBattleAction,
 } from '../../game/battle/types';
 import { fetchSaveSlot, saveSlotState } from '../../game/save/client-api';
 import {
@@ -34,10 +52,62 @@ type BattlefieldSceneLayers = {
   buttonLayer: Phaser.GameObjects.Container;
 };
 
+type BattleSelection =
+  | {
+      kind: 'HAND_CARD';
+      cardInstanceId: string;
+      placeActions: PlaceBattleAction[];
+    }
+  | {
+      kind: 'FIELD_CARD';
+      cardInstanceId: string;
+      sourceSlotId: BattleSlotId;
+      moveActions: MoveBattleAction[];
+      attackActions: AttackBattleAction[];
+    };
+
+type CardViewOptions = {
+  highlightColor?: number;
+  onClick?: () => void;
+};
+
+type BattleFlowResult = {
+  messages: string[];
+  popupEvents: BattlePopupEvent[];
+};
+
+type BattlePopupEvent = {
+  kind: 'PLACE' | 'MOVE' | 'ATTACK';
+  slotId: BattleSlotId;
+  text: string;
+};
+
 const FIELD_SLOT_WIDTH = 180;
 const FIELD_SLOT_HEIGHT = 270;
 const HAND_CARD_WIDTH = 144;
-const HAND_CARD_HEIGHT = 216;
+const BATTLE_POPUP_DURATION_MS = 500;
+const PLACE_HIGHLIGHT_COLOR = 0x71d879;
+const MOVE_HIGHLIGHT_COLOR = 0x79b8ff;
+const ATTACK_HIGHLIGHT_COLOR = 0xff6f6f;
+const SELECTED_HIGHLIGHT_COLOR = 0xfff1a3;
+const CARD_BACK_TEXTURE_KEY = 'cards.webp.card_back';
+const POPUP_STYLE = {
+  PLACE: {
+    fill: 0x173a24,
+    stroke: PLACE_HIGHLIGHT_COLOR,
+    color: '#d9ffd6',
+  },
+  MOVE: {
+    fill: 0x18314c,
+    stroke: MOVE_HIGHLIGHT_COLOR,
+    color: '#e2f1ff',
+  },
+  ATTACK: {
+    fill: 0x4b1717,
+    stroke: ATTACK_HIGHLIGHT_COLOR,
+    color: '#ffe1dc',
+  },
+} as const;
 const SLOT_COLUMNS = {
   FR: GAME_WIDTH / 2 - 210,
   FC: GAME_WIDTH / 2,
@@ -109,9 +179,12 @@ export class BattlefieldScene extends Phaser.Scene {
   private layers!: BattlefieldSceneLayers;
   private runtime!: BattleRuntimeState;
   private session!: GameSession;
-  private statusText!: Phaser.GameObjects.Text;
+  private statusText: Phaser.GameObjects.Text | null = null;
+  private isAnimatingBattleEvents = false;
   private isSaving = false;
   private selectedSlotId: BattleSlotId | null = null;
+  private selection: BattleSelection | null = null;
+  private statusMessage = 'Select a hand card or battlefield card.';
 
   constructor() {
     super({ key: 'BattlefieldScene' });
@@ -123,8 +196,11 @@ export class BattlefieldScene extends Phaser.Scene {
   create(data: BattlefieldSceneData): void {
     this.session = data.session;
     this.runtime = createInitialBattleRuntime(this.session);
+    this.isAnimatingBattleEvents = false;
     this.isSaving = false;
     this.selectedSlotId = null;
+    this.selection = null;
+    this.statusMessage = 'Select a hand card or battlefield card.';
     this.handDeckContainer = null;
     this.handDeckTargetY = null;
 
@@ -133,6 +209,32 @@ export class BattlefieldScene extends Phaser.Scene {
     this.layers.effectLayer.add(this.highlightGraphics);
 
     this.addBackground();
+    this.renderBattleState();
+  }
+
+  /**
+   * HandDeck 패널의 hover 펼침 상태를 갱신한다.
+   * 별도 interactive hover zone을 두지 않아 손패 카드 선택 입력이 가려지지 않게 한다.
+   */
+  update(): void {
+    this.updateHandDeckHover();
+  }
+
+  private renderBattleState(): void {
+    if (this.handDeckContainer) {
+      this.tweens.killTweensOf(this.handDeckContainer);
+    }
+    this.handDeckContainer = null;
+    this.handDeckTargetY = null;
+    this.statusText = null;
+
+    this.layers.boardLayer.removeAll(true);
+    this.layers.cardLayer.removeAll(true);
+    this.layers.hudLayer.removeAll(true);
+    this.layers.handLayer.removeAll(true);
+    this.layers.buttonLayer.removeAll(true);
+    this.highlightGraphics.clear();
+
     this.addTopHud();
     this.addBoard();
     this.addFieldSlots();
@@ -141,6 +243,7 @@ export class BattlefieldScene extends Phaser.Scene {
     this.addHandDeckContainer();
     this.addUtilityButtons();
     this.addStatusText();
+    this.redrawHighlight();
   }
 
   private createLayers(): BattlefieldSceneLayers {
@@ -175,19 +278,25 @@ export class BattlefieldScene extends Phaser.Scene {
       { x: 44, y: 52, width: 320, height: 138 },
       [
         `ENEMY ${this.runtime.enemy.leader.card.definition.name}`,
-        `HP ${this.runtime.enemy.leader.card.instance.currentHp}  ATK ${this.runtime.enemy.leader.card.instance.currentAttack}`,
+        `HP ${this.runtime.enemy.leader.card.instance.hp}  ATK ${this.runtime.enemy.leader.card.instance.attack}`,
         `Deck ${this.runtime.enemy.deck.length}  Drop ${this.runtime.enemy.drop.length}`,
       ],
     );
     this.addInfoPanel(
       { x: 440, y: 52, width: 320, height: 138 },
-      ['Phase', 'Turn 01', `Slot ${this.session.slotId}`],
+      [
+        `${formatSideLabel(this.runtime.currentSide)} TURN`,
+        `Round ${this.runtime.turnNumber}`,
+        this.runtime.outcome
+          ? `${formatSideLabel(this.runtime.outcome.winner)} WINS`
+          : this.runtime.phase,
+      ],
     );
     this.addInfoPanel(
       { x: 836, y: 52, width: 320, height: 138 },
       [
         `PLAYER ${this.runtime.player.leader.card.definition.name}`,
-        `HP ${this.runtime.player.leader.card.instance.currentHp}  ATK ${this.runtime.player.leader.card.instance.currentAttack}`,
+        `HP ${this.runtime.player.leader.card.instance.hp}  ATK ${this.runtime.player.leader.card.instance.attack}`,
         `Deck ${this.runtime.player.deck.length}  Hand ${this.runtime.player.hand.length}`,
       ],
     );
@@ -299,10 +408,10 @@ export class BattlefieldScene extends Phaser.Scene {
 
   private addPileSlots(): void {
     this.addPilePanel(PILE_RECTS.enemyDrop, `Enemy Drop\n${this.runtime.enemy.drop.length}`);
-    this.addPilePanel(PILE_RECTS.enemyDeck, `Enemy Deck\n${this.runtime.enemy.deck.length}`);
+    this.addDeckPilePanel(PILE_RECTS.enemyDeck, 'Enemy Deck', this.runtime.enemy.deck.length);
     this.addPilePanel(PILE_RECTS.enemyExile, `Enemy Exile\n${this.runtime.enemy.exile.length}`);
     this.addPilePanel(PILE_RECTS.playerDrop, `Player Drop\n${this.runtime.player.drop.length}`);
-    this.addPilePanel(PILE_RECTS.playerDeck, `Player Deck\n${this.runtime.player.deck.length}`);
+    this.addDeckPilePanel(PILE_RECTS.playerDeck, 'Player Deck', this.runtime.player.deck.length);
     this.addPilePanel(PILE_RECTS.playerExile, `Player Exile\n${this.runtime.player.exile.length}`);
   }
 
@@ -329,6 +438,37 @@ export class BattlefieldScene extends Phaser.Scene {
     );
   }
 
+  private addDeckPilePanel(rect: Rect, label: string, cardCount: number): void {
+    if (cardCount <= 0 || !this.textures.exists(CARD_BACK_TEXTURE_KEY)) {
+      this.addPilePanel(rect, `${label}\n${cardCount}`);
+      return;
+    }
+
+    const centerX = rect.x + rect.width / 2;
+    const centerY = rect.y + rect.height / 2;
+    const panel = this.add.rectangle(centerX, centerY, rect.width, rect.height, 0x14231f, 0.9);
+    panel.setStrokeStyle(2, 0x91ab9f, 0.58);
+    this.layers.boardLayer.add(panel);
+    this.layers.boardLayer.add(
+      this.add
+        .image(centerX, centerY, CARD_BACK_TEXTURE_KEY)
+        .setDisplaySize(rect.width - 14, rect.height - 20)
+        .setAlpha(0.96),
+    );
+    this.layers.boardLayer.add(
+      this.add
+        .text(centerX, rect.y + rect.height - 28, `${label} ${cardCount}`, {
+          fontFamily: DEFAULT_FONT_FAMILY,
+          fontSize: '17px',
+          color: '#f8ffe9',
+          stroke: '#111b18',
+          strokeThickness: 4,
+          align: 'center',
+        })
+        .setOrigin(0.5),
+    );
+  }
+
   private addBattlefieldCards(): void {
     const slotCards = new Map<BattleSlotId, BattleCardRuntimeState>();
     for (const card of this.runtime.battlefield) {
@@ -340,7 +480,11 @@ export class BattlefieldScene extends Phaser.Scene {
     for (const slotId of SLOT_ORDER) {
       const card = slotCards.get(slotId);
       if (card) {
-        this.addCardView(this.layers.cardLayer, FIELD_SLOT_RECTS[slotId], card, 'field');
+        this.addCardView(this.layers.cardLayer, FIELD_SLOT_RECTS[slotId], card, 'field', {
+          onClick: () => {
+            this.selectBattlefieldCard(card);
+          },
+        });
       }
     }
   }
@@ -350,10 +494,11 @@ export class BattlefieldScene extends Phaser.Scene {
     rect: Rect,
     card: BattleCardRuntimeState,
     mode: 'field' | 'hand',
+    options: CardViewOptions = {},
   ): void {
     const centerX = rect.x + rect.width / 2;
     const centerY = rect.y + rect.height / 2;
-    const textureKey = `cards.webp.${card.card.definition.id}`;
+    const textureKey = `cards.webp.${card.card.instance.id}`;
 
     if (this.textures.exists(textureKey)) {
       parent.add(this.add.image(centerX, centerY, textureKey).setDisplaySize(rect.width, rect.height));
@@ -370,7 +515,7 @@ export class BattlefieldScene extends Phaser.Scene {
       parent.add(fallback);
     }
 
-    const definition = card.card.definition;
+    const instance = card.card.instance;
     const paddingX = mode === 'field' ? 21 : 16;
     const paddingY = mode === 'field' ? 18 : 14;
     const badgeSize = mode === 'field' ? 34 : 30;
@@ -380,7 +525,7 @@ export class BattlefieldScene extends Phaser.Scene {
       parent,
       rect.x + paddingX,
       rect.y + paddingY,
-      String(definition.dominance ?? 0),
+      String(instance.dominance ?? 0),
       badgeSize,
       fontSize,
     );
@@ -388,7 +533,7 @@ export class BattlefieldScene extends Phaser.Scene {
       parent,
       rect.x + rect.width - paddingX - 4,
       rect.y + paddingY,
-      String(definition.cost ?? 0),
+      String(instance.cost ?? 0),
       badgeSize,
       fontSize,
     );
@@ -396,7 +541,7 @@ export class BattlefieldScene extends Phaser.Scene {
       parent,
       rect.x + paddingX,
       rect.y + rect.height - paddingY - 8,
-      String(card.card.instance.currentHp),
+      String(instance.hp),
       badgeSize,
       fontSize,
     );
@@ -404,10 +549,30 @@ export class BattlefieldScene extends Phaser.Scene {
       parent,
       rect.x + rect.width - paddingX - 4,
       rect.y + rect.height - paddingY - 8,
-      String(card.card.instance.currentAttack),
+      String(instance.attack),
       badgeSize,
       fontSize,
     );
+
+    if (options.highlightColor !== undefined) {
+      const highlight = this.add.rectangle(
+        centerX,
+        centerY,
+        rect.width + 8,
+        rect.height + 8,
+        0x000000,
+        0,
+      );
+      highlight.setStrokeStyle(5, options.highlightColor, 0.92);
+      parent.add(highlight);
+    }
+
+    if (options.onClick) {
+      const hitArea = this.add.zone(centerX, centerY, rect.width, rect.height);
+      hitArea.setInteractive({ useHandCursor: true });
+      hitArea.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, options.onClick);
+      parent.add(hitArea);
+    }
   }
 
   private addCardCornerStat(
@@ -434,7 +599,6 @@ export class BattlefieldScene extends Phaser.Scene {
 
   private addHandDeckContainer(): void {
     const hiddenY = HAND_RECT.y + HAND_RECT.height - 42;
-    const expandedY = HAND_RECT.y + 42;
     const container = this.add.container(HAND_RECT.x + HAND_RECT.width / 2, hiddenY);
     this.handDeckContainer = container;
     this.layers.handLayer.add(container);
@@ -443,42 +607,45 @@ export class BattlefieldScene extends Phaser.Scene {
     panel.setStrokeStyle(2, 0xcde7cb, 0.78);
     container.add(panel);
     this.addHandCards(container);
-
-    const hoverZone = this.add
-      .zone(
-        HAND_RECT.x + HAND_RECT.width / 2,
-        expandedY,
-        HAND_RECT.width,
-        hiddenY + HAND_RECT.height - expandedY,
-      )
-      .setOrigin(0.5, 0);
-    hoverZone.setInteractive();
-    this.layers.handLayer.add(hoverZone);
-    hoverZone.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OVER, () => {
-      this.moveHandDeckContainer(expandedY);
-    });
-    hoverZone.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OUT, () => {
-      this.moveHandDeckContainer(hiddenY);
-    });
   }
 
   private addHandCards(container: Phaser.GameObjects.Container): void {
-    const gap = 18;
-    const totalWidth = HAND_CARD_WIDTH * INITIAL_HAND_SIZE + gap * (INITIAL_HAND_SIZE - 1);
+    const slotCount = Math.max(INITIAL_HAND_SIZE, this.runtime.player.hand.length);
+    const gap = slotCount > INITIAL_HAND_SIZE ? 10 : 18;
+    const availableWidth = HAND_RECT.width - 40;
+    const cardWidth = Math.min(
+      HAND_CARD_WIDTH,
+      Math.floor((availableWidth - gap * (slotCount - 1)) / slotCount),
+    );
+    const cardHeight = Math.round(cardWidth * 1.5);
+    const totalWidth = cardWidth * slotCount + gap * (slotCount - 1);
     const startX = -totalWidth / 2;
     const y = 146;
 
-    for (let index = 0; index < INITIAL_HAND_SIZE; index += 1) {
+    for (let index = 0; index < slotCount; index += 1) {
       const card = this.runtime.player.hand[index] ?? null;
       const rect = {
-        x: startX + index * (HAND_CARD_WIDTH + gap),
-        y: y - HAND_CARD_HEIGHT / 2,
-        width: HAND_CARD_WIDTH,
-        height: HAND_CARD_HEIGHT,
+        x: startX + index * (cardWidth + gap),
+        y: y - cardHeight / 2,
+        width: cardWidth,
+        height: cardHeight,
       };
 
       if (card) {
-        this.addCardView(container, rect, card, 'hand');
+        const placeActions = listPlaceActions(this.runtime).filter(
+          (action) => action.cardInstanceId === card.card.instance.instanceId,
+        );
+        const cardViewOptions: CardViewOptions = {
+          onClick: () => {
+            this.selectHandCard(card);
+          },
+        };
+        if (placeActions.length > 0 && this.isPlayerControlActive()) {
+          cardViewOptions.highlightColor = PLACE_HIGHLIGHT_COLOR;
+        }
+        this.addCardView(container, rect, card, 'hand', {
+          ...cardViewOptions,
+        });
         continue;
       }
 
@@ -523,6 +690,19 @@ export class BattlefieldScene extends Phaser.Scene {
     });
   }
 
+  private updateHandDeckHover(): void {
+    if (!this.handDeckContainer) {
+      return;
+    }
+
+    const pointer = this.input.activePointer;
+    const expandedY = HAND_RECT.y + 42;
+    const hiddenY = HAND_RECT.y + HAND_RECT.height - 42;
+    this.moveHandDeckContainer(
+      isPointerInHandDeckHoverArea(pointer, expandedY, hiddenY) ? expandedY : hiddenY,
+    );
+  }
+
   private addUtilityButtons(): void {
     createMenuButton(this, {
       x: 82,
@@ -563,8 +743,11 @@ export class BattlefieldScene extends Phaser.Scene {
       width: 152,
       height: 58,
       label: 'Turn End',
-      enabled: false,
+      enabled: this.isPlayerControlActive(),
       parent: this.layers.buttonLayer,
+      onClick: () => {
+        this.endCurrentTurn();
+      },
     });
     createMenuButton(this, {
       x: 1110,
@@ -579,7 +762,7 @@ export class BattlefieldScene extends Phaser.Scene {
 
   private addStatusText(): void {
     this.statusText = this.add
-      .text(GAME_WIDTH / 2, 1408, 'Select a battlefield slot. Save writes the current slot state.', {
+      .text(GAME_WIDTH / 2, 1408, this.statusMessage, {
         fontFamily: DEFAULT_FONT_FAMILY,
         fontSize: '22px',
         color: '#c7d7ca',
@@ -592,22 +775,417 @@ export class BattlefieldScene extends Phaser.Scene {
   }
 
   private selectSlot(slotId: BattleSlotId): void {
+    if (this.isAnimatingBattleEvents) {
+      return;
+    }
+
+    if (this.runtime.phase === 'GAME_OVER') {
+      this.setStatus('Battle is over.');
+      return;
+    }
+
+    if (this.selection?.kind === 'HAND_CARD') {
+      const action = this.selection.placeActions.find((candidate) => candidate.toSlotId === slotId);
+      if (action) {
+        const popupEvent = this.createActionPopupEvent(this.runtime.currentSide, action);
+        applyPlaceAction(this.runtime, action);
+        this.finishBattleAction(`Placed ${this.getCardName(action.cardInstanceId)} to ${slotId}.`, [
+          popupEvent,
+        ]);
+        return;
+      }
+
+      this.setStatus(`Cannot place selected card on ${slotId}.`);
+      return;
+    }
+
+    if (this.selection?.kind === 'FIELD_CARD') {
+      const moveAction = this.selection.moveActions.find(
+        (candidate) => candidate.toSlotId === slotId,
+      );
+      if (moveAction) {
+        const popupEvent = this.createActionPopupEvent(this.runtime.currentSide, moveAction);
+        applyMoveAction(this.runtime, moveAction);
+        this.finishBattleAction(
+          `Moved ${this.getCardName(moveAction.cardInstanceId)} to ${slotId}.`,
+          [popupEvent],
+        );
+        return;
+      }
+
+      const attackAction = this.selection.attackActions.find(
+        (candidate) => candidate.toSlotId === slotId,
+      );
+      if (attackAction) {
+        const popupEvent = this.createActionPopupEvent(this.runtime.currentSide, attackAction);
+        applyAttackAction(this.runtime, attackAction);
+        this.finishBattleAction(
+          `${this.getCardName(attackAction.attackerInstanceId)} attacked ${this.getCardName(
+            attackAction.targetInstanceId,
+          )}.`,
+          [popupEvent],
+        );
+        return;
+      }
+
+      this.setStatus(`Selected card has no action for ${slotId}.`);
+      return;
+    }
+
+    const card = findBattlefieldCardAtSlot(this.runtime, slotId);
+    if (card) {
+      this.selectBattlefieldCard(card);
+      return;
+    }
+
     this.selectedSlotId = slotId;
+    this.selection = null;
     this.redrawHighlight();
     this.setStatus(`Selected ${slotId}`);
   }
 
-  private redrawHighlight(): void {
-    this.highlightGraphics.clear();
-    if (!this.selectedSlotId) {
+  private selectHandCard(card: BattleCardRuntimeState): void {
+    if (this.isAnimatingBattleEvents) {
       return;
     }
 
-    const rect = FIELD_SLOT_RECTS[this.selectedSlotId];
-    this.highlightGraphics.lineStyle(6, 0xfff1a3, 0.98);
+    if (!this.isPlayerControlActive()) {
+      this.setStatus('Only the player MAIN turn accepts hand actions.');
+      return;
+    }
+
+    const placeActions = listPlaceActions(this.runtime).filter(
+      (action) => action.cardInstanceId === card.card.instance.instanceId,
+    );
+    if (placeActions.length === 0) {
+      this.selection = null;
+      this.selectedSlotId = null;
+      this.redrawHighlight();
+      this.setStatus(`${card.card.instance.name} has no legal place slot.`);
+      return;
+    }
+
+    this.selection = {
+      kind: 'HAND_CARD',
+      cardInstanceId: card.card.instance.instanceId,
+      placeActions,
+    };
+    this.selectedSlotId = null;
+    this.redrawHighlight();
+    this.setStatus(`Select a green slot to place ${card.card.instance.name}.`);
+  }
+
+  private selectBattlefieldCard(card: BattleCardRuntimeState): void {
+    if (this.isAnimatingBattleEvents) {
+      return;
+    }
+
+    if (
+      this.selection?.kind === 'FIELD_CARD' &&
+      card.battlefieldSlot !== null &&
+      card.side !== this.runtime.currentSide
+    ) {
+      const attackAction = this.selection.attackActions.find(
+        (candidate) => candidate.toSlotId === card.battlefieldSlot,
+      );
+      if (attackAction) {
+        const popupEvent = this.createActionPopupEvent(this.runtime.currentSide, attackAction);
+        applyAttackAction(this.runtime, attackAction);
+        this.finishBattleAction(
+          `${this.getCardName(attackAction.attackerInstanceId)} attacked ${this.getCardName(
+            attackAction.targetInstanceId,
+          )}.`,
+          [popupEvent],
+        );
+        return;
+      }
+    }
+
+    if (!this.isPlayerControlActive()) {
+      this.setStatus('Only the player turn accepts battlefield actions.');
+      return;
+    }
+
+    if (card.side !== this.runtime.currentSide || card.battlefieldSlot === null) {
+      this.setStatus(`${card.card.instance.name} is not a current-side card.`);
+      return;
+    }
+
+    const moveActions = listMoveActions(this.runtime).filter(
+      (action) => action.cardInstanceId === card.card.instance.instanceId,
+    );
+    const attackActions = listAttackActions(this.runtime).filter(
+      (action) => action.attackerInstanceId === card.card.instance.instanceId,
+    );
+    if (moveActions.length === 0 && attackActions.length === 0) {
+      this.selection = null;
+      this.selectedSlotId = card.battlefieldSlot;
+      this.redrawHighlight();
+      this.setStatus(`${card.card.instance.name} has no legal action.`);
+      return;
+    }
+
+    this.selection = {
+      kind: 'FIELD_CARD',
+      cardInstanceId: card.card.instance.instanceId,
+      sourceSlotId: card.battlefieldSlot,
+      moveActions,
+      attackActions,
+    };
+    this.selectedSlotId = null;
+    this.redrawHighlight();
+    this.setStatus(`Select a blue move slot or red attack target for ${card.card.instance.name}.`);
+  }
+
+  private redrawHighlight(): void {
+    this.highlightGraphics.clear();
+
+    if (this.selection?.kind === 'HAND_CARD') {
+      for (const action of this.selection.placeActions) {
+        this.drawSlotHighlight(action.toSlotId, PLACE_HIGHLIGHT_COLOR, 0.94);
+      }
+    }
+
+    if (this.selection?.kind === 'FIELD_CARD') {
+      this.drawSlotHighlight(this.selection.sourceSlotId, SELECTED_HIGHLIGHT_COLOR, 0.98);
+      for (const action of this.selection.moveActions) {
+        this.drawSlotHighlight(action.toSlotId, MOVE_HIGHLIGHT_COLOR, 0.9);
+      }
+      for (const action of this.selection.attackActions) {
+        this.drawSlotHighlight(action.toSlotId, ATTACK_HIGHLIGHT_COLOR, 0.92);
+      }
+    }
+
+    if (this.selectedSlotId) {
+      this.drawSlotHighlight(this.selectedSlotId, SELECTED_HIGHLIGHT_COLOR, 0.98);
+    }
+  }
+
+  private drawSlotHighlight(slotId: BattleSlotId, color: number, alpha: number): void {
+    const rect = FIELD_SLOT_RECTS[slotId];
+    this.highlightGraphics.lineStyle(6, color, alpha);
     this.highlightGraphics.strokeRect(rect.x + 3, rect.y + 3, rect.width - 6, rect.height - 6);
     this.highlightGraphics.lineStyle(2, 0xffffff, 0.72);
     this.highlightGraphics.strokeRect(rect.x + 11, rect.y + 11, rect.width - 22, rect.height - 22);
+  }
+
+  private finishBattleAction(message: string, popupEvents: BattlePopupEvent[]): void {
+    const flow = this.settleTurnFlow();
+    const messages = [message, ...flow.messages];
+    if (this.runtime.outcome) {
+      messages.push(`${formatSideLabel(this.runtime.outcome.winner)} wins.`);
+    }
+    this.commitBattleStateUpdate(messages, [...popupEvents, ...flow.popupEvents]);
+  }
+
+  private endCurrentTurn(): void {
+    if (!this.isPlayerControlActive()) {
+      return;
+    }
+
+    const flow = this.settleTurnFlow(applyTurnEnd(this.runtime, 'MANUAL'));
+    this.commitBattleStateUpdate(flow.messages, flow.popupEvents);
+  }
+
+  private commitBattleStateUpdate(messages: string[], popupEvents: BattlePopupEvent[]): void {
+    this.selection = null;
+    this.selectedSlotId = null;
+    this.statusMessage = messages.join(' ');
+    this.isAnimatingBattleEvents = popupEvents.length > 0;
+    this.renderBattleState();
+
+    if (popupEvents.length > 0) {
+      void this.playBattlePopupEvents(popupEvents);
+    }
+  }
+
+  private settleTurnFlow(initialEvents: readonly BattleTurnEvent[] = []): BattleFlowResult {
+    const messages = this.formatTurnEvents(initialEvents);
+    const popupEvents = this.createPopupEventsForTurnEvents(initialEvents);
+    const stalledEvents: BattleTurnEvent[] = [];
+    if (applyAutoTurnEndIfStalled(this.runtime, stalledEvents)) {
+      messages.push(...this.formatTurnEvents(stalledEvents));
+      popupEvents.push(...this.createPopupEventsForTurnEvents(stalledEvents));
+    }
+
+    if (this.runtime.currentSide === 'enemy' && this.runtime.phase !== 'GAME_OVER') {
+      const enemyEvents = runAutomatedTurn(this.runtime, 'enemy');
+      messages.push(...this.formatTurnEvents(enemyEvents));
+      popupEvents.push(...this.createPopupEventsForTurnEvents(enemyEvents));
+    }
+
+    return {
+      messages,
+      popupEvents,
+    };
+  }
+
+  private isPlayerControlActive(): boolean {
+    return (
+      !this.isAnimatingBattleEvents &&
+      this.runtime.currentSide === 'player' &&
+      this.runtime.phase !== 'GAME_OVER'
+    );
+  }
+
+  private getCardName(instanceId: string): string {
+    const card = [
+      ...this.runtime.battlefield,
+      ...this.runtime.player.hand,
+      ...this.runtime.enemy.hand,
+      ...this.runtime.player.deck,
+      ...this.runtime.enemy.deck,
+      ...this.runtime.player.drop,
+      ...this.runtime.enemy.drop,
+      ...this.runtime.player.exile,
+      ...this.runtime.enemy.exile,
+    ].find((entry) => entry.card.instance.instanceId === instanceId);
+
+    return card?.card.instance.name ?? instanceId;
+  }
+
+  private formatTurnEvents(events: readonly BattleTurnEvent[]): string[] {
+    return events
+      .map((event) => this.formatTurnEvent(event))
+      .filter((message): message is string => message !== null);
+  }
+
+  private formatTurnEvent(event: BattleTurnEvent): string | null {
+    if (event.type === 'TURN_START') {
+      if (!event.drewCardInstanceId) {
+        return `${formatSideLabel(event.side)} deck is empty.`;
+      }
+
+      return `${formatSideLabel(event.side)} drew ${this.getCardName(event.drewCardInstanceId)}.`;
+    }
+
+    if (event.type === 'TURN_END') {
+      if (event.reason === 'STALLED') {
+        return `${formatSideLabel(event.side)} had no actions and ended automatically.`;
+      }
+      if (event.reason === 'NO_ACTION') {
+        return `${formatSideLabel(event.side)} had no automated action.`;
+      }
+      if (event.reason === 'ACTION_LIMIT') {
+        return `${formatSideLabel(event.side)} ended after the action limit.`;
+      }
+
+      return `${formatSideLabel(event.side)} turn ended.`;
+    }
+
+    if (event.type === 'ACTION_LIMIT') {
+      return `${formatSideLabel(event.side)} reached ${event.actionCount} automated actions.`;
+    }
+
+    if (event.action.type === 'PLACE') {
+      return `${formatSideLabel(event.side)} placed ${this.getCardName(
+        event.action.cardInstanceId,
+      )} to ${event.action.toSlotId}.`;
+    }
+
+    if (event.action.type === 'MOVE') {
+      return `${formatSideLabel(event.side)} moved ${this.getCardName(
+        event.action.cardInstanceId,
+      )} to ${event.action.toSlotId}.`;
+    }
+
+    return `${formatSideLabel(event.side)} attacked ${this.getCardName(
+      event.action.targetInstanceId,
+    )} with ${this.getCardName(event.action.attackerInstanceId)}.`;
+  }
+
+  private createPopupEventsForTurnEvents(events: readonly BattleTurnEvent[]): BattlePopupEvent[] {
+    return events
+      .filter((event): event is Extract<BattleTurnEvent, { type: 'ACTION' }> => event.type === 'ACTION')
+      .map((event) => this.createActionPopupEvent(event.side, event.action));
+  }
+
+  private createActionPopupEvent(
+    side: BattleSide,
+    action: BattleAutomationAction,
+  ): BattlePopupEvent {
+    void side;
+    if (action.type === 'PLACE') {
+      return {
+        kind: 'PLACE',
+        slotId: action.toSlotId,
+        text: 'PLACE',
+      };
+    }
+
+    if (action.type === 'MOVE') {
+      return {
+        kind: 'MOVE',
+        slotId: action.toSlotId,
+        text: 'MOVE',
+      };
+    }
+
+    return {
+      kind: 'ATTACK',
+      slotId: action.toSlotId,
+      text: `ATTACK -${action.attack}`,
+    };
+  }
+
+  private async playBattlePopupEvents(events: readonly BattlePopupEvent[]): Promise<void> {
+    for (const event of events) {
+      if (!this.scene.isActive()) {
+        return;
+      }
+
+      await this.playBattlePopupEvent(event);
+    }
+
+    this.isAnimatingBattleEvents = false;
+    this.renderBattleState();
+  }
+
+  private playBattlePopupEvent(event: BattlePopupEvent): Promise<void> {
+    const rect = FIELD_SLOT_RECTS[event.slotId];
+    const centerX = rect.x + rect.width / 2;
+    const y = rect.y + 38;
+    const style = POPUP_STYLE[event.kind];
+    const container = this.add.container(centerX, y);
+    container.setAlpha(1);
+
+    const text = this.add
+      .text(0, 0, event.text, {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '24px',
+        color: style.color,
+        stroke: '#07100d',
+        strokeThickness: 5,
+        align: 'center',
+      })
+      .setOrigin(0.5);
+    const bubble = this.add.rectangle(
+      0,
+      0,
+      Math.max(112, text.width + 34),
+      44,
+      style.fill,
+      0.94,
+    );
+    bubble.setStrokeStyle(3, style.stroke, 0.92);
+
+    container.add([bubble, text]);
+    this.layers.effectLayer.add(container);
+
+    return new Promise((resolve) => {
+      this.tweens.add({
+        targets: container,
+        y: y - 44,
+        alpha: 0,
+        scale: 1.08,
+        duration: BATTLE_POPUP_DURATION_MS,
+        ease: 'Cubic.easeOut',
+        onComplete: () => {
+          container.destroy();
+          resolve();
+        },
+      });
+    });
   }
 
   private async saveCurrentSession(): Promise<void> {
@@ -633,7 +1211,8 @@ export class BattlefieldScene extends Phaser.Scene {
   }
 
   private setStatus(message: string): void {
-    this.statusText.setText(message);
+    this.statusMessage = message;
+    this.statusText?.setText(message);
   }
 }
 
@@ -650,11 +1229,36 @@ function createCenteredRect(x: number, y: number, width: number, height: number)
 }
 
 /**
+ * 포인터가 HandDeck을 펼친 상태로 유지해야 하는 화면 영역 안에 있는지 판정한다.
+ */
+function isPointerInHandDeckHoverArea(
+  pointer: Phaser.Input.Pointer,
+  expandedY: number,
+  hiddenY: number,
+): boolean {
+  const x = pointer.worldX;
+  const y = pointer.worldY;
+  return (
+    x >= HAND_RECT.x &&
+    x <= HAND_RECT.x + HAND_RECT.width &&
+    y >= expandedY &&
+    y <= Math.min(GAME_HEIGHT, hiddenY + HAND_RECT.height)
+  );
+}
+
+/**
  * 도메인 슬롯 id를 화면 슬롯 라벨로 축약한다.
  */
 function formatSlotLabel(slotId: BattleSlotId): string {
   const [side, zone] = slotId.split(':') as ['player' | 'enemy', string];
   return `${side === 'enemy' ? 'E' : 'P'}${zone}`;
+}
+
+/**
+ * 전투 진영을 HUD와 상태 메시지에 표시할 짧은 영문 라벨로 변환한다.
+ */
+function formatSideLabel(side: BattleSide): string {
+  return side === 'player' ? 'PLAYER' : 'ENEMY';
 }
 
 /**
