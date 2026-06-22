@@ -9,6 +9,7 @@ import {
   listAttackActions,
   listMoveActions,
   listPlaceActions,
+  runAutomatedTurn,
 } from '../../game/battle/battle-engine';
 import { createInitialBattleRuntime } from '../../game/battle/create-battle-runtime';
 import {
@@ -18,6 +19,7 @@ import {
   type BattleRuntimeState,
   type BattleSide,
   type BattleSlotId,
+  type BattleTurnEvent,
   type MoveBattleAction,
   type PlaceBattleAction,
 } from '../../game/battle/types';
@@ -71,11 +73,11 @@ type CardViewOptions = {
 const FIELD_SLOT_WIDTH = 180;
 const FIELD_SLOT_HEIGHT = 270;
 const HAND_CARD_WIDTH = 144;
-const HAND_CARD_HEIGHT = 216;
 const PLACE_HIGHLIGHT_COLOR = 0x71d879;
 const MOVE_HIGHLIGHT_COLOR = 0x79b8ff;
 const ATTACK_HIGHLIGHT_COLOR = 0xff6f6f;
 const SELECTED_HIGHLIGHT_COLOR = 0xfff1a3;
+const CARD_BACK_TEXTURE_KEY = 'cards.webp.card_back';
 const SLOT_COLUMNS = {
   FR: GAME_WIDTH / 2 - 210,
   FC: GAME_WIDTH / 2,
@@ -374,10 +376,10 @@ export class BattlefieldScene extends Phaser.Scene {
 
   private addPileSlots(): void {
     this.addPilePanel(PILE_RECTS.enemyDrop, `Enemy Drop\n${this.runtime.enemy.drop.length}`);
-    this.addPilePanel(PILE_RECTS.enemyDeck, `Enemy Deck\n${this.runtime.enemy.deck.length}`);
+    this.addDeckPilePanel(PILE_RECTS.enemyDeck, 'Enemy Deck', this.runtime.enemy.deck.length);
     this.addPilePanel(PILE_RECTS.enemyExile, `Enemy Exile\n${this.runtime.enemy.exile.length}`);
     this.addPilePanel(PILE_RECTS.playerDrop, `Player Drop\n${this.runtime.player.drop.length}`);
-    this.addPilePanel(PILE_RECTS.playerDeck, `Player Deck\n${this.runtime.player.deck.length}`);
+    this.addDeckPilePanel(PILE_RECTS.playerDeck, 'Player Deck', this.runtime.player.deck.length);
     this.addPilePanel(PILE_RECTS.playerExile, `Player Exile\n${this.runtime.player.exile.length}`);
   }
 
@@ -398,6 +400,37 @@ export class BattlefieldScene extends Phaser.Scene {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSize: '17px',
           color: '#d9ead9',
+          align: 'center',
+        })
+        .setOrigin(0.5),
+    );
+  }
+
+  private addDeckPilePanel(rect: Rect, label: string, cardCount: number): void {
+    if (cardCount <= 0 || !this.textures.exists(CARD_BACK_TEXTURE_KEY)) {
+      this.addPilePanel(rect, `${label}\n${cardCount}`);
+      return;
+    }
+
+    const centerX = rect.x + rect.width / 2;
+    const centerY = rect.y + rect.height / 2;
+    const panel = this.add.rectangle(centerX, centerY, rect.width, rect.height, 0x14231f, 0.9);
+    panel.setStrokeStyle(2, 0x91ab9f, 0.58);
+    this.layers.boardLayer.add(panel);
+    this.layers.boardLayer.add(
+      this.add
+        .image(centerX, centerY, CARD_BACK_TEXTURE_KEY)
+        .setDisplaySize(rect.width - 14, rect.height - 20)
+        .setAlpha(0.96),
+    );
+    this.layers.boardLayer.add(
+      this.add
+        .text(centerX, rect.y + rect.height - 28, `${label} ${cardCount}`, {
+          fontFamily: DEFAULT_FONT_FAMILY,
+          fontSize: '17px',
+          color: '#f8ffe9',
+          stroke: '#111b18',
+          strokeThickness: 4,
           align: 'center',
         })
         .setOrigin(0.5),
@@ -545,18 +578,25 @@ export class BattlefieldScene extends Phaser.Scene {
   }
 
   private addHandCards(container: Phaser.GameObjects.Container): void {
-    const gap = 18;
-    const totalWidth = HAND_CARD_WIDTH * INITIAL_HAND_SIZE + gap * (INITIAL_HAND_SIZE - 1);
+    const slotCount = Math.max(INITIAL_HAND_SIZE, this.runtime.player.hand.length);
+    const gap = slotCount > INITIAL_HAND_SIZE ? 10 : 18;
+    const availableWidth = HAND_RECT.width - 40;
+    const cardWidth = Math.min(
+      HAND_CARD_WIDTH,
+      Math.floor((availableWidth - gap * (slotCount - 1)) / slotCount),
+    );
+    const cardHeight = Math.round(cardWidth * 1.5);
+    const totalWidth = cardWidth * slotCount + gap * (slotCount - 1);
     const startX = -totalWidth / 2;
     const y = 146;
 
-    for (let index = 0; index < INITIAL_HAND_SIZE; index += 1) {
+    for (let index = 0; index < slotCount; index += 1) {
       const card = this.runtime.player.hand[index] ?? null;
       const rect = {
-        x: startX + index * (HAND_CARD_WIDTH + gap),
-        y: y - HAND_CARD_HEIGHT / 2,
-        width: HAND_CARD_WIDTH,
-        height: HAND_CARD_HEIGHT,
+        x: startX + index * (cardWidth + gap),
+        y: y - cardHeight / 2,
+        width: cardWidth,
+        height: cardHeight,
       };
 
       if (card) {
@@ -890,25 +930,22 @@ export class BattlefieldScene extends Phaser.Scene {
       return;
     }
 
-    const endedSide = this.runtime.currentSide;
-    applyTurnEnd(this.runtime);
-    const messages = [`${formatSideLabel(endedSide)} turn ended.`, ...this.settleTurnFlow()];
+    const messages = this.settleTurnFlow(applyTurnEnd(this.runtime, 'MANUAL'));
     this.selection = null;
     this.selectedSlotId = null;
     this.statusMessage = messages.join(' ');
     this.renderBattleState();
   }
 
-  private settleTurnFlow(): string[] {
-    const messages: string[] = [];
-    const stalledSide = this.runtime.currentSide;
-    if (applyAutoTurnEndIfStalled(this.runtime)) {
-      messages.push(`${formatSideLabel(stalledSide)} had no actions and ended automatically.`);
+  private settleTurnFlow(initialEvents: readonly BattleTurnEvent[] = []): string[] {
+    const messages = this.formatTurnEvents(initialEvents);
+    const stalledEvents: BattleTurnEvent[] = [];
+    if (applyAutoTurnEndIfStalled(this.runtime, stalledEvents)) {
+      messages.push(...this.formatTurnEvents(stalledEvents));
     }
 
     if (this.runtime.currentSide === 'enemy' && this.runtime.phase !== 'GAME_OVER') {
-      applyTurnEnd(this.runtime);
-      messages.push('Enemy turn passed.');
+      messages.push(...this.formatTurnEvents(runAutomatedTurn(this.runtime, 'enemy')));
     }
 
     return messages;
@@ -923,11 +960,65 @@ export class BattlefieldScene extends Phaser.Scene {
       ...this.runtime.battlefield,
       ...this.runtime.player.hand,
       ...this.runtime.enemy.hand,
+      ...this.runtime.player.deck,
+      ...this.runtime.enemy.deck,
       ...this.runtime.player.drop,
       ...this.runtime.enemy.drop,
+      ...this.runtime.player.exile,
+      ...this.runtime.enemy.exile,
     ].find((entry) => entry.card.instance.instanceId === instanceId);
 
     return card?.card.instance.name ?? instanceId;
+  }
+
+  private formatTurnEvents(events: readonly BattleTurnEvent[]): string[] {
+    return events
+      .map((event) => this.formatTurnEvent(event))
+      .filter((message): message is string => message !== null);
+  }
+
+  private formatTurnEvent(event: BattleTurnEvent): string | null {
+    if (event.type === 'TURN_START') {
+      if (!event.drewCardInstanceId) {
+        return `${formatSideLabel(event.side)} deck is empty.`;
+      }
+
+      return `${formatSideLabel(event.side)} drew ${this.getCardName(event.drewCardInstanceId)}.`;
+    }
+
+    if (event.type === 'TURN_END') {
+      if (event.reason === 'STALLED') {
+        return `${formatSideLabel(event.side)} had no actions and ended automatically.`;
+      }
+      if (event.reason === 'NO_ACTION') {
+        return `${formatSideLabel(event.side)} had no automated action.`;
+      }
+      if (event.reason === 'ACTION_LIMIT') {
+        return `${formatSideLabel(event.side)} ended after the action limit.`;
+      }
+
+      return `${formatSideLabel(event.side)} turn ended.`;
+    }
+
+    if (event.type === 'ACTION_LIMIT') {
+      return `${formatSideLabel(event.side)} reached ${event.actionCount} automated actions.`;
+    }
+
+    if (event.action.type === 'PLACE') {
+      return `${formatSideLabel(event.side)} placed ${this.getCardName(
+        event.action.cardInstanceId,
+      )} to ${event.action.toSlotId}.`;
+    }
+
+    if (event.action.type === 'MOVE') {
+      return `${formatSideLabel(event.side)} moved ${this.getCardName(
+        event.action.cardInstanceId,
+      )} to ${event.action.toSlotId}.`;
+    }
+
+    return `${formatSideLabel(event.side)} attacked ${this.getCardName(
+      event.action.targetInstanceId,
+    )} with ${this.getCardName(event.action.attackerInstanceId)}.`;
   }
 
   private async saveCurrentSession(): Promise<void> {

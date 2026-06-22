@@ -74,6 +74,38 @@ export type ActiveSkillBattleAction = {
   skillId: string;
 };
 
+export type BattleAutomationAction = PlaceBattleAction | MoveBattleAction | AttackBattleAction;
+
+export type BattleTurnEndReason =
+  | 'MANUAL'
+  | 'STALLED'
+  | 'NO_ACTION'
+  | 'ACTION_LIMIT';
+
+export type BattleTurnEvent =
+  | {
+      type: 'TURN_START';
+      side: BattleSide;
+      drewCardInstanceId: string | null;
+      deckRemaining: number;
+    }
+  | {
+      type: 'ACTION';
+      side: BattleSide;
+      action: BattleAutomationAction;
+    }
+  | {
+      type: 'TURN_END';
+      side: BattleSide;
+      nextSide: BattleSide;
+      reason: BattleTurnEndReason;
+    }
+  | {
+      type: 'ACTION_LIMIT';
+      side: BattleSide;
+      actionCount: number;
+    };
+
 export type BattleAvailableActions = {
   placeActions: PlaceBattleAction[];
   moveActions: MoveBattleAction[];

@@ -1,6 +1,7 @@
 import type {
   ActiveSkillBattleAction,
   AttackBattleAction,
+  BattleAutomationAction,
   BattleAvailableActions,
   BattleCardRuntimeState,
   BattlefieldZone,
@@ -8,9 +9,13 @@ import type {
   BattleRuntimeState,
   BattleSide,
   BattleSlotId,
+  BattleTurnEndReason,
+  BattleTurnEvent,
   MoveBattleAction,
   PlaceBattleAction,
 } from './types';
+
+export const MAX_AUTOMATED_ACTIONS_PER_TURN = 20 as const;
 
 const BATTLEFIELD_ZONES: readonly BattlefieldZone[] = ['FR', 'FC', 'FL', 'BR', 'BC', 'BL'];
 const SLOT_COORDINATES: Record<BattlefieldZone, { x: number; y: number }> = {
@@ -164,6 +169,9 @@ export function listAttackActions(
       if (target.battlefieldSlot === null || readCardNumber(target.card.instance.hp, 0) <= 0) {
         continue;
       }
+      if (!canBasicAttack(runtime, attacker, target)) {
+        continue;
+      }
 
       actions.push({
         type: 'ATTACK',
@@ -289,14 +297,44 @@ export function applyAttackAction(runtime: BattleRuntimeState, action: AttackBat
 }
 
 /**
- * 현재 턴을 종료하고 다음 진영의 MAIN 단계로 넘긴다.
- * 적 턴에서 플레이어 턴으로 돌아올 때만 라운드 번호를 증가시킨다.
+ * 현재 진영의 턴 시작 처리를 적용한다.
+ * 행동 플래그를 초기화하고 덱 맨 위 카드를 1장 손패로 옮기며, 덱이 비어 있으면 상태만 이벤트로 돌려준다.
  */
-export function applyTurnEnd(runtime: BattleRuntimeState): void {
-  if (runtime.phase === 'GAME_OVER') {
-    return;
+export function applyTurnStart(runtime: BattleRuntimeState): BattleTurnEvent {
+  const participant = getParticipant(runtime, runtime.currentSide);
+  resetTurnFlagsForSide(runtime, runtime.currentSide);
+
+  const drawnCard = participant.deck.shift() ?? null;
+  if (drawnCard) {
+    drawnCard.zone = 'HAND';
+    drawnCard.battlefieldSlot = null;
+    drawnCard.handIndex = participant.hand.length;
+    drawnCard.deckIndex = null;
+    participant.hand.push(drawnCard);
+    reindexDeck(participant);
   }
 
+  return {
+    type: 'TURN_START',
+    side: runtime.currentSide,
+    drewCardInstanceId: drawnCard?.card.instance.instanceId ?? null,
+    deckRemaining: participant.deck.length,
+  };
+}
+
+/**
+ * 현재 턴을 종료하고 다음 진영의 MAIN 단계로 넘긴다.
+ * 적 턴에서 플레이어 턴으로 돌아올 때만 라운드 번호를 증가시키고, 새 진영의 턴 시작 처리를 즉시 적용한다.
+ */
+export function applyTurnEnd(
+  runtime: BattleRuntimeState,
+  reason: BattleTurnEndReason = 'MANUAL',
+): BattleTurnEvent[] {
+  if (runtime.phase === 'GAME_OVER') {
+    return [];
+  }
+
+  const endedSide = runtime.currentSide;
   const nextSide = getOpposingSide(runtime.currentSide);
   if (runtime.currentSide === 'enemy' && nextSide === 'player') {
     runtime.turnNumber += 1;
@@ -304,14 +342,25 @@ export function applyTurnEnd(runtime: BattleRuntimeState): void {
 
   runtime.currentSide = nextSide;
   runtime.phase = 'MAIN';
-  resetTurnFlagsForSide(runtime, nextSide);
+  return [
+    {
+      type: 'TURN_END',
+      side: endedSide,
+      nextSide,
+      reason,
+    },
+    applyTurnStart(runtime),
+  ];
 }
 
 /**
  * 가능한 Place, Move, Active Skill, Attack이 모두 없으면 자동으로 턴을 한 번 종료한다.
  * 연속 자동 진행은 호출자가 적 턴 정책에 맞춰 별도로 제어한다.
  */
-export function applyAutoTurnEndIfStalled(runtime: BattleRuntimeState): boolean {
+export function applyAutoTurnEndIfStalled(
+  runtime: BattleRuntimeState,
+  events?: BattleTurnEvent[],
+): boolean {
   if (runtime.phase === 'GAME_OVER') {
     return false;
   }
@@ -326,8 +375,226 @@ export function applyAutoTurnEndIfStalled(runtime: BattleRuntimeState): boolean 
     return false;
   }
 
-  applyTurnEnd(runtime);
+  const turnEvents = applyTurnEnd(runtime, 'STALLED');
+  events?.push(...turnEvents);
   return true;
+}
+
+/**
+ * 현재 상태에서 자동 조작이 선택할 다음 행동을 계산한다.
+ * 지배력 합계를 높이는 행동을 우선하고, 더 높일 수 없으면 가능한 배치를 고코스트 순서로 반복한 뒤 공격한다.
+ */
+export function chooseAutomatedBattleAction(
+  runtime: BattleRuntimeState,
+  side: BattleSide,
+): BattleAutomationAction | null {
+  if (runtime.phase === 'GAME_OVER' || runtime.currentSide !== side) {
+    return null;
+  }
+
+  const dominanceAction = chooseDominanceIncreasingAction(runtime, side);
+  if (dominanceAction) {
+    return dominanceAction;
+  }
+
+  const placeAction = chooseLegalPlaceAction(runtime, side);
+  if (placeAction) {
+    return placeAction;
+  }
+
+  return chooseAttackAction(runtime, side);
+}
+
+/**
+ * 지정 진영의 자동 턴을 실행한다.
+ * 선택과 적용은 기존 도메인 액션 함수를 통해 수행하며, 행동 제한으로 무한 루프를 방지한다.
+ */
+export function runAutomatedTurn(
+  runtime: BattleRuntimeState,
+  side: BattleSide,
+): BattleTurnEvent[] {
+  if (runtime.currentSide !== side) {
+    return [];
+  }
+
+  const events: BattleTurnEvent[] = [];
+  let actionCount = 0;
+  while (runtime.currentSide === side) {
+    if (runtime.phase === 'GAME_OVER') {
+      break;
+    }
+
+    if (actionCount >= MAX_AUTOMATED_ACTIONS_PER_TURN) {
+      events.push({
+        type: 'ACTION_LIMIT',
+        side,
+        actionCount,
+      });
+      events.push(...applyTurnEnd(runtime, 'ACTION_LIMIT'));
+      break;
+    }
+
+    const action = chooseAutomatedBattleAction(runtime, side);
+    if (!action) {
+      events.push(...applyTurnEnd(runtime, 'NO_ACTION'));
+      break;
+    }
+
+    applyAutomationAction(runtime, action);
+    actionCount += 1;
+    events.push({
+      type: 'ACTION',
+      side,
+      action,
+    });
+
+    if (applyAutoTurnEndIfStalled(runtime, events)) {
+      break;
+    }
+  }
+
+  return events;
+}
+
+type DominanceAutomationCandidate = {
+  action: PlaceBattleAction | MoveBattleAction;
+  score: number;
+  order: number;
+};
+
+function chooseDominanceIncreasingAction(
+  runtime: BattleRuntimeState,
+  side: BattleSide,
+): PlaceBattleAction | MoveBattleAction | null {
+  const baseScore = calculateSideDominanceScore(runtime, side);
+  const candidates: DominanceAutomationCandidate[] = [
+    ...listPlaceActions(runtime, side).map((action, order) => ({
+      action,
+      score: calculateActionDominanceScore(runtime, side, action),
+      order,
+    })),
+    ...listMoveActions(runtime, side).map((action, order) => ({
+      action,
+      score: calculateActionDominanceScore(runtime, side, action),
+      order,
+    })),
+  ].filter((candidate) => candidate.score > baseScore);
+
+  candidates.sort(compareDominanceAutomationCandidates);
+  return candidates[0]?.action ?? null;
+}
+
+function compareDominanceAutomationCandidates(
+  left: DominanceAutomationCandidate,
+  right: DominanceAutomationCandidate,
+): number {
+  if (left.score !== right.score) {
+    return right.score - left.score;
+  }
+
+  if (left.action.type !== right.action.type) {
+    return left.action.type === 'PLACE' ? -1 : 1;
+  }
+
+  if (left.action.type === 'PLACE' && right.action.type === 'PLACE') {
+    const costDifference = right.action.cost - left.action.cost;
+    if (costDifference !== 0) {
+      return costDifference;
+    }
+  }
+
+  return left.order - right.order;
+}
+
+function chooseLegalPlaceAction(
+  runtime: BattleRuntimeState,
+  side: BattleSide,
+): PlaceBattleAction | null {
+  return (
+    listPlaceActions(runtime, side)
+      .map((action, order) => ({ action, order }))
+      .sort((left, right) => {
+        const costDifference = right.action.cost - left.action.cost;
+        if (costDifference !== 0) {
+          return costDifference;
+        }
+
+        const dominanceDifference = right.action.dominance - left.action.dominance;
+        if (dominanceDifference !== 0) {
+          return dominanceDifference;
+        }
+
+        return left.order - right.order;
+      })[0]?.action ?? null
+  );
+}
+
+function calculateActionDominanceScore(
+  runtime: BattleRuntimeState,
+  side: BattleSide,
+  action: PlaceBattleAction | MoveBattleAction,
+): number {
+  const nextRuntime = structuredClone(runtime);
+  if (action.type === 'PLACE') {
+    applyPlaceAction(nextRuntime, action);
+  } else {
+    applyMoveAction(nextRuntime, action);
+  }
+
+  return calculateSideDominanceScore(nextRuntime, side);
+}
+
+function calculateSideDominanceScore(runtime: BattleRuntimeState, side: BattleSide): number {
+  return getSideSlotIds(side).reduce(
+    (total, slotId) => total + calculateSlotDominance(runtime, slotId),
+    0,
+  );
+}
+
+function chooseAttackAction(
+  runtime: BattleRuntimeState,
+  side: BattleSide,
+): AttackBattleAction | null {
+  return (
+    listAttackActions(runtime, side)
+      .map((action, order) => ({
+        action,
+        order,
+        target: findBattlefieldCardByInstanceId(runtime, action.targetInstanceId),
+      }))
+      .sort((left, right) => {
+        const leftLeaderPriority = left.target && isLeaderCard(runtime, left.target) ? 0 : 1;
+        const rightLeaderPriority = right.target && isLeaderCard(runtime, right.target) ? 0 : 1;
+        if (leftLeaderPriority !== rightLeaderPriority) {
+          return leftLeaderPriority - rightLeaderPriority;
+        }
+
+        const leftHp = readCardNumber(left.target?.card.instance.hp, Number.POSITIVE_INFINITY);
+        const rightHp = readCardNumber(right.target?.card.instance.hp, Number.POSITIVE_INFINITY);
+        if (leftHp !== rightHp) {
+          return leftHp - rightHp;
+        }
+
+        return left.order - right.order;
+      })[0]?.action ?? null
+  );
+}
+
+function applyAutomationAction(
+  runtime: BattleRuntimeState,
+  action: BattleAutomationAction,
+): void {
+  if (action.type === 'PLACE') {
+    applyPlaceAction(runtime, action);
+    return;
+  }
+
+  if (action.type === 'MOVE') {
+    applyMoveAction(runtime, action);
+    return;
+  }
+
+  applyAttackAction(runtime, action);
 }
 
 function assertLegalPlaceAction(runtime: BattleRuntimeState, action: PlaceBattleAction): void {
@@ -420,6 +687,48 @@ function formatBattleSlotId(side: BattleSide, zone: BattlefieldZone): BattleSlot
   return `${side}:${zone}`;
 }
 
+/**
+ * 능력 예외를 제외한 기본 공격 가능 여부를 판정한다.
+ * 後衛迎撃, 遠距離攻撃, 후위 전용 공격, 직접 피해 능력은 이후 능력 시스템에서 별도로 우회 처리한다.
+ */
+function canBasicAttack(
+  runtime: BattleRuntimeState,
+  attacker: BattleCardRuntimeState,
+  target: BattleCardRuntimeState,
+): boolean {
+  if (!attacker.battlefieldSlot || !target.battlefieldSlot) {
+    return false;
+  }
+
+  const attackerZone = parseBattleSlotId(attacker.battlefieldSlot).zone;
+  if (isBackRowZone(attackerZone)) {
+    return false;
+  }
+
+  const targetZone = parseBattleSlotId(target.battlefieldSlot).zone;
+  if (!isBackRowZone(targetZone)) {
+    return true;
+  }
+
+  const blocker = findBattlefieldCardAtSlot(runtime, getFrontSlotId(target.side, targetZone));
+  return !blocker || readCardNumber(blocker.card.instance.hp, 0) <= 0;
+}
+
+function isBackRowZone(zone: BattlefieldZone): boolean {
+  return zone.startsWith('B');
+}
+
+function getFrontSlotId(side: BattleSide, backZone: BattlefieldZone): BattleSlotId {
+  if (backZone === 'BR') {
+    return formatBattleSlotId(side, 'FR');
+  }
+  if (backZone === 'BC') {
+    return formatBattleSlotId(side, 'FC');
+  }
+
+  return formatBattleSlotId(side, 'FL');
+}
+
 function readCardNumber(value: number | undefined, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
@@ -430,12 +739,45 @@ function reindexHand(participant: BattleParticipantRuntimeState): void {
   });
 }
 
+function reindexDeck(participant: BattleParticipantRuntimeState): void {
+  participant.deck.forEach((card, index) => {
+    card.deckIndex = index;
+  });
+}
+
 function resetTurnFlagsForSide(runtime: BattleRuntimeState, side: BattleSide): void {
-  for (const card of listBattlefieldCards(runtime, side)) {
+  for (const card of listAllParticipantCards(runtime, side)) {
     card.hasMovedThisTurn = false;
     card.hasAttackedThisTurn = false;
     card.hasUsedActiveSkillThisTurn = false;
   }
+}
+
+function listAllParticipantCards(
+  runtime: BattleRuntimeState,
+  side: BattleSide,
+): BattleCardRuntimeState[] {
+  const participant = getParticipant(runtime, side);
+  const cards = [
+    participant.leader,
+    ...participant.deck,
+    ...participant.hand,
+    ...participant.drop,
+    ...participant.exile,
+    ...runtime.battlefield.filter((card) => card.side === side),
+    ...runtime.drop.filter((card) => card.side === side),
+    ...runtime.exile.filter((card) => card.side === side),
+  ];
+  const seen = new Set<string>();
+  return cards.filter((card) => {
+    const instanceId = card.card.instance.instanceId;
+    if (seen.has(instanceId)) {
+      return false;
+    }
+
+    seen.add(instanceId);
+    return true;
+  });
 }
 
 function isLeaderCard(runtime: BattleRuntimeState, card: BattleCardRuntimeState): boolean {
