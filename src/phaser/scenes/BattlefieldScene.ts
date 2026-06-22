@@ -15,6 +15,7 @@ import { createInitialBattleRuntime } from '../../game/battle/create-battle-runt
 import {
   INITIAL_HAND_SIZE,
   type AttackBattleAction,
+  type BattleAutomationAction,
   type BattleCardRuntimeState,
   type BattleRuntimeState,
   type BattleSide,
@@ -70,14 +71,43 @@ type CardViewOptions = {
   onClick?: () => void;
 };
 
+type BattleFlowResult = {
+  messages: string[];
+  popupEvents: BattlePopupEvent[];
+};
+
+type BattlePopupEvent = {
+  kind: 'PLACE' | 'MOVE' | 'ATTACK';
+  slotId: BattleSlotId;
+  text: string;
+};
+
 const FIELD_SLOT_WIDTH = 180;
 const FIELD_SLOT_HEIGHT = 270;
 const HAND_CARD_WIDTH = 144;
+const BATTLE_POPUP_DURATION_MS = 500;
 const PLACE_HIGHLIGHT_COLOR = 0x71d879;
 const MOVE_HIGHLIGHT_COLOR = 0x79b8ff;
 const ATTACK_HIGHLIGHT_COLOR = 0xff6f6f;
 const SELECTED_HIGHLIGHT_COLOR = 0xfff1a3;
 const CARD_BACK_TEXTURE_KEY = 'cards.webp.card_back';
+const POPUP_STYLE = {
+  PLACE: {
+    fill: 0x173a24,
+    stroke: PLACE_HIGHLIGHT_COLOR,
+    color: '#d9ffd6',
+  },
+  MOVE: {
+    fill: 0x18314c,
+    stroke: MOVE_HIGHLIGHT_COLOR,
+    color: '#e2f1ff',
+  },
+  ATTACK: {
+    fill: 0x4b1717,
+    stroke: ATTACK_HIGHLIGHT_COLOR,
+    color: '#ffe1dc',
+  },
+} as const;
 const SLOT_COLUMNS = {
   FR: GAME_WIDTH / 2 - 210,
   FC: GAME_WIDTH / 2,
@@ -150,6 +180,7 @@ export class BattlefieldScene extends Phaser.Scene {
   private runtime!: BattleRuntimeState;
   private session!: GameSession;
   private statusText: Phaser.GameObjects.Text | null = null;
+  private isAnimatingBattleEvents = false;
   private isSaving = false;
   private selectedSlotId: BattleSlotId | null = null;
   private selection: BattleSelection | null = null;
@@ -165,6 +196,7 @@ export class BattlefieldScene extends Phaser.Scene {
   create(data: BattlefieldSceneData): void {
     this.session = data.session;
     this.runtime = createInitialBattleRuntime(this.session);
+    this.isAnimatingBattleEvents = false;
     this.isSaving = false;
     this.selectedSlotId = null;
     this.selection = null;
@@ -743,6 +775,10 @@ export class BattlefieldScene extends Phaser.Scene {
   }
 
   private selectSlot(slotId: BattleSlotId): void {
+    if (this.isAnimatingBattleEvents) {
+      return;
+    }
+
     if (this.runtime.phase === 'GAME_OVER') {
       this.setStatus('Battle is over.');
       return;
@@ -751,8 +787,11 @@ export class BattlefieldScene extends Phaser.Scene {
     if (this.selection?.kind === 'HAND_CARD') {
       const action = this.selection.placeActions.find((candidate) => candidate.toSlotId === slotId);
       if (action) {
+        const popupEvent = this.createActionPopupEvent(this.runtime.currentSide, action);
         applyPlaceAction(this.runtime, action);
-        this.finishBattleAction(`Placed ${this.getCardName(action.cardInstanceId)} to ${slotId}.`);
+        this.finishBattleAction(`Placed ${this.getCardName(action.cardInstanceId)} to ${slotId}.`, [
+          popupEvent,
+        ]);
         return;
       }
 
@@ -765,8 +804,12 @@ export class BattlefieldScene extends Phaser.Scene {
         (candidate) => candidate.toSlotId === slotId,
       );
       if (moveAction) {
+        const popupEvent = this.createActionPopupEvent(this.runtime.currentSide, moveAction);
         applyMoveAction(this.runtime, moveAction);
-        this.finishBattleAction(`Moved ${this.getCardName(moveAction.cardInstanceId)} to ${slotId}.`);
+        this.finishBattleAction(
+          `Moved ${this.getCardName(moveAction.cardInstanceId)} to ${slotId}.`,
+          [popupEvent],
+        );
         return;
       }
 
@@ -774,11 +817,13 @@ export class BattlefieldScene extends Phaser.Scene {
         (candidate) => candidate.toSlotId === slotId,
       );
       if (attackAction) {
+        const popupEvent = this.createActionPopupEvent(this.runtime.currentSide, attackAction);
         applyAttackAction(this.runtime, attackAction);
         this.finishBattleAction(
           `${this.getCardName(attackAction.attackerInstanceId)} attacked ${this.getCardName(
             attackAction.targetInstanceId,
           )}.`,
+          [popupEvent],
         );
         return;
       }
@@ -800,6 +845,10 @@ export class BattlefieldScene extends Phaser.Scene {
   }
 
   private selectHandCard(card: BattleCardRuntimeState): void {
+    if (this.isAnimatingBattleEvents) {
+      return;
+    }
+
     if (!this.isPlayerControlActive()) {
       this.setStatus('Only the player MAIN turn accepts hand actions.');
       return;
@@ -827,6 +876,10 @@ export class BattlefieldScene extends Phaser.Scene {
   }
 
   private selectBattlefieldCard(card: BattleCardRuntimeState): void {
+    if (this.isAnimatingBattleEvents) {
+      return;
+    }
+
     if (
       this.selection?.kind === 'FIELD_CARD' &&
       card.battlefieldSlot !== null &&
@@ -836,11 +889,13 @@ export class BattlefieldScene extends Phaser.Scene {
         (candidate) => candidate.toSlotId === card.battlefieldSlot,
       );
       if (attackAction) {
+        const popupEvent = this.createActionPopupEvent(this.runtime.currentSide, attackAction);
         applyAttackAction(this.runtime, attackAction);
         this.finishBattleAction(
           `${this.getCardName(attackAction.attackerInstanceId)} attacked ${this.getCardName(
             attackAction.targetInstanceId,
           )}.`,
+          [popupEvent],
         );
         return;
       }
@@ -914,15 +969,13 @@ export class BattlefieldScene extends Phaser.Scene {
     this.highlightGraphics.strokeRect(rect.x + 11, rect.y + 11, rect.width - 22, rect.height - 22);
   }
 
-  private finishBattleAction(message: string): void {
-    const messages = [message, ...this.settleTurnFlow()];
+  private finishBattleAction(message: string, popupEvents: BattlePopupEvent[]): void {
+    const flow = this.settleTurnFlow();
+    const messages = [message, ...flow.messages];
     if (this.runtime.outcome) {
       messages.push(`${formatSideLabel(this.runtime.outcome.winner)} wins.`);
     }
-    this.selection = null;
-    this.selectedSlotId = null;
-    this.statusMessage = messages.join(' ');
-    this.renderBattleState();
+    this.commitBattleStateUpdate(messages, [...popupEvents, ...flow.popupEvents]);
   }
 
   private endCurrentTurn(): void {
@@ -930,29 +983,49 @@ export class BattlefieldScene extends Phaser.Scene {
       return;
     }
 
-    const messages = this.settleTurnFlow(applyTurnEnd(this.runtime, 'MANUAL'));
+    const flow = this.settleTurnFlow(applyTurnEnd(this.runtime, 'MANUAL'));
+    this.commitBattleStateUpdate(flow.messages, flow.popupEvents);
+  }
+
+  private commitBattleStateUpdate(messages: string[], popupEvents: BattlePopupEvent[]): void {
     this.selection = null;
     this.selectedSlotId = null;
     this.statusMessage = messages.join(' ');
+    this.isAnimatingBattleEvents = popupEvents.length > 0;
     this.renderBattleState();
+
+    if (popupEvents.length > 0) {
+      void this.playBattlePopupEvents(popupEvents);
+    }
   }
 
-  private settleTurnFlow(initialEvents: readonly BattleTurnEvent[] = []): string[] {
+  private settleTurnFlow(initialEvents: readonly BattleTurnEvent[] = []): BattleFlowResult {
     const messages = this.formatTurnEvents(initialEvents);
+    const popupEvents = this.createPopupEventsForTurnEvents(initialEvents);
     const stalledEvents: BattleTurnEvent[] = [];
     if (applyAutoTurnEndIfStalled(this.runtime, stalledEvents)) {
       messages.push(...this.formatTurnEvents(stalledEvents));
+      popupEvents.push(...this.createPopupEventsForTurnEvents(stalledEvents));
     }
 
     if (this.runtime.currentSide === 'enemy' && this.runtime.phase !== 'GAME_OVER') {
-      messages.push(...this.formatTurnEvents(runAutomatedTurn(this.runtime, 'enemy')));
+      const enemyEvents = runAutomatedTurn(this.runtime, 'enemy');
+      messages.push(...this.formatTurnEvents(enemyEvents));
+      popupEvents.push(...this.createPopupEventsForTurnEvents(enemyEvents));
     }
 
-    return messages;
+    return {
+      messages,
+      popupEvents,
+    };
   }
 
   private isPlayerControlActive(): boolean {
-    return this.runtime.currentSide === 'player' && this.runtime.phase !== 'GAME_OVER';
+    return (
+      !this.isAnimatingBattleEvents &&
+      this.runtime.currentSide === 'player' &&
+      this.runtime.phase !== 'GAME_OVER'
+    );
   }
 
   private getCardName(instanceId: string): string {
@@ -1019,6 +1092,100 @@ export class BattlefieldScene extends Phaser.Scene {
     return `${formatSideLabel(event.side)} attacked ${this.getCardName(
       event.action.targetInstanceId,
     )} with ${this.getCardName(event.action.attackerInstanceId)}.`;
+  }
+
+  private createPopupEventsForTurnEvents(events: readonly BattleTurnEvent[]): BattlePopupEvent[] {
+    return events
+      .filter((event): event is Extract<BattleTurnEvent, { type: 'ACTION' }> => event.type === 'ACTION')
+      .map((event) => this.createActionPopupEvent(event.side, event.action));
+  }
+
+  private createActionPopupEvent(
+    side: BattleSide,
+    action: BattleAutomationAction,
+  ): BattlePopupEvent {
+    void side;
+    if (action.type === 'PLACE') {
+      return {
+        kind: 'PLACE',
+        slotId: action.toSlotId,
+        text: 'PLACE',
+      };
+    }
+
+    if (action.type === 'MOVE') {
+      return {
+        kind: 'MOVE',
+        slotId: action.toSlotId,
+        text: 'MOVE',
+      };
+    }
+
+    return {
+      kind: 'ATTACK',
+      slotId: action.toSlotId,
+      text: `ATTACK -${action.attack}`,
+    };
+  }
+
+  private async playBattlePopupEvents(events: readonly BattlePopupEvent[]): Promise<void> {
+    for (const event of events) {
+      if (!this.scene.isActive()) {
+        return;
+      }
+
+      await this.playBattlePopupEvent(event);
+    }
+
+    this.isAnimatingBattleEvents = false;
+    this.renderBattleState();
+  }
+
+  private playBattlePopupEvent(event: BattlePopupEvent): Promise<void> {
+    const rect = FIELD_SLOT_RECTS[event.slotId];
+    const centerX = rect.x + rect.width / 2;
+    const y = rect.y + 38;
+    const style = POPUP_STYLE[event.kind];
+    const container = this.add.container(centerX, y);
+    container.setAlpha(1);
+
+    const text = this.add
+      .text(0, 0, event.text, {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '24px',
+        color: style.color,
+        stroke: '#07100d',
+        strokeThickness: 5,
+        align: 'center',
+      })
+      .setOrigin(0.5);
+    const bubble = this.add.rectangle(
+      0,
+      0,
+      Math.max(112, text.width + 34),
+      44,
+      style.fill,
+      0.94,
+    );
+    bubble.setStrokeStyle(3, style.stroke, 0.92);
+
+    container.add([bubble, text]);
+    this.layers.effectLayer.add(container);
+
+    return new Promise((resolve) => {
+      this.tweens.add({
+        targets: container,
+        y: y - 44,
+        alpha: 0,
+        scale: 1.08,
+        duration: BATTLE_POPUP_DURATION_MS,
+        ease: 'Cubic.easeOut',
+        onComplete: () => {
+          container.destroy();
+          resolve();
+        },
+      });
+    });
   }
 
   private async saveCurrentSession(): Promise<void> {
