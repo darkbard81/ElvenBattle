@@ -49,11 +49,11 @@ export function createRuntimeDeckInstanceFromDefinitions(
     id: deck.id,
     leader: {
       instance: deck.leader,
-      definition: requireDeckDefinition(deck.leader.definitionId, definitions),
+      definition: requireDeckDefinition(deck.leader.id, definitions),
     },
     cards: deck.cards.map((instance) => ({
       instance,
-      definition: requireDeckDefinition(instance.definitionId, definitions),
+      definition: requireDeckDefinition(instance.id, definitions),
     })),
   };
 }
@@ -62,8 +62,8 @@ export function createRuntimeDeckInstanceFromDefinitions(
  * JSON import 결과를 카드 정의 파일 타입으로 좁힌다.
  * Vite의 JSON import는 구조 검증을 하지 않으므로, 호출부가 명시적으로 데이터 경계를 표시한다.
  */
-export function readCardDefinitionFile(value: CardDefinitionFile): CardDefinitionFile {
-  return value;
+export function readCardDefinitionFile(value: unknown): CardDefinitionFile {
+  return value as CardDefinitionFile;
 }
 
 function findSingleLeaderDefinition(cardDefinitions: CardDefinition[]): CardDefinition {
@@ -91,20 +91,21 @@ function createCardInstance(
   zone: CardInstance['zone'],
   createId: () => string,
 ): CardInstance {
-  const level = readRequiredInteger(definition.level ?? 1, definition.id, 'level');
-  const exp = readRequiredInteger(definition.exp ?? 0, definition.id, 'exp');
-  const baseHp = readRequiredInteger(definition.hp ?? 0, definition.id, 'hp');
-  const baseAttack = readRequiredInteger(definition.attack ?? 0, definition.id, 'attack');
+  const instance = structuredClone(definition);
+  const level = readRequiredInteger(instance.level ?? 1, instance.id, 'level');
+  const exp = readRequiredInteger(instance.exp ?? 0, instance.id, 'exp');
+  const hp = readRequiredInteger(instance.hp ?? 0, instance.id, 'hp');
+  const attack = readRequiredInteger(instance.attack ?? 0, instance.id, 'attack');
 
   return {
-    instanceId: createId(),
-    definitionId: definition.id,
-    owner,
-    zone,
+    ...instance,
     level,
     exp,
-    currentHp: baseHp,
-    currentAttack: baseAttack,
+    hp,
+    attack,
+    instanceId: createId(),
+    owner,
+    zone,
   };
 }
 

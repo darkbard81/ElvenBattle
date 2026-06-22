@@ -75,28 +75,60 @@ function createRuntimeCardInstance(
   instance: CardInstance,
   cardDefinitions: Map<string, CardDefinition>,
 ): RuntimeCardInstance {
-  const definition = cardDefinitions.get(instance.definitionId);
+  const definition = cardDefinitions.get(instance.id);
   if (!definition) {
-    throw new Error(`Unknown card definitionId: ${instance.definitionId}`);
+    throw new Error(`Unknown card definitionId: ${instance.id}`);
   }
 
+  const runtimeInstance = structuredClone(instance);
+
   return {
-    instance,
+    instance: runtimeInstance,
     definition,
   };
 }
 
 function createSavedCardInstance(instance: CardInstance, zone: CardInstance['zone']): CardInstance {
-  return {
+  const saved: CardInstance = {
+    id: instance.id,
+    name: instance.name,
+    rarity: instance.rarity,
+    type: instance.type,
+    traits: structuredClone(instance.traits),
+    abilities: structuredClone(instance.abilities),
+    description: instance.description,
+    note: instance.note,
     instanceId: instance.instanceId,
-    definitionId: instance.definitionId,
     owner: instance.owner,
     zone,
-    level: instance.level,
-    exp: instance.exp,
-    currentHp: instance.currentHp,
-    currentAttack: instance.currentAttack,
   };
+
+  if (instance.slot !== undefined) {
+    saved.slot = instance.slot;
+  }
+  if (instance.cost !== undefined) {
+    saved.cost = instance.cost;
+  }
+  if (instance.dominance !== undefined) {
+    saved.dominance = instance.dominance;
+  }
+  if (instance.hp !== undefined) {
+    saved.hp = instance.hp;
+  }
+  if (instance.attack !== undefined) {
+    saved.attack = instance.attack;
+  }
+  if (instance.level !== undefined) {
+    saved.level = instance.level;
+  }
+  if (instance.exp !== undefined) {
+    saved.exp = instance.exp;
+  }
+  if (instance.growth !== undefined) {
+    saved.growth = structuredClone(instance.growth);
+  }
+
+  return saved;
 }
 
 export type { CardDefinition, SaveSlotState, DeckInstance };

@@ -175,7 +175,7 @@ export class BattlefieldScene extends Phaser.Scene {
       { x: 44, y: 52, width: 320, height: 138 },
       [
         `ENEMY ${this.runtime.enemy.leader.card.definition.name}`,
-        `HP ${this.runtime.enemy.leader.card.instance.currentHp}  ATK ${this.runtime.enemy.leader.card.instance.currentAttack}`,
+        `HP ${this.runtime.enemy.leader.card.instance.hp}  ATK ${this.runtime.enemy.leader.card.instance.attack}`,
         `Deck ${this.runtime.enemy.deck.length}  Drop ${this.runtime.enemy.drop.length}`,
       ],
     );
@@ -187,7 +187,7 @@ export class BattlefieldScene extends Phaser.Scene {
       { x: 836, y: 52, width: 320, height: 138 },
       [
         `PLAYER ${this.runtime.player.leader.card.definition.name}`,
-        `HP ${this.runtime.player.leader.card.instance.currentHp}  ATK ${this.runtime.player.leader.card.instance.currentAttack}`,
+        `HP ${this.runtime.player.leader.card.instance.hp}  ATK ${this.runtime.player.leader.card.instance.attack}`,
         `Deck ${this.runtime.player.deck.length}  Hand ${this.runtime.player.hand.length}`,
       ],
     );
@@ -353,7 +353,7 @@ export class BattlefieldScene extends Phaser.Scene {
   ): void {
     const centerX = rect.x + rect.width / 2;
     const centerY = rect.y + rect.height / 2;
-    const textureKey = `cards.webp.${card.card.definition.id}`;
+    const textureKey = `cards.webp.${card.card.instance.id}`;
 
     if (this.textures.exists(textureKey)) {
       parent.add(this.add.image(centerX, centerY, textureKey).setDisplaySize(rect.width, rect.height));
@@ -370,7 +370,7 @@ export class BattlefieldScene extends Phaser.Scene {
       parent.add(fallback);
     }
 
-    const definition = card.card.definition;
+    const instance = card.card.instance;
     const paddingX = mode === 'field' ? 21 : 16;
     const paddingY = mode === 'field' ? 18 : 14;
     const badgeSize = mode === 'field' ? 34 : 30;
@@ -380,7 +380,7 @@ export class BattlefieldScene extends Phaser.Scene {
       parent,
       rect.x + paddingX,
       rect.y + paddingY,
-      String(definition.dominance ?? 0),
+      String(instance.dominance ?? 0),
       badgeSize,
       fontSize,
     );
@@ -388,7 +388,7 @@ export class BattlefieldScene extends Phaser.Scene {
       parent,
       rect.x + rect.width - paddingX - 4,
       rect.y + paddingY,
-      String(definition.cost ?? 0),
+      String(instance.cost ?? 0),
       badgeSize,
       fontSize,
     );
@@ -396,7 +396,7 @@ export class BattlefieldScene extends Phaser.Scene {
       parent,
       rect.x + paddingX,
       rect.y + rect.height - paddingY - 8,
-      String(card.card.instance.currentHp),
+      String(instance.hp),
       badgeSize,
       fontSize,
     );
@@ -404,7 +404,7 @@ export class BattlefieldScene extends Phaser.Scene {
       parent,
       rect.x + rect.width - paddingX - 4,
       rect.y + rect.height - paddingY - 8,
-      String(card.card.instance.currentAttack),
+      String(instance.attack),
       badgeSize,
       fontSize,
     );

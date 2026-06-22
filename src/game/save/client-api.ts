@@ -8,13 +8,20 @@ function isCardInstance(value: unknown): boolean {
   return (
     isRecord(value) &&
     typeof value.instanceId === 'string' &&
-    typeof value.definitionId === 'string' &&
+    typeof value.id === 'string' &&
+    typeof value.name === 'string' &&
+    typeof value.rarity === 'string' &&
+    typeof value.type === 'string' &&
+    Array.isArray(value.traits) &&
+    Array.isArray(value.abilities) &&
+    typeof value.description === 'string' &&
+    typeof value.note === 'string' &&
     value.owner === 'PLAYER' &&
     (value.zone === 'LEADER' || value.zone === 'DECK') &&
-    Number.isInteger(value.level) &&
-    Number.isInteger(value.exp) &&
-    Number.isInteger(value.currentHp) &&
-    Number.isInteger(value.currentAttack)
+    Number.isInteger(value.level ?? 1) &&
+    Number.isInteger(value.exp ?? 0) &&
+    Number.isInteger(value.hp) &&
+    Number.isInteger(value.attack)
   );
 }
 

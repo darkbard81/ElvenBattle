@@ -1,3 +1,5 @@
+import type { CardDefinition } from './card-catalog';
+
 export const SAVE_SLOT_SCHEMA_VERSION = 1 as const;
 
 export type SaveSlotId = 1 | 2 | 3;
@@ -8,15 +10,10 @@ export type CardOwner = 'PLAYER' | 'ENEMY';
 
 export type CardInstanceZone = 'LEADER' | 'DECK';
 
-export type CardInstance = {
+export type CardInstance = CardDefinition & {
   instanceId: string;
-  definitionId: string;
   owner: CardOwner;
   zone: CardInstanceZone;
-  level: number;
-  exp: number;
-  currentHp: number;
-  currentAttack: number;
 };
 
 export type DeckInstance = {

@@ -8,7 +8,7 @@ describe('createGameSession', () => {
     const session = createGameSession(state);
 
     expect(session.slotId).toBe(1);
-    expect(session.deck.leader.instance.definitionId).toBe('leader_minerva');
+    expect(session.deck.leader.instance.id).toBe('leader_minerva');
     expect(session.deck.leader.definition.name).toBe('미네르바');
     expect(session.deck.cards).toHaveLength(29);
     expect(session.deck.cards.every((card) => card.definition.id.startsWith('unit_'))).toBe(true);
@@ -22,7 +22,7 @@ describe('createGameSession', () => {
         ...state.deck,
         leader: {
           ...state.deck.leader,
-          definitionId: 'missing_definition',
+          id: 'missing_definition',
         },
       },
     };
@@ -30,6 +30,27 @@ describe('createGameSession', () => {
     expect(() => createGameSession(brokenState)).toThrow(
       'Unknown card definitionId: missing_definition',
     );
+  });
+
+  it('deep-copies card instances while preserving instance IDs', async () => {
+    const state = await createInitialSaveState({ slotId: 1 });
+    const leaderOriginalHp = state.deck.leader.hp;
+    const firstCardOriginalAttack = state.deck.cards[0]!.attack;
+    const session = createGameSession(state);
+
+    expect(session.deck.leader.instance).not.toBe(state.deck.leader);
+    expect(session.deck.cards[0]!.instance).not.toBe(state.deck.cards[0]);
+    expect(session.deck.cards[0]!.instance.abilities).not.toBe(state.deck.cards[0]!.abilities);
+    expect(session.deck.leader.instance.instanceId).toBe(state.deck.leader.instanceId);
+    expect(session.deck.cards[0]!.instance.instanceId).toBe(state.deck.cards[0]!.instanceId);
+
+    session.deck.leader.instance.hp = 1;
+    session.deck.cards[0]!.instance.attack = 1;
+    session.deck.cards[0]!.instance.abilities[0]!.text = 'changed';
+
+    expect(state.deck.leader.hp).toBe(leaderOriginalHp);
+    expect(state.deck.cards[0]!.attack).toBe(firstCardOriginalAttack);
+    expect(state.deck.cards[0]!.abilities[0]!.text).not.toBe('changed');
   });
 
   it('serializes a game session back to save-slot state without runtime fields', async () => {
