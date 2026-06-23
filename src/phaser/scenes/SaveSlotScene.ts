@@ -2,7 +2,11 @@ import Phaser from 'phaser';
 import { DEFAULT_FONT_FAMILY } from '../../theme';
 import { createGameSession } from '../../game/save/session';
 import type { SaveSlotSummary } from '../../game/save/types';
-import { fetchSaveSlot, fetchSaveSlotSummaries, initializeSaveSlot } from '../../game/save/client-api';
+import {
+  fetchSaveSlot,
+  fetchSaveSlotSummaries,
+  initializeSaveSlot,
+} from '../../game/save/client-api';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
 import { createMenuButton } from '../ui/menu-button';
 import type { BattlefieldSceneData, MainMenuSceneData } from './scene-data';
@@ -138,7 +142,7 @@ export class SaveSlotScene extends Phaser.Scene {
     const detailColor = slot.isEmpty ? '#7f8b85' : '#d7ead4';
     const accentColor = slot.isEmpty ? '#9cadb0' : '#a6d9b0';
     const slotLabel = `Slot ${slot.slotId}`;
-    const title = slot.isEmpty ? 'Empty Slot' : slot.saveName ?? slotLabel;
+    const title = slot.isEmpty ? 'Empty Slot' : (slot.saveName ?? slotLabel);
     const subtitle = slot.isEmpty ? 'Create New Save' : formatSaveSlotSubtitle(slot);
 
     const slotLabelText = this.add

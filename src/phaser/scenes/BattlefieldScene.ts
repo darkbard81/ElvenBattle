@@ -69,15 +69,23 @@ type BattleSelection =
       cardInstanceId: string;
       sourceSlotId: BattleSlotId;
       moveActions: MoveBattleAction[];
-      activeSkillActions: ActiveSkillBattleAction[];
+      activeSkillGroups: ActiveSkillActionGroup[];
       attackActions: AttackBattleAction[];
     }
   | {
       kind: 'ACTIVE_SKILL';
       cardInstanceId: string;
       sourceSlotId: BattleSlotId;
+      skillId: string;
+      skillName: string;
       activeSkillActions: ActiveSkillBattleAction[];
     };
+
+type ActiveSkillActionGroup = {
+  skillId: string;
+  skillName: string;
+  actions: ActiveSkillBattleAction[];
+};
 
 type CardViewOptions = {
   highlightColor?: number;
@@ -860,7 +868,7 @@ export class BattlefieldScene extends Phaser.Scene {
     return (
       this.isPlayerControlActive() &&
       this.selection?.kind === 'FIELD_CARD' &&
-      this.selection.activeSkillActions.length > 0
+      this.selection.activeSkillGroups.length > 0
     );
   }
 
@@ -869,16 +877,25 @@ export class BattlefieldScene extends Phaser.Scene {
       return;
     }
 
+    const skillGroup = this.selection.activeSkillGroups[0];
+    if (!skillGroup) {
+      return;
+    }
+
     this.selection = {
       kind: 'ACTIVE_SKILL',
       cardInstanceId: this.selection.cardInstanceId,
       sourceSlotId: this.selection.sourceSlotId,
-      activeSkillActions: this.selection.activeSkillActions,
+      skillId: skillGroup.skillId,
+      skillName: skillGroup.skillName,
+      activeSkillActions: skillGroup.actions,
     };
     this.selectedSlotId = null;
     this.redrawHighlight();
     this.setStatus(
-      `Select a gold skill target for ${this.getCardName(this.selection.cardInstanceId)}.`,
+      `Skill: ${this.selection.skillName}. Select a gold target for ${this.getCardName(
+        this.selection.cardInstanceId,
+      )}.`,
     );
   }
 
@@ -1046,7 +1063,8 @@ export class BattlefieldScene extends Phaser.Scene {
     const activeSkillActions = listActiveSkillActions(this.runtime).filter(
       (action) => action.cardInstanceId === card.card.instance.instanceId,
     );
-    if (moveActions.length === 0 && attackActions.length === 0 && activeSkillActions.length === 0) {
+    const activeSkillGroups = groupActiveSkillActions(card, activeSkillActions);
+    if (moveActions.length === 0 && attackActions.length === 0 && activeSkillGroups.length === 0) {
       this.selection = null;
       this.selectedSlotId = card.battlefieldSlot;
       this.redrawHighlight();
@@ -1060,12 +1078,12 @@ export class BattlefieldScene extends Phaser.Scene {
       sourceSlotId: card.battlefieldSlot,
       moveActions,
       attackActions,
-      activeSkillActions,
+      activeSkillGroups,
     };
     this.selectedSlotId = null;
     this.redrawHighlight();
     this.setStatus(
-      `Select a blue move slot, red attack target, or Skill for ${card.card.instance.name}.`,
+      formatFieldCardSelectionStatus(card, moveActions, attackActions, activeSkillGroups),
     );
   }
 
@@ -1083,10 +1101,10 @@ export class BattlefieldScene extends Phaser.Scene {
 
     applyActiveSkillAction(this.runtime, action);
     this.finishBattleAction(
-      `${this.getCardName(action.cardInstanceId)} used ${formatActiveSkillEffect(action)} on ${this.getCardName(
-        action.targetInstanceId,
-      )}.`,
-      [this.createActiveSkillPopupEvent(action)],
+      `${this.getCardName(action.cardInstanceId)} used ${this.selection.skillName} (${formatActiveSkillEffect(
+        action,
+      )}) on ${this.getCardName(action.targetInstanceId)}.`,
+      [this.createActiveSkillPopupEvent(action, this.selection.skillName)],
     );
     return true;
   }
@@ -1113,6 +1131,10 @@ export class BattlefieldScene extends Phaser.Scene {
     if (this.selection?.kind === 'ACTIVE_SKILL') {
       this.drawSlotHighlight(this.selection.sourceSlotId, SELECTED_HIGHLIGHT_COLOR, 0.98);
       for (const action of this.selection.activeSkillActions) {
+        if (action.skillId !== this.selection.skillId) {
+          continue;
+        }
+
         this.drawSlotHighlight(action.targetSlotId, SKILL_HIGHLIGHT_COLOR, 0.92);
       }
     }
@@ -1291,12 +1313,15 @@ export class BattlefieldScene extends Phaser.Scene {
     };
   }
 
-  private createActiveSkillPopupEvent(action: ActiveSkillBattleAction): BattlePopupEvent {
+  private createActiveSkillPopupEvent(
+    action: ActiveSkillBattleAction,
+    skillName: string,
+  ): BattlePopupEvent {
     if (action.effect === 'HEAL') {
       return {
         kind: 'SKILL',
         slotId: action.targetSlotId,
-        text: `SKILL +${action.value}`,
+        text: `${skillName} +${action.value}`,
       };
     }
 
@@ -1304,14 +1329,14 @@ export class BattlefieldScene extends Phaser.Scene {
       return {
         kind: 'SKILL',
         slotId: action.targetSlotId,
-        text: `SKILL -${action.value}`,
+        text: `${skillName} -${action.value}`,
       };
     }
 
     return {
       kind: 'SKILL',
       slotId: action.targetSlotId,
-      text: `SKILL ATK+${action.value}`,
+      text: `${skillName} ATK+${action.value}`,
     };
   }
 
@@ -1439,6 +1464,62 @@ function formatSlotLabel(slotId: BattleSlotId): string {
  */
 function formatSideLabel(side: BattleSide): string {
   return side === 'player' ? 'PLAYER' : 'ENEMY';
+}
+
+/**
+ * 같은 ACTION 능력에서 나온 대상별 액션을 하나의 선택 단위로 묶는다.
+ * Scene은 이 그룹의 첫 번째 항목만 단일 Skill 버튼에 연결한다.
+ */
+function groupActiveSkillActions(
+  card: BattleCardRuntimeState,
+  actions: ActiveSkillBattleAction[],
+): ActiveSkillActionGroup[] {
+  const groupedActions = new Map<string, ActiveSkillBattleAction[]>();
+  for (const action of actions) {
+    const group = groupedActions.get(action.skillId);
+    if (group) {
+      group.push(action);
+      continue;
+    }
+
+    groupedActions.set(action.skillId, [action]);
+  }
+
+  return [...groupedActions.entries()].map(([skillId, group]) => ({
+    skillId,
+    skillName: resolveActiveSkillName(card, skillId),
+    actions: group,
+  }));
+}
+
+/**
+ * 카드 definition의 ACTION 능력 이름을 UI 표시명으로 해석한다.
+ * 일치하는 카드 능력이 없으면 데이터 문제를 화면에서 추적할 수 있게 skillId를 그대로 사용한다.
+ */
+function resolveActiveSkillName(card: BattleCardRuntimeState, skillId: string): string {
+  return card.card.definition.abilities.find((ability) => ability.id === skillId)?.name ?? skillId;
+}
+
+/**
+ * 전장 카드 선택 상태 메시지를 후보 action 종류와 ACTION 능력명에 맞춰 구성한다.
+ */
+function formatFieldCardSelectionStatus(
+  card: BattleCardRuntimeState,
+  moveActions: readonly MoveBattleAction[],
+  attackActions: readonly AttackBattleAction[],
+  activeSkillGroups: readonly ActiveSkillActionGroup[],
+): string {
+  const actionLabels = [
+    moveActions.length > 0 ? 'blue move slot' : null,
+    attackActions.length > 0 ? 'red attack target' : null,
+    activeSkillGroups.length > 0 ? 'Skill' : null,
+  ].filter((label): label is string => label !== null);
+  const skillText =
+    activeSkillGroups.length > 0
+      ? ` Skill: ${activeSkillGroups.map((group) => group.skillName).join(', ')}.`
+      : '';
+
+  return `Select ${actionLabels.join(', ')} for ${card.card.instance.name}.${skillText}`;
 }
 
 /**
