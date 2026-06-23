@@ -79,6 +79,69 @@ describe('battle engine', () => {
     expect(runtime.player.hand.map((card) => card.handIndex)).toEqual([0, 1, 2, 3]);
   });
 
+  it('recalculates place dominance for every empty slot after placing a card', async () => {
+    const runtime = await createRuntime();
+    const action = listPlaceActions(runtime).find(
+      (candidate) => candidate.fromHandIndex === 1 && candidate.toSlotId === 'player:FC',
+    );
+    if (!action) {
+      throw new Error('Expected a legal place action');
+    }
+
+    applyPlaceAction(runtime, action);
+
+    const scout = runtime.player.hand.find(
+      (card) => card.card.definition.id === 'unit_elf_scout_001',
+    );
+    if (!scout) {
+      throw new Error('Expected scout to remain in hand after placing archer');
+    }
+
+    const scoutPlaceSlots = listPlaceActions(runtime)
+      .filter((candidate) => candidate.cardInstanceId === scout.card.instance.instanceId)
+      .map((candidate) => candidate.toSlotId)
+      .sort();
+
+    expect(scoutPlaceSlots).toEqual(['player:BL', 'player:BR', 'player:FL', 'player:FR']);
+  });
+
+  it('keeps only cost-satisfied place slots after placing cards on center and right front', async () => {
+    const runtime = await createRuntime();
+    const archerAction = listPlaceActions(runtime).find(
+      (candidate) => candidate.fromHandIndex === 1 && candidate.toSlotId === 'player:FC',
+    );
+    if (!archerAction) {
+      throw new Error('Expected a legal archer place action');
+    }
+    applyPlaceAction(runtime, archerAction);
+
+    const scoutAction = listPlaceActions(runtime).find(
+      (candidate) => candidate.fromHandIndex === 1 && candidate.toSlotId === 'player:FR',
+    );
+    if (!scoutAction) {
+      throw new Error('Expected a legal scout place action');
+    }
+    applyPlaceAction(runtime, scoutAction);
+
+    expect(calculateSlotDominance(runtime, 'player:FL')).toBe(1);
+    expect(calculateSlotDominance(runtime, 'player:BR')).toBe(2);
+    expect(calculateSlotDominance(runtime, 'player:BL')).toBe(1);
+
+    const remainingHandSlots = [
+      ...new Set(listPlaceActions(runtime).map((action) => action.toSlotId)),
+    ];
+    expect(remainingHandSlots).toEqual(['player:BR']);
+    expect(listPlaceActions(runtime).every((action) => action.cost === 2)).toBe(true);
+
+    const lancer = moveCardToHand(runtime, 'player', 'unit_elf_lancer_001');
+    const lancerPlaceSlots = listPlaceActions(runtime)
+      .filter((action) => action.cardInstanceId === lancer.card.instance.instanceId)
+      .map((action) => action.toSlotId)
+      .sort();
+
+    expect(lancerPlaceSlots).toEqual(['player:BL', 'player:BR', 'player:FL']);
+  });
+
   it('allows each current-side battlefield card to move once to orthogonally adjacent empty slots before attacking', async () => {
     const runtime = await createRuntime();
     const moveAction = listMoveActions(runtime).find(
