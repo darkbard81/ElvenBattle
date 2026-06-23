@@ -1,8 +1,11 @@
+import type { AbilityCategory, CardAbility } from '../save/card-catalog';
 import type {
   ActiveSkillBattleAction,
+  ActiveSkillBattleEffect,
   AttackBattleAction,
   BattleAutomationAction,
   BattleAvailableActions,
+  BattleAbilityEffectExpiration,
   BattleCardRuntimeState,
   BattlefieldZone,
   BattleParticipantRuntimeState,
@@ -27,6 +30,78 @@ const SLOT_COORDINATES: Record<BattlefieldZone, { x: number; y: number }> = {
   BL: { x: 2, y: 1 },
 };
 
+type RuntimeEffectStat = 'attack' | 'hp' | 'dominance';
+
+type PassiveStatModifier = {
+  stat: RuntimeEffectStat;
+  value: number;
+};
+
+type PassiveAbilityContext = {
+  runtime: BattleRuntimeState;
+  source: BattleCardRuntimeState;
+  target: BattleCardRuntimeState;
+};
+
+type ActiveSkillDefinition = {
+  effect: ActiveSkillBattleEffect;
+  value: number;
+  targetSide: 'ally' | 'enemy';
+};
+
+const FRONT_PASSIVE_ABILITY_HANDLERS: Partial<
+  Record<string, (context: PassiveAbilityContext) => PassiveStatModifier | null>
+> = {
+  guardian_stance: ({ source, target }) =>
+    source === target && isFrontRowCard(source) ? { stat: 'hp', value: 1 } : null,
+  stonehide_stance: ({ source, target }) =>
+    source === target && isFrontRowCard(source) ? { stat: 'hp', value: 1 } : null,
+};
+
+const GLOBAL_PASSIVE_ABILITY_HANDLERS: Partial<
+  Record<string, (context: PassiveAbilityContext) => PassiveStatModifier | null>
+> = {
+  guardian_block: () => null,
+  stonewall_guard: () => null,
+  silver_chord: ({ source, target }) =>
+    source !== target && source.side === target.side && hasTrait(target, 'race', '엘프')
+      ? { stat: 'attack', value: 1 }
+      : null,
+  hollow_chorus: ({ source, target }) =>
+    source !== target && source.side === target.side && hasTrait(target, 'race', '몬스터')
+      ? { stat: 'attack', value: 1 }
+      : null,
+};
+
+const SUMMON_ATTACK_BONUS_ABILITY_IDS = new Set(['greenwood_charge', 'iron_spike_charge']);
+const MOVE_ATTACK_BONUS_ABILITY_IDS = new Set(['forest_path', 'mist_stride']);
+const AFTER_ATTACK_BUFF_ABILITY_IDS = new Set(['leafwind_flurry', 'shadow_blade_flurry']);
+
+const ATTACK_DAMAGE_BONUS_ABILITY_HANDLERS: Partial<
+  Record<
+    string,
+    (context: {
+      runtime: BattleRuntimeState;
+      attacker: BattleCardRuntimeState;
+      target: BattleCardRuntimeState;
+    }) => number
+  >
+> = {
+  moonlit_shot: ({ target }) => (isBackRowCard(target) ? 1 : 0),
+  eclipse_shot: ({ target }) => (isBackRowCard(target) ? 1 : 0),
+  shadow_leaf_strike: ({ runtime, target }) => (getEffectiveHp(runtime, target) <= 3 ? 1 : 0),
+  night_prey: ({ runtime, target }) => (getEffectiveHp(runtime, target) <= 3 ? 1 : 0),
+};
+
+const ACTIVE_SKILL_DEFINITIONS: Partial<Record<string, ActiveSkillDefinition>> = {
+  starlight_mend: { effect: 'HEAL', value: 2, targetSide: 'ally' },
+  curse_reversal: { effect: 'HEAL', value: 2, targetSide: 'ally' },
+  emerald_bolt: { effect: 'DAMAGE', value: 2, targetSide: 'enemy' },
+  blackflame_bolt: { effect: 'DAMAGE', value: 2, targetSide: 'enemy' },
+  rune_tempering: { effect: 'BUFF_ATTACK', value: 1, targetSide: 'ally' },
+  rune_forge: { effect: 'BUFF_ATTACK', value: 1, targetSide: 'ally' },
+};
+
 /**
  * 지정한 전장 슬롯을 점유한 카드를 반환한다.
  * 전장 슬롯이 비어 있거나 전투에서 이탈한 카드만 남아 있으면 `null`을 반환한다.
@@ -43,13 +118,76 @@ export function findBattlefieldCardAtSlot(
 }
 
 /**
+ * 카드가 현재 전위 슬롯에 있는지 판정한다.
+ * 전장에 없는 카드는 위치 지속 능력의 대상이 아니므로 항상 false를 반환한다.
+ */
+export function isFrontRowCard(card: BattleCardRuntimeState): boolean {
+  if (card.zone !== 'BATTLEFIELD' || !card.battlefieldSlot) {
+    return false;
+  }
+
+  return !isBackRowZone(parseBattleSlotId(card.battlefieldSlot).zone);
+}
+
+/**
+ * 카드가 현재 후위 슬롯에 있는지 판정한다.
+ * 전장에 없는 카드는 위치 지속 능력의 대상이 아니므로 항상 false를 반환한다.
+ */
+export function isBackRowCard(card: BattleCardRuntimeState): boolean {
+  if (card.zone !== 'BATTLEFIELD' || !card.battlefieldSlot) {
+    return false;
+  }
+
+  return isBackRowZone(parseBattleSlotId(card.battlefieldSlot).zone);
+}
+
+/**
+ * 현재 전투 상태와 적용 중인 능력을 반영한 공격력을 계산한다.
+ * 공격 선언 중에만 적용되는 조건부 보정은 공격 해결 시 별도로 더한다.
+ */
+export function getEffectiveAttack(
+  runtime: BattleRuntimeState,
+  card: BattleCardRuntimeState,
+): number {
+  return (
+    readCardNumber(card.card.instance.attack, 0) +
+    getRuntimeEffectBonus(card, 'attack') +
+    getPassiveStatBonus(runtime, card, 'attack')
+  );
+}
+
+/**
+ * 현재 전투 상태와 적용 중인 능력을 반영한 HP를 계산한다.
+ * 실제 피해는 현재 HP에 기록하고, 생존 판정은 이 값을 기준으로 수행한다.
+ */
+export function getEffectiveHp(runtime: BattleRuntimeState, card: BattleCardRuntimeState): number {
+  return (
+    readCardNumber(card.card.instance.hp, 0) +
+    getRuntimeEffectBonus(card, 'hp') +
+    getPassiveStatBonus(runtime, card, 'hp')
+  );
+}
+
+/**
+ * 현재 전투 상태와 적용 중인 능력을 반영한 지배력을 계산한다.
+ * 배치 가능 판정은 이 값을 사용해 지속 보정 확장에 대비한다.
+ */
+export function getEffectiveDominance(
+  runtime: BattleRuntimeState,
+  card: BattleCardRuntimeState,
+): number {
+  return (
+    readCardNumber(card.card.instance.dominance, 0) +
+    getRuntimeEffectBonus(card, 'dominance') +
+    getPassiveStatBonus(runtime, card, 'dominance')
+  );
+}
+
+/**
  * 빈 전장 슬롯에 인접한 같은 진영 카드의 지배력 합계를 계산한다.
  * 이미 점유된 슬롯은 배치 대상이 아니므로 항상 0으로 취급한다.
  */
-export function calculateSlotDominance(
-  runtime: BattleRuntimeState,
-  slotId: BattleSlotId,
-): number {
+export function calculateSlotDominance(runtime: BattleRuntimeState, slotId: BattleSlotId): number {
   if (findBattlefieldCardAtSlot(runtime, slotId)) {
     return 0;
   }
@@ -61,7 +199,7 @@ export function calculateSlotDominance(
       return total;
     }
 
-    return total + readCardNumber(card.card.instance.dominance, 0);
+    return total + getEffectiveDominance(runtime, card);
   }, 0);
 }
 
@@ -117,11 +255,7 @@ export function listMoveActions(
 
   const actions: MoveBattleAction[] = [];
   for (const card of listBattlefieldCards(runtime, side)) {
-    if (
-      card.battlefieldSlot === null ||
-      card.hasMovedThisTurn ||
-      card.hasAttackedThisTurn
-    ) {
+    if (card.battlefieldSlot === null || card.hasMovedThisTurn || card.hasAttackedThisTurn) {
       continue;
     }
 
@@ -160,13 +294,13 @@ export function listAttackActions(
     if (
       attacker.battlefieldSlot === null ||
       attacker.hasAttackedThisTurn ||
-      readCardNumber(attacker.card.instance.attack, 0) <= 0
+      getEffectiveAttack(runtime, attacker) <= 0
     ) {
       continue;
     }
 
     for (const target of targets) {
-      if (target.battlefieldSlot === null || readCardNumber(target.card.instance.hp, 0) <= 0) {
+      if (target.battlefieldSlot === null || getEffectiveHp(runtime, target) <= 0) {
         continue;
       }
       if (!canBasicAttack(runtime, attacker, target)) {
@@ -179,7 +313,7 @@ export function listAttackActions(
         targetInstanceId: target.card.instance.instanceId,
         fromSlotId: attacker.battlefieldSlot,
         toSlotId: target.battlefieldSlot,
-        attack: readCardNumber(attacker.card.instance.attack, 0),
+        attack: calculateAttackDamage(runtime, attacker, target),
       });
     }
   }
@@ -189,15 +323,47 @@ export function listAttackActions(
 
 /**
  * 현재 카드 데이터 기준으로 가능한 활성 스킬 후보를 반환한다.
- * 아직 실제 활성 스킬 데이터가 없으므로 자동 턴 종료 계산을 위한 빈 배열만 반환한다.
+ * 능력별 대상 규칙은 엔진에서 해석하고, Scene은 반환된 대상 슬롯만 표시한다.
  */
 export function listActiveSkillActions(
   runtime: BattleRuntimeState,
   side: BattleSide = runtime.currentSide,
 ): ActiveSkillBattleAction[] {
-  void runtime;
-  void side;
-  return [];
+  if (runtime.phase === 'GAME_OVER' || side !== runtime.currentSide) {
+    return [];
+  }
+
+  const actions: ActiveSkillBattleAction[] = [];
+  for (const card of listBattlefieldCards(runtime, side)) {
+    if (card.hasUsedActiveSkillThisTurn) {
+      continue;
+    }
+
+    for (const ability of listCardAbilities(card, 'ACTION')) {
+      const definition = ACTIVE_SKILL_DEFINITIONS[ability.id];
+      if (!definition) {
+        continue;
+      }
+
+      for (const target of listActiveSkillTargets(runtime, card, definition.targetSide)) {
+        if (!target.battlefieldSlot) {
+          continue;
+        }
+
+        actions.push({
+          type: 'ACTIVE_SKILL',
+          cardInstanceId: card.card.instance.instanceId,
+          skillId: ability.id,
+          targetInstanceId: target.card.instance.instanceId,
+          targetSlotId: target.battlefieldSlot,
+          effect: definition.effect,
+          value: definition.value,
+        });
+      }
+    }
+  }
+
+  return actions;
 }
 
 /**
@@ -220,10 +386,7 @@ export function listAvailableActions(
  * 합법 배치 액션을 전투 런타임에 적용한다.
  * 손패 배열에서 카드를 제거하고 전장 슬롯에 배치한 뒤 남은 손패 index를 재정렬한다.
  */
-export function applyPlaceAction(
-  runtime: BattleRuntimeState,
-  action: PlaceBattleAction,
-): void {
+export function applyPlaceAction(runtime: BattleRuntimeState, action: PlaceBattleAction): void {
   assertLegalPlaceAction(runtime, action);
 
   const participant = getParticipant(runtime, runtime.currentSide);
@@ -244,6 +407,7 @@ export function applyPlaceAction(
   card.deckIndex = null;
   runtime.battlefield.push(card);
   reindexHand(participant);
+  resolveSummonAbilities(runtime, card);
 }
 
 /**
@@ -260,6 +424,7 @@ export function applyMoveAction(runtime: BattleRuntimeState, action: MoveBattleA
 
   card.battlefieldSlot = action.toSlotId;
   card.hasMovedThisTurn = true;
+  resolveMoveAbilities(runtime, card);
 }
 
 /**
@@ -277,23 +442,44 @@ export function applyAttackAction(runtime: BattleRuntimeState, action: AttackBat
 
   runtime.phase = 'ATTACK';
   attacker.hasAttackedThisTurn = true;
-  target.card.instance.hp = readCardNumber(target.card.instance.hp, 0) - action.attack;
+  action.attack = calculateAttackDamage(runtime, attacker, target);
+  applyDamageToBattlefieldCard(runtime, attacker.side, target, action.attack);
+  resolveAfterAttackAbilities(runtime, attacker);
+}
 
-  if (target.card.instance.hp > 0) {
+/**
+ * 합법 활성 스킬 액션을 전투 런타임에 적용한다.
+ * 대상 선택과 효과 종류는 `listActiveSkillActions()`가 생성한 action을 기준으로 검증한다.
+ */
+export function applyActiveSkillAction(
+  runtime: BattleRuntimeState,
+  action: ActiveSkillBattleAction,
+): void {
+  assertLegalActiveSkillAction(runtime, action);
+
+  const source = findBattlefieldCardByInstanceId(runtime, action.cardInstanceId);
+  const target = findBattlefieldCardByInstanceId(runtime, action.targetInstanceId);
+  if (!source || !target) {
+    throw new Error('Active skill action references an unknown card');
+  }
+
+  source.hasUsedActiveSkillThisTurn = true;
+  if (action.effect === 'HEAL') {
+    target.card.instance.hp = readCardNumber(target.card.instance.hp, 0) + action.value;
     return;
   }
 
-  if (isLeaderCard(runtime, target)) {
-    runtime.phase = 'GAME_OVER';
-    runtime.outcome = {
-      winner: attacker.side,
-      loser: target.side,
-      reason: 'LEADER_DEFEATED',
-    };
+  if (action.effect === 'DAMAGE') {
+    applyDamageToBattlefieldCard(runtime, source.side, target, action.value);
     return;
   }
 
-  moveBattlefieldCardToDrop(runtime, target);
+  const ability = requireCardAbility(source, action.skillId);
+  addAbilityEffect(runtime, target, source, ability, {
+    stat: 'attack',
+    value: action.value,
+    expiresAt: 'BATTLEFIELD_LEAVE',
+  });
 }
 
 /**
@@ -302,6 +488,7 @@ export function applyAttackAction(runtime: BattleRuntimeState, action: AttackBat
  */
 export function applyTurnStart(runtime: BattleRuntimeState): BattleTurnEvent {
   const participant = getParticipant(runtime, runtime.currentSide);
+  expireAbilityEffectsAtTurnStart(runtime, runtime.currentSide);
   resetTurnFlagsForSide(runtime, runtime.currentSide);
 
   const drawnCard = participant.deck.shift() ?? null;
@@ -336,6 +523,7 @@ export function applyTurnEnd(
 
   const endedSide = runtime.currentSide;
   const nextSide = getOpposingSide(runtime.currentSide);
+  expireAbilityEffectsAtTurnEnd(runtime, endedSide);
   if (runtime.currentSide === 'enemy' && nextSide === 'player') {
     runtime.turnNumber += 1;
   }
@@ -409,10 +597,7 @@ export function chooseAutomatedBattleAction(
  * 지정 진영의 자동 턴을 실행한다.
  * 선택과 적용은 기존 도메인 액션 함수를 통해 수행하며, 행동 제한으로 무한 루프를 방지한다.
  */
-export function runAutomatedTurn(
-  runtime: BattleRuntimeState,
-  side: BattleSide,
-): BattleTurnEvent[] {
+export function runAutomatedTurn(runtime: BattleRuntimeState, side: BattleSide): BattleTurnEvent[] {
   if (runtime.currentSide !== side) {
     return [];
   }
@@ -569,8 +754,12 @@ function chooseAttackAction(
           return leftLeaderPriority - rightLeaderPriority;
         }
 
-        const leftHp = readCardNumber(left.target?.card.instance.hp, Number.POSITIVE_INFINITY);
-        const rightHp = readCardNumber(right.target?.card.instance.hp, Number.POSITIVE_INFINITY);
+        const leftHp = left.target
+          ? getEffectiveHp(runtime, left.target)
+          : Number.POSITIVE_INFINITY;
+        const rightHp = right.target
+          ? getEffectiveHp(runtime, right.target)
+          : Number.POSITIVE_INFINITY;
         if (leftHp !== rightHp) {
           return leftHp - rightHp;
         }
@@ -580,10 +769,7 @@ function chooseAttackAction(
   );
 }
 
-function applyAutomationAction(
-  runtime: BattleRuntimeState,
-  action: BattleAutomationAction,
-): void {
+function applyAutomationAction(runtime: BattleRuntimeState, action: BattleAutomationAction): void {
   if (action.type === 'PLACE') {
     applyPlaceAction(runtime, action);
     return;
@@ -629,6 +815,24 @@ function assertLegalAttackAction(runtime: BattleRuntimeState, action: AttackBatt
   );
   if (!isLegal) {
     throw new Error('Illegal attack action');
+  }
+}
+
+function assertLegalActiveSkillAction(
+  runtime: BattleRuntimeState,
+  action: ActiveSkillBattleAction,
+): void {
+  const isLegal = listActiveSkillActions(runtime).some(
+    (candidate) =>
+      candidate.cardInstanceId === action.cardInstanceId &&
+      candidate.skillId === action.skillId &&
+      candidate.targetInstanceId === action.targetInstanceId &&
+      candidate.targetSlotId === action.targetSlotId &&
+      candidate.effect === action.effect &&
+      candidate.value === action.value,
+  );
+  if (!isLegal) {
+    throw new Error('Illegal active skill action');
   }
 }
 
@@ -711,7 +915,7 @@ function canBasicAttack(
   }
 
   const blocker = findBattlefieldCardAtSlot(runtime, getFrontSlotId(target.side, targetZone));
-  return !blocker || readCardNumber(blocker.card.instance.hp, 0) <= 0;
+  return !blocker || getEffectiveHp(runtime, blocker) <= 0;
 }
 
 function isBackRowZone(zone: BattlefieldZone): boolean {
@@ -727,6 +931,249 @@ function getFrontSlotId(side: BattleSide, backZone: BattlefieldZone): BattleSlot
   }
 
   return formatBattleSlotId(side, 'FL');
+}
+
+function listCardAbilities(card: BattleCardRuntimeState, category: AbilityCategory): CardAbility[] {
+  return card.card.definition.abilities.filter((ability) => ability.category === category);
+}
+
+function requireCardAbility(card: BattleCardRuntimeState, abilityId: string): CardAbility {
+  const ability = card.card.definition.abilities.find((candidate) => candidate.id === abilityId);
+  if (!ability) {
+    throw new Error(`Unknown card abilityId: ${abilityId}`);
+  }
+
+  return ability;
+}
+
+function getRuntimeEffectBonus(card: BattleCardRuntimeState, stat: RuntimeEffectStat): number {
+  return card.abilityEffects.reduce((total, effect) => {
+    if (effect.stat !== stat) {
+      return total;
+    }
+
+    return total + readCardNumber(effect.value, 0);
+  }, 0);
+}
+
+function getPassiveStatBonus(
+  runtime: BattleRuntimeState,
+  card: BattleCardRuntimeState,
+  stat: RuntimeEffectStat,
+): number {
+  let total = 0;
+  for (const ability of listCardAbilities(card, 'FRONT')) {
+    const modifier = FRONT_PASSIVE_ABILITY_HANDLERS[ability.id]?.({
+      runtime,
+      source: card,
+      target: card,
+    });
+    if (modifier?.stat === stat) {
+      total += modifier.value;
+    }
+  }
+
+  for (const source of runtime.battlefield) {
+    if (source.zone !== 'BATTLEFIELD' || source.battlefieldSlot === null) {
+      continue;
+    }
+
+    for (const ability of listCardAbilities(source, 'GLOBAL')) {
+      const modifier = GLOBAL_PASSIVE_ABILITY_HANDLERS[ability.id]?.({
+        runtime,
+        source,
+        target: card,
+      });
+      if (modifier?.stat === stat) {
+        total += modifier.value;
+      }
+    }
+  }
+
+  return total;
+}
+
+function resolveSummonAbilities(runtime: BattleRuntimeState, card: BattleCardRuntimeState): void {
+  for (const ability of listCardAbilities(card, 'SUMMON')) {
+    if (!SUMMON_ATTACK_BONUS_ABILITY_IDS.has(ability.id)) {
+      continue;
+    }
+
+    addAbilityEffect(runtime, card, card, ability, {
+      stat: 'attack',
+      value: 1,
+      expiresAt: 'TURN_END',
+    });
+  }
+}
+
+function resolveMoveAbilities(runtime: BattleRuntimeState, card: BattleCardRuntimeState): void {
+  for (const ability of listCardAbilities(card, 'MOVE')) {
+    if (!MOVE_ATTACK_BONUS_ABILITY_IDS.has(ability.id)) {
+      continue;
+    }
+
+    addAbilityEffect(runtime, card, card, ability, {
+      stat: 'attack',
+      value: 1,
+      expiresAt: 'TURN_END',
+    });
+  }
+}
+
+function resolveAfterAttackAbilities(
+  runtime: BattleRuntimeState,
+  attacker: BattleCardRuntimeState,
+): void {
+  if (runtime.phase === 'GAME_OVER' || attacker.zone !== 'BATTLEFIELD') {
+    return;
+  }
+
+  for (const ability of listCardAbilities(attacker, 'ATTACK')) {
+    if (!AFTER_ATTACK_BUFF_ABILITY_IDS.has(ability.id)) {
+      continue;
+    }
+    if (getEffectiveHp(runtime, attacker) < 3) {
+      continue;
+    }
+
+    addAbilityEffect(runtime, attacker, attacker, ability, {
+      stat: 'attack',
+      value: 1,
+      expiresAt: 'NEXT_OWN_TURN_END',
+    });
+  }
+}
+
+function calculateAttackDamage(
+  runtime: BattleRuntimeState,
+  attacker: BattleCardRuntimeState,
+  target: BattleCardRuntimeState,
+): number {
+  const bonus = listCardAbilities(attacker, 'ATTACK').reduce((total, ability) => {
+    const handler = ATTACK_DAMAGE_BONUS_ABILITY_HANDLERS[ability.id];
+    if (!handler) {
+      return total;
+    }
+
+    return total + handler({ runtime, attacker, target });
+  }, 0);
+
+  return Math.max(0, getEffectiveAttack(runtime, attacker) + bonus);
+}
+
+function listActiveSkillTargets(
+  runtime: BattleRuntimeState,
+  source: BattleCardRuntimeState,
+  targetSide: ActiveSkillDefinition['targetSide'],
+): BattleCardRuntimeState[] {
+  const side = targetSide === 'ally' ? source.side : getOpposingSide(source.side);
+  return listBattlefieldCards(runtime, side).filter((card) => getEffectiveHp(runtime, card) > 0);
+}
+
+function addAbilityEffect(
+  runtime: BattleRuntimeState,
+  target: BattleCardRuntimeState,
+  source: BattleCardRuntimeState,
+  ability: CardAbility,
+  effect: {
+    stat: RuntimeEffectStat;
+    value: number;
+    expiresAt: BattleAbilityEffectExpiration;
+  },
+): void {
+  target.abilityEffects.push({
+    id: `${ability.id}:${source.card.instance.instanceId}:${target.card.instance.instanceId}:${runtime.turnNumber}:${target.abilityEffects.length}`,
+    sourceInstanceId: source.card.instance.instanceId,
+    category: ability.category,
+    stat: effect.stat,
+    value: effect.value,
+    expiresAt: effect.expiresAt,
+    createdTurnNumber: runtime.turnNumber,
+  });
+}
+
+function expireAbilityEffectsAtTurnStart(runtime: BattleRuntimeState, side: BattleSide): void {
+  for (const card of listAllRuntimeCards(runtime)) {
+    if (card.side !== side) {
+      continue;
+    }
+
+    card.abilityEffects = card.abilityEffects.filter(
+      (effect) =>
+        effect.expiresAt !== 'NEXT_OWN_TURN_START' ||
+        effect.createdTurnNumber >= runtime.turnNumber,
+    );
+  }
+}
+
+function expireAbilityEffectsAtTurnEnd(runtime: BattleRuntimeState, side: BattleSide): void {
+  for (const card of listAllRuntimeCards(runtime)) {
+    if (card.side !== side) {
+      continue;
+    }
+
+    card.abilityEffects = card.abilityEffects.filter((effect) => {
+      if (effect.expiresAt === 'TURN_END') {
+        return false;
+      }
+      if (
+        effect.expiresAt === 'NEXT_OWN_TURN_END' &&
+        effect.createdTurnNumber < runtime.turnNumber
+      ) {
+        return false;
+      }
+
+      return true;
+    });
+  }
+}
+
+function applyDamageToBattlefieldCard(
+  runtime: BattleRuntimeState,
+  sourceSide: BattleSide,
+  target: BattleCardRuntimeState,
+  damage: number,
+): void {
+  target.card.instance.hp = readCardNumber(target.card.instance.hp, 0) - Math.max(0, damage);
+  if (getEffectiveHp(runtime, target) > 0) {
+    return;
+  }
+
+  if (isLeaderCard(runtime, target)) {
+    runtime.phase = 'GAME_OVER';
+    runtime.outcome = {
+      winner: sourceSide,
+      loser: target.side,
+      reason: 'LEADER_DEFEATED',
+    };
+    return;
+  }
+
+  moveBattlefieldCardToDrop(runtime, target);
+}
+
+function clearBattlefieldLeaveEffects(
+  runtime: BattleRuntimeState,
+  leavingCard: BattleCardRuntimeState,
+): void {
+  const leavingInstanceId = leavingCard.card.instance.instanceId;
+  leavingCard.abilityEffects = [];
+
+  for (const card of listAllRuntimeCards(runtime)) {
+    if (card === leavingCard) {
+      continue;
+    }
+
+    card.abilityEffects = card.abilityEffects.filter(
+      (effect) =>
+        effect.expiresAt !== 'BATTLEFIELD_LEAVE' || effect.sourceInstanceId !== leavingInstanceId,
+    );
+  }
+}
+
+function hasTrait(card: BattleCardRuntimeState, key: string, text: string): boolean {
+  return card.card.definition.traits.some((trait) => trait.key === key && trait.text === text);
 }
 
 function readCardNumber(value: number | undefined, fallback: number): number {
@@ -780,6 +1227,23 @@ function listAllParticipantCards(
   });
 }
 
+function listAllRuntimeCards(runtime: BattleRuntimeState): BattleCardRuntimeState[] {
+  const cards = [
+    ...listAllParticipantCards(runtime, 'player'),
+    ...listAllParticipantCards(runtime, 'enemy'),
+  ];
+  const seen = new Set<string>();
+  return cards.filter((card) => {
+    const instanceId = card.card.instance.instanceId;
+    if (seen.has(instanceId)) {
+      return false;
+    }
+
+    seen.add(instanceId);
+    return true;
+  });
+}
+
 function isLeaderCard(runtime: BattleRuntimeState, card: BattleCardRuntimeState): boolean {
   return getParticipant(runtime, card.side).leader === card;
 }
@@ -788,6 +1252,7 @@ function moveBattlefieldCardToDrop(
   runtime: BattleRuntimeState,
   card: BattleCardRuntimeState,
 ): void {
+  clearBattlefieldLeaveEffects(runtime, card);
   runtime.battlefield = runtime.battlefield.filter(
     (entry) => entry.card.instance.instanceId !== card.card.instance.instanceId,
   );

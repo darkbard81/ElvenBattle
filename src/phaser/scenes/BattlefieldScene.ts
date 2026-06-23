@@ -1,11 +1,16 @@
 import Phaser from 'phaser';
 import {
+  applyActiveSkillAction,
   applyAttackAction,
   applyAutoTurnEndIfStalled,
   applyMoveAction,
   applyPlaceAction,
   applyTurnEnd,
   findBattlefieldCardAtSlot,
+  getEffectiveAttack,
+  getEffectiveDominance,
+  getEffectiveHp,
+  listActiveSkillActions,
   listAttackActions,
   listMoveActions,
   listPlaceActions,
@@ -14,6 +19,7 @@ import {
 import { createInitialBattleRuntime } from '../../game/battle/create-battle-runtime';
 import {
   INITIAL_HAND_SIZE,
+  type ActiveSkillBattleAction,
   type AttackBattleAction,
   type BattleAutomationAction,
   type BattleCardRuntimeState,
@@ -63,7 +69,14 @@ type BattleSelection =
       cardInstanceId: string;
       sourceSlotId: BattleSlotId;
       moveActions: MoveBattleAction[];
+      activeSkillActions: ActiveSkillBattleAction[];
       attackActions: AttackBattleAction[];
+    }
+  | {
+      kind: 'ACTIVE_SKILL';
+      cardInstanceId: string;
+      sourceSlotId: BattleSlotId;
+      activeSkillActions: ActiveSkillBattleAction[];
     };
 
 type CardViewOptions = {
@@ -77,7 +90,7 @@ type BattleFlowResult = {
 };
 
 type BattlePopupEvent = {
-  kind: 'PLACE' | 'MOVE' | 'ATTACK';
+  kind: 'PLACE' | 'MOVE' | 'ATTACK' | 'SKILL';
   slotId: BattleSlotId;
   text: string;
 };
@@ -89,6 +102,7 @@ const BATTLE_POPUP_DURATION_MS = 500;
 const PLACE_HIGHLIGHT_COLOR = 0x71d879;
 const MOVE_HIGHLIGHT_COLOR = 0x79b8ff;
 const ATTACK_HIGHLIGHT_COLOR = 0xff6f6f;
+const SKILL_HIGHLIGHT_COLOR = 0xf4c95d;
 const SELECTED_HIGHLIGHT_COLOR = 0xfff1a3;
 const CARD_BACK_TEXTURE_KEY = 'cards.webp.card_back';
 const POPUP_STYLE = {
@@ -106,6 +120,11 @@ const POPUP_STYLE = {
     fill: 0x4b1717,
     stroke: ATTACK_HIGHLIGHT_COLOR,
     color: '#ffe1dc',
+  },
+  SKILL: {
+    fill: 0x463416,
+    stroke: SKILL_HIGHLIGHT_COLOR,
+    color: '#fff3c2',
   },
 } as const;
 const SLOT_COLUMNS = {
@@ -132,18 +151,78 @@ const HAND_RECT = {
   height: 288,
 } as const satisfies Rect;
 const FIELD_SLOT_RECTS: Record<BattleSlotId, Rect> = {
-  'enemy:BR': createCenteredRect(SLOT_COLUMNS.FR, SLOT_ROWS.enemyBack, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
-  'enemy:BC': createCenteredRect(SLOT_COLUMNS.FC, SLOT_ROWS.enemyBack, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
-  'enemy:BL': createCenteredRect(SLOT_COLUMNS.FL, SLOT_ROWS.enemyBack, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
-  'enemy:FR': createCenteredRect(SLOT_COLUMNS.FR, SLOT_ROWS.enemyFront, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
-  'enemy:FC': createCenteredRect(SLOT_COLUMNS.FC, SLOT_ROWS.enemyFront, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
-  'enemy:FL': createCenteredRect(SLOT_COLUMNS.FL, SLOT_ROWS.enemyFront, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
-  'player:FR': createCenteredRect(SLOT_COLUMNS.FR, SLOT_ROWS.playerFront, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
-  'player:FC': createCenteredRect(SLOT_COLUMNS.FC, SLOT_ROWS.playerFront, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
-  'player:FL': createCenteredRect(SLOT_COLUMNS.FL, SLOT_ROWS.playerFront, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
-  'player:BR': createCenteredRect(SLOT_COLUMNS.FR, SLOT_ROWS.playerBack, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
-  'player:BC': createCenteredRect(SLOT_COLUMNS.FC, SLOT_ROWS.playerBack, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
-  'player:BL': createCenteredRect(SLOT_COLUMNS.FL, SLOT_ROWS.playerBack, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
+  'enemy:BR': createCenteredRect(
+    SLOT_COLUMNS.FR,
+    SLOT_ROWS.enemyBack,
+    FIELD_SLOT_WIDTH,
+    FIELD_SLOT_HEIGHT,
+  ),
+  'enemy:BC': createCenteredRect(
+    SLOT_COLUMNS.FC,
+    SLOT_ROWS.enemyBack,
+    FIELD_SLOT_WIDTH,
+    FIELD_SLOT_HEIGHT,
+  ),
+  'enemy:BL': createCenteredRect(
+    SLOT_COLUMNS.FL,
+    SLOT_ROWS.enemyBack,
+    FIELD_SLOT_WIDTH,
+    FIELD_SLOT_HEIGHT,
+  ),
+  'enemy:FR': createCenteredRect(
+    SLOT_COLUMNS.FR,
+    SLOT_ROWS.enemyFront,
+    FIELD_SLOT_WIDTH,
+    FIELD_SLOT_HEIGHT,
+  ),
+  'enemy:FC': createCenteredRect(
+    SLOT_COLUMNS.FC,
+    SLOT_ROWS.enemyFront,
+    FIELD_SLOT_WIDTH,
+    FIELD_SLOT_HEIGHT,
+  ),
+  'enemy:FL': createCenteredRect(
+    SLOT_COLUMNS.FL,
+    SLOT_ROWS.enemyFront,
+    FIELD_SLOT_WIDTH,
+    FIELD_SLOT_HEIGHT,
+  ),
+  'player:FR': createCenteredRect(
+    SLOT_COLUMNS.FR,
+    SLOT_ROWS.playerFront,
+    FIELD_SLOT_WIDTH,
+    FIELD_SLOT_HEIGHT,
+  ),
+  'player:FC': createCenteredRect(
+    SLOT_COLUMNS.FC,
+    SLOT_ROWS.playerFront,
+    FIELD_SLOT_WIDTH,
+    FIELD_SLOT_HEIGHT,
+  ),
+  'player:FL': createCenteredRect(
+    SLOT_COLUMNS.FL,
+    SLOT_ROWS.playerFront,
+    FIELD_SLOT_WIDTH,
+    FIELD_SLOT_HEIGHT,
+  ),
+  'player:BR': createCenteredRect(
+    SLOT_COLUMNS.FR,
+    SLOT_ROWS.playerBack,
+    FIELD_SLOT_WIDTH,
+    FIELD_SLOT_HEIGHT,
+  ),
+  'player:BC': createCenteredRect(
+    SLOT_COLUMNS.FC,
+    SLOT_ROWS.playerBack,
+    FIELD_SLOT_WIDTH,
+    FIELD_SLOT_HEIGHT,
+  ),
+  'player:BL': createCenteredRect(
+    SLOT_COLUMNS.FL,
+    SLOT_ROWS.playerBack,
+    FIELD_SLOT_WIDTH,
+    FIELD_SLOT_HEIGHT,
+  ),
 };
 const SLOT_ORDER: readonly BattleSlotId[] = [
   'enemy:BR',
@@ -274,32 +353,29 @@ export class BattlefieldScene extends Phaser.Scene {
   }
 
   private addTopHud(): void {
-    this.addInfoPanel(
-      { x: 44, y: 52, width: 320, height: 138 },
-      [
-        `ENEMY ${this.runtime.enemy.leader.card.definition.name}`,
-        `HP ${this.runtime.enemy.leader.card.instance.hp}  ATK ${this.runtime.enemy.leader.card.instance.attack}`,
-        `Deck ${this.runtime.enemy.deck.length}  Drop ${this.runtime.enemy.drop.length}`,
-      ],
-    );
-    this.addInfoPanel(
-      { x: 440, y: 52, width: 320, height: 138 },
-      [
-        `${formatSideLabel(this.runtime.currentSide)} TURN`,
-        `Round ${this.runtime.turnNumber}`,
-        this.runtime.outcome
-          ? `${formatSideLabel(this.runtime.outcome.winner)} WINS`
-          : this.runtime.phase,
-      ],
-    );
-    this.addInfoPanel(
-      { x: 836, y: 52, width: 320, height: 138 },
-      [
-        `PLAYER ${this.runtime.player.leader.card.definition.name}`,
-        `HP ${this.runtime.player.leader.card.instance.hp}  ATK ${this.runtime.player.leader.card.instance.attack}`,
-        `Deck ${this.runtime.player.deck.length}  Hand ${this.runtime.player.hand.length}`,
-      ],
-    );
+    this.addInfoPanel({ x: 44, y: 52, width: 320, height: 138 }, [
+      `ENEMY ${this.runtime.enemy.leader.card.definition.name}`,
+      `HP ${getEffectiveHp(this.runtime, this.runtime.enemy.leader)}  ATK ${getEffectiveAttack(
+        this.runtime,
+        this.runtime.enemy.leader,
+      )}`,
+      `Deck ${this.runtime.enemy.deck.length}  Drop ${this.runtime.enemy.drop.length}`,
+    ]);
+    this.addInfoPanel({ x: 440, y: 52, width: 320, height: 138 }, [
+      `${formatSideLabel(this.runtime.currentSide)} TURN`,
+      `Round ${this.runtime.turnNumber}`,
+      this.runtime.outcome
+        ? `${formatSideLabel(this.runtime.outcome.winner)} WINS`
+        : this.runtime.phase,
+    ]);
+    this.addInfoPanel({ x: 836, y: 52, width: 320, height: 138 }, [
+      `PLAYER ${this.runtime.player.leader.card.definition.name}`,
+      `HP ${getEffectiveHp(this.runtime, this.runtime.player.leader)}  ATK ${getEffectiveAttack(
+        this.runtime,
+        this.runtime.player.leader,
+      )}`,
+      `Deck ${this.runtime.player.deck.length}  Hand ${this.runtime.player.hand.length}`,
+    ]);
   }
 
   private addInfoPanel(rect: Rect, lines: [string, string, string]): void {
@@ -501,7 +577,9 @@ export class BattlefieldScene extends Phaser.Scene {
     const textureKey = `cards.webp.${card.card.instance.id}`;
 
     if (this.textures.exists(textureKey)) {
-      parent.add(this.add.image(centerX, centerY, textureKey).setDisplaySize(rect.width, rect.height));
+      parent.add(
+        this.add.image(centerX, centerY, textureKey).setDisplaySize(rect.width, rect.height),
+      );
     } else {
       const fallback = this.add.rectangle(
         centerX,
@@ -515,7 +593,6 @@ export class BattlefieldScene extends Phaser.Scene {
       parent.add(fallback);
     }
 
-    const instance = card.card.instance;
     const paddingX = mode === 'field' ? 21 : 16;
     const paddingY = mode === 'field' ? 18 : 14;
     const badgeSize = mode === 'field' ? 34 : 30;
@@ -525,7 +602,7 @@ export class BattlefieldScene extends Phaser.Scene {
       parent,
       rect.x + paddingX,
       rect.y + paddingY,
-      String(instance.dominance ?? 0),
+      String(getEffectiveDominance(this.runtime, card)),
       badgeSize,
       fontSize,
     );
@@ -533,7 +610,7 @@ export class BattlefieldScene extends Phaser.Scene {
       parent,
       rect.x + rect.width - paddingX - 4,
       rect.y + paddingY,
-      String(instance.cost ?? 0),
+      String(card.card.instance.cost ?? 0),
       badgeSize,
       fontSize,
     );
@@ -541,7 +618,7 @@ export class BattlefieldScene extends Phaser.Scene {
       parent,
       rect.x + paddingX,
       rect.y + rect.height - paddingY - 8,
-      String(instance.hp),
+      String(getEffectiveHp(this.runtime, card)),
       badgeSize,
       fontSize,
     );
@@ -549,7 +626,7 @@ export class BattlefieldScene extends Phaser.Scene {
       parent,
       rect.x + rect.width - paddingX - 4,
       rect.y + rect.height - paddingY - 8,
-      String(instance.attack),
+      String(getEffectiveAttack(this.runtime, card)),
       badgeSize,
       fontSize,
     );
@@ -603,7 +680,9 @@ export class BattlefieldScene extends Phaser.Scene {
     this.handDeckContainer = container;
     this.layers.handLayer.add(container);
 
-    const panel = this.add.rectangle(0, 0, HAND_RECT.width, HAND_RECT.height, 0x10211b, 0.95).setOrigin(0.5, 0);
+    const panel = this.add
+      .rectangle(0, 0, HAND_RECT.width, HAND_RECT.height, 0x10211b, 0.95)
+      .setOrigin(0.5, 0);
     panel.setStrokeStyle(2, 0xcde7cb, 0.78);
     container.add(panel);
     this.addHandCards(container);
@@ -754,9 +833,12 @@ export class BattlefieldScene extends Phaser.Scene {
       y: 1818,
       width: 152,
       height: 52,
-      label: 'Undo',
-      enabled: false,
+      label: 'Skill',
+      enabled: this.canStartActiveSkillTargeting(),
       parent: this.layers.buttonLayer,
+      onClick: () => {
+        this.startActiveSkillTargeting();
+      },
     });
   }
 
@@ -772,6 +854,32 @@ export class BattlefieldScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setAlpha(0.9);
     this.layers.hudLayer.add(this.statusText);
+  }
+
+  private canStartActiveSkillTargeting(): boolean {
+    return (
+      this.isPlayerControlActive() &&
+      this.selection?.kind === 'FIELD_CARD' &&
+      this.selection.activeSkillActions.length > 0
+    );
+  }
+
+  private startActiveSkillTargeting(): void {
+    if (!this.canStartActiveSkillTargeting() || this.selection?.kind !== 'FIELD_CARD') {
+      return;
+    }
+
+    this.selection = {
+      kind: 'ACTIVE_SKILL',
+      cardInstanceId: this.selection.cardInstanceId,
+      sourceSlotId: this.selection.sourceSlotId,
+      activeSkillActions: this.selection.activeSkillActions,
+    };
+    this.selectedSlotId = null;
+    this.redrawHighlight();
+    this.setStatus(
+      `Select a gold skill target for ${this.getCardName(this.selection.cardInstanceId)}.`,
+    );
   }
 
   private selectSlot(slotId: BattleSlotId): void {
@@ -799,6 +907,15 @@ export class BattlefieldScene extends Phaser.Scene {
       return;
     }
 
+    if (this.selection?.kind === 'ACTIVE_SKILL') {
+      if (this.applySelectedActiveSkillToSlot(slotId)) {
+        return;
+      }
+
+      this.setStatus(`Selected skill has no target on ${slotId}.`);
+      return;
+    }
+
     if (this.selection?.kind === 'FIELD_CARD') {
       const moveAction = this.selection.moveActions.find(
         (candidate) => candidate.toSlotId === slotId,
@@ -817,8 +934,8 @@ export class BattlefieldScene extends Phaser.Scene {
         (candidate) => candidate.toSlotId === slotId,
       );
       if (attackAction) {
-        const popupEvent = this.createActionPopupEvent(this.runtime.currentSide, attackAction);
         applyAttackAction(this.runtime, attackAction);
+        const popupEvent = this.createActionPopupEvent(this.runtime.currentSide, attackAction);
         this.finishBattleAction(
           `${this.getCardName(attackAction.attackerInstanceId)} attacked ${this.getCardName(
             attackAction.targetInstanceId,
@@ -880,6 +997,15 @@ export class BattlefieldScene extends Phaser.Scene {
       return;
     }
 
+    if (this.selection?.kind === 'ACTIVE_SKILL' && card.battlefieldSlot !== null) {
+      if (this.applySelectedActiveSkillToSlot(card.battlefieldSlot)) {
+        return;
+      }
+
+      this.setStatus(`${card.card.instance.name} is not a selected skill target.`);
+      return;
+    }
+
     if (
       this.selection?.kind === 'FIELD_CARD' &&
       card.battlefieldSlot !== null &&
@@ -889,8 +1015,8 @@ export class BattlefieldScene extends Phaser.Scene {
         (candidate) => candidate.toSlotId === card.battlefieldSlot,
       );
       if (attackAction) {
-        const popupEvent = this.createActionPopupEvent(this.runtime.currentSide, attackAction);
         applyAttackAction(this.runtime, attackAction);
+        const popupEvent = this.createActionPopupEvent(this.runtime.currentSide, attackAction);
         this.finishBattleAction(
           `${this.getCardName(attackAction.attackerInstanceId)} attacked ${this.getCardName(
             attackAction.targetInstanceId,
@@ -917,7 +1043,10 @@ export class BattlefieldScene extends Phaser.Scene {
     const attackActions = listAttackActions(this.runtime).filter(
       (action) => action.attackerInstanceId === card.card.instance.instanceId,
     );
-    if (moveActions.length === 0 && attackActions.length === 0) {
+    const activeSkillActions = listActiveSkillActions(this.runtime).filter(
+      (action) => action.cardInstanceId === card.card.instance.instanceId,
+    );
+    if (moveActions.length === 0 && attackActions.length === 0 && activeSkillActions.length === 0) {
       this.selection = null;
       this.selectedSlotId = card.battlefieldSlot;
       this.redrawHighlight();
@@ -931,10 +1060,35 @@ export class BattlefieldScene extends Phaser.Scene {
       sourceSlotId: card.battlefieldSlot,
       moveActions,
       attackActions,
+      activeSkillActions,
     };
     this.selectedSlotId = null;
     this.redrawHighlight();
-    this.setStatus(`Select a blue move slot or red attack target for ${card.card.instance.name}.`);
+    this.setStatus(
+      `Select a blue move slot, red attack target, or Skill for ${card.card.instance.name}.`,
+    );
+  }
+
+  private applySelectedActiveSkillToSlot(slotId: BattleSlotId): boolean {
+    if (this.selection?.kind !== 'ACTIVE_SKILL') {
+      return false;
+    }
+
+    const action = this.selection.activeSkillActions.find(
+      (candidate) => candidate.targetSlotId === slotId,
+    );
+    if (!action) {
+      return false;
+    }
+
+    applyActiveSkillAction(this.runtime, action);
+    this.finishBattleAction(
+      `${this.getCardName(action.cardInstanceId)} used ${formatActiveSkillEffect(action)} on ${this.getCardName(
+        action.targetInstanceId,
+      )}.`,
+      [this.createActiveSkillPopupEvent(action)],
+    );
+    return true;
   }
 
   private redrawHighlight(): void {
@@ -953,6 +1107,13 @@ export class BattlefieldScene extends Phaser.Scene {
       }
       for (const action of this.selection.attackActions) {
         this.drawSlotHighlight(action.toSlotId, ATTACK_HIGHLIGHT_COLOR, 0.92);
+      }
+    }
+
+    if (this.selection?.kind === 'ACTIVE_SKILL') {
+      this.drawSlotHighlight(this.selection.sourceSlotId, SELECTED_HIGHLIGHT_COLOR, 0.98);
+      for (const action of this.selection.activeSkillActions) {
+        this.drawSlotHighlight(action.targetSlotId, SKILL_HIGHLIGHT_COLOR, 0.92);
       }
     }
 
@@ -1096,7 +1257,9 @@ export class BattlefieldScene extends Phaser.Scene {
 
   private createPopupEventsForTurnEvents(events: readonly BattleTurnEvent[]): BattlePopupEvent[] {
     return events
-      .filter((event): event is Extract<BattleTurnEvent, { type: 'ACTION' }> => event.type === 'ACTION')
+      .filter(
+        (event): event is Extract<BattleTurnEvent, { type: 'ACTION' }> => event.type === 'ACTION',
+      )
       .map((event) => this.createActionPopupEvent(event.side, event.action));
   }
 
@@ -1125,6 +1288,30 @@ export class BattlefieldScene extends Phaser.Scene {
       kind: 'ATTACK',
       slotId: action.toSlotId,
       text: `ATTACK -${action.attack}`,
+    };
+  }
+
+  private createActiveSkillPopupEvent(action: ActiveSkillBattleAction): BattlePopupEvent {
+    if (action.effect === 'HEAL') {
+      return {
+        kind: 'SKILL',
+        slotId: action.targetSlotId,
+        text: `SKILL +${action.value}`,
+      };
+    }
+
+    if (action.effect === 'DAMAGE') {
+      return {
+        kind: 'SKILL',
+        slotId: action.targetSlotId,
+        text: `SKILL -${action.value}`,
+      };
+    }
+
+    return {
+      kind: 'SKILL',
+      slotId: action.targetSlotId,
+      text: `SKILL ATK+${action.value}`,
     };
   }
 
@@ -1159,14 +1346,7 @@ export class BattlefieldScene extends Phaser.Scene {
         align: 'center',
       })
       .setOrigin(0.5);
-    const bubble = this.add.rectangle(
-      0,
-      0,
-      Math.max(112, text.width + 34),
-      44,
-      style.fill,
-      0.94,
-    );
+    const bubble = this.add.rectangle(0, 0, Math.max(112, text.width + 34), 44, style.fill, 0.94);
     bubble.setStrokeStyle(3, style.stroke, 0.92);
 
     container.add([bubble, text]);
@@ -1259,6 +1439,20 @@ function formatSlotLabel(slotId: BattleSlotId): string {
  */
 function formatSideLabel(side: BattleSide): string {
   return side === 'player' ? 'PLAYER' : 'ENEMY';
+}
+
+/**
+ * 활성 스킬 효과를 상태 메시지에 넣을 짧은 영문 문구로 변환한다.
+ */
+function formatActiveSkillEffect(action: ActiveSkillBattleAction): string {
+  if (action.effect === 'HEAL') {
+    return `Heal +${action.value}`;
+  }
+  if (action.effect === 'DAMAGE') {
+    return `Damage ${action.value}`;
+  }
+
+  return `Attack +${action.value}`;
 }
 
 /**

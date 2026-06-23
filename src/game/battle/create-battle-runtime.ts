@@ -94,5 +94,6 @@ function createBattleCardRuntimeState(
     hasMovedThisTurn: false,
     hasAttackedThisTurn: false,
     hasUsedActiveSkillThisTurn: false,
+    abilityEffects: [],
   };
 }

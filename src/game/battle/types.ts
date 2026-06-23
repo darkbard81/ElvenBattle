@@ -1,3 +1,4 @@
+import type { AbilityCategory } from '../save/card-catalog';
 import type { RuntimeCardInstance } from '../save/session';
 
 export type BattleRuntimeZone = 'DECK' | 'HAND' | 'BATTLEFIELD' | 'DROP' | 'EXILE';
@@ -16,6 +17,25 @@ export const ENEMY_INITIAL_LEADER_SLOT = 'enemy:BC' as const satisfies BattleSlo
 
 export const INITIAL_HAND_SIZE = 5 as const;
 
+export type BattleAbilityEffectExpiration =
+  | 'TURN_END'
+  | 'NEXT_OWN_TURN_START'
+  | 'NEXT_OWN_TURN_END'
+  | 'BATTLEFIELD_LEAVE'
+  | 'NONE';
+
+export type BattleAbilityEffectRuntime = {
+  id: string;
+  sourceInstanceId: string;
+  category: AbilityCategory;
+  stat?: 'attack' | 'hp' | 'dominance';
+  value?: number;
+  expiresAt: BattleAbilityEffectExpiration;
+  createdTurnNumber: number;
+};
+
+export type ActiveSkillBattleEffect = 'HEAL' | 'DAMAGE' | 'BUFF_ATTACK';
+
 export type BattleCardRuntimeState = {
   card: RuntimeCardInstance;
   side: BattleSide;
@@ -26,6 +46,7 @@ export type BattleCardRuntimeState = {
   hasMovedThisTurn: boolean;
   hasAttackedThisTurn: boolean;
   hasUsedActiveSkillThisTurn: boolean;
+  abilityEffects: BattleAbilityEffectRuntime[];
 };
 
 export type BattleParticipantRuntimeState = {
@@ -72,15 +93,15 @@ export type ActiveSkillBattleAction = {
   type: 'ACTIVE_SKILL';
   cardInstanceId: string;
   skillId: string;
+  targetInstanceId: string;
+  targetSlotId: BattleSlotId;
+  effect: ActiveSkillBattleEffect;
+  value: number;
 };
 
 export type BattleAutomationAction = PlaceBattleAction | MoveBattleAction | AttackBattleAction;
 
-export type BattleTurnEndReason =
-  | 'MANUAL'
-  | 'STALLED'
-  | 'NO_ACTION'
-  | 'ACTION_LIMIT';
+export type BattleTurnEndReason = 'MANUAL' | 'STALLED' | 'NO_ACTION' | 'ACTION_LIMIT';
 
 export type BattleTurnEvent =
   | {
