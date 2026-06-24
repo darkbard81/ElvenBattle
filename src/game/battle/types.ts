@@ -89,6 +89,13 @@ export type AttackBattleAction = {
   attack: number;
 };
 
+export type BlockBattleAction = {
+  type: 'BLOCK';
+  attackAction: AttackBattleAction;
+  blockerInstanceId: string;
+  blockerSlotId: BattleSlotId;
+};
+
 export type ActiveSkillBattleAction = {
   type: 'ACTIVE_SKILL';
   cardInstanceId: string;
@@ -100,6 +107,17 @@ export type ActiveSkillBattleAction = {
 };
 
 export type BattleAutomationAction = PlaceBattleAction | MoveBattleAction | AttackBattleAction;
+
+export type BattleBlockDecision = {
+  attackAction: AttackBattleAction;
+  blockActions: BlockBattleAction[];
+};
+
+export type BattleAutomatedTurnResult = {
+  events: BattleTurnEvent[];
+  blockDecision: BattleBlockDecision | null;
+  actionCount: number;
+};
 
 export type BattleTurnEndReason = 'MANUAL' | 'STALLED' | 'NO_ACTION' | 'ACTION_LIMIT';
 

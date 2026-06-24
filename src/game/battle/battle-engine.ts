@@ -3,9 +3,11 @@ import type {
   ActiveSkillBattleAction,
   ActiveSkillBattleEffect,
   AttackBattleAction,
+  BattleAutomatedTurnResult,
   BattleAutomationAction,
   BattleAvailableActions,
   BattleAbilityEffectExpiration,
+  BattleBlockDecision,
   BattleCardRuntimeState,
   BattlefieldZone,
   BattleParticipantRuntimeState,
@@ -14,6 +16,7 @@ import type {
   BattleSlotId,
   BattleTurnEndReason,
   BattleTurnEvent,
+  BlockBattleAction,
   MoveBattleAction,
   PlaceBattleAction,
 } from './types';
@@ -47,6 +50,11 @@ type ActiveSkillDefinition = {
   effect: ActiveSkillBattleEffect;
   value: number;
   targetSide: 'ally' | 'enemy';
+};
+
+type RunAutomatedTurnUntilBlockDecisionOptions = {
+  interruptForBlockSide?: BattleSide;
+  initialActionCount?: number;
 };
 
 const FRONT_PASSIVE_ABILITY_HANDLERS: Partial<
@@ -322,6 +330,53 @@ export function listAttackActions(
 }
 
 /**
+ * 공격 액션을 기준으로 `guardian_block`을 선언할 수 있는 방어 후보를 계산한다.
+ * 리더 직접 공격과 비합법 공격은 후보를 만들지 않아 호출자가 공격 규칙을 중복 구현하지 않게 한다.
+ */
+export function listBlockActions(
+  runtime: BattleRuntimeState,
+  attackAction: AttackBattleAction,
+): BlockBattleAction[] {
+  if (!isLegalAttackAction(runtime, attackAction)) {
+    return [];
+  }
+
+  const target = findBattlefieldCardByInstanceId(runtime, attackAction.targetInstanceId);
+  if (
+    !target ||
+    target.battlefieldSlot === null ||
+    isLeaderCard(runtime, target) ||
+    getEffectiveHp(runtime, target) <= 0
+  ) {
+    return [];
+  }
+
+  const { zone } = parseBattleSlotId(target.battlefieldSlot);
+  return getAdjacentSlotIds(target.side, zone).flatMap((slotId): BlockBattleAction[] => {
+    const blocker = findBattlefieldCardAtSlot(runtime, slotId);
+    if (
+      !blocker ||
+      blocker === target ||
+      blocker.side !== target.side ||
+      blocker.battlefieldSlot === null ||
+      getEffectiveHp(runtime, blocker) <= 0 ||
+      !hasCardAbility(blocker, 'GLOBAL', 'guardian_block')
+    ) {
+      return [];
+    }
+
+    return [
+      {
+        type: 'BLOCK',
+        attackAction,
+        blockerInstanceId: blocker.card.instance.instanceId,
+        blockerSlotId: blocker.battlefieldSlot,
+      },
+    ];
+  });
+}
+
+/**
  * 현재 카드 데이터 기준으로 가능한 활성 스킬 후보를 반환한다.
  * 능력별 대상 규칙은 엔진에서 해석하고, Scene은 반환된 대상 슬롯만 표시한다.
  */
@@ -440,11 +495,22 @@ export function applyAttackAction(runtime: BattleRuntimeState, action: AttackBat
     throw new Error('Attack action references an unknown card');
   }
 
-  runtime.phase = 'ATTACK';
-  attacker.hasAttackedThisTurn = true;
-  action.attack = calculateAttackDamage(runtime, attacker, target);
-  applyDamageToBattlefieldCard(runtime, attacker.side, target, action.attack);
-  resolveAfterAttackAbilities(runtime, attacker);
+  resolveAttackDamage(runtime, action, target);
+}
+
+/**
+ * 합법 Block 액션을 전투 런타임에 적용한다.
+ * 공격 피해량은 원래 공격 대상 기준으로 계산하고, 실제 피해 적용 대상만 blocker로 바꾼다.
+ */
+export function applyBlockAction(runtime: BattleRuntimeState, action: BlockBattleAction): void {
+  assertLegalBlockAction(runtime, action);
+
+  const blocker = findBattlefieldCardByInstanceId(runtime, action.blockerInstanceId);
+  if (!blocker) {
+    throw new Error('Block action references an unknown blocker');
+  }
+
+  resolveAttackDamage(runtime, action.attackAction, blocker);
 }
 
 /**
@@ -598,12 +664,28 @@ export function chooseAutomatedBattleAction(
  * 선택과 적용은 기존 도메인 액션 함수를 통해 수행하며, 행동 제한으로 무한 루프를 방지한다.
  */
 export function runAutomatedTurn(runtime: BattleRuntimeState, side: BattleSide): BattleTurnEvent[] {
+  return runAutomatedTurnUntilBlockDecision(runtime, side).events;
+}
+
+/**
+ * 지정 진영의 자동 턴을 실행하되, 방어 측 Block 선택이 필요한 공격 앞에서 멈출 수 있다.
+ * 중단된 공격은 아직 적용하지 않으며, 호출자는 선택 결과 적용 후 `initialActionCount`를 이어서 넘긴다.
+ */
+export function runAutomatedTurnUntilBlockDecision(
+  runtime: BattleRuntimeState,
+  side: BattleSide,
+  options: RunAutomatedTurnUntilBlockDecisionOptions = {},
+): BattleAutomatedTurnResult {
+  const events: BattleTurnEvent[] = [];
+  let actionCount = Math.max(0, options.initialActionCount ?? 0);
   if (runtime.currentSide !== side) {
-    return [];
+    return {
+      events,
+      blockDecision: null,
+      actionCount,
+    };
   }
 
-  const events: BattleTurnEvent[] = [];
-  let actionCount = 0;
   while (runtime.currentSide === side) {
     if (runtime.phase === 'GAME_OVER') {
       break;
@@ -625,6 +707,15 @@ export function runAutomatedTurn(runtime: BattleRuntimeState, side: BattleSide):
       break;
     }
 
+    const blockDecision = createBlockDecisionForAutomatedAction(runtime, action, options);
+    if (blockDecision) {
+      return {
+        events,
+        blockDecision,
+        actionCount,
+      };
+    }
+
     applyAutomationAction(runtime, action);
     actionCount += 1;
     events.push({
@@ -638,7 +729,11 @@ export function runAutomatedTurn(runtime: BattleRuntimeState, side: BattleSide):
     }
   }
 
-  return events;
+  return {
+    events,
+    blockDecision: null,
+    actionCount,
+  };
 }
 
 type DominanceAutomationCandidate = {
@@ -783,6 +878,31 @@ function applyAutomationAction(runtime: BattleRuntimeState, action: BattleAutoma
   applyAttackAction(runtime, action);
 }
 
+function createBlockDecisionForAutomatedAction(
+  runtime: BattleRuntimeState,
+  action: BattleAutomationAction,
+  options: RunAutomatedTurnUntilBlockDecisionOptions,
+): BattleBlockDecision | null {
+  if (action.type !== 'ATTACK' || !options.interruptForBlockSide) {
+    return null;
+  }
+
+  const target = findBattlefieldCardByInstanceId(runtime, action.targetInstanceId);
+  if (!target || target.side !== options.interruptForBlockSide) {
+    return null;
+  }
+
+  const blockActions = listBlockActions(runtime, action);
+  if (blockActions.length === 0) {
+    return null;
+  }
+
+  return {
+    attackAction: action,
+    blockActions,
+  };
+}
+
 function assertLegalPlaceAction(runtime: BattleRuntimeState, action: PlaceBattleAction): void {
   const isLegal = listPlaceActions(runtime).some(
     (candidate) =>
@@ -808,13 +928,27 @@ function assertLegalMoveAction(runtime: BattleRuntimeState, action: MoveBattleAc
 }
 
 function assertLegalAttackAction(runtime: BattleRuntimeState, action: AttackBattleAction): void {
-  const isLegal = listAttackActions(runtime).some(
+  if (!isLegalAttackAction(runtime, action)) {
+    throw new Error('Illegal attack action');
+  }
+}
+
+function isLegalAttackAction(runtime: BattleRuntimeState, action: AttackBattleAction): boolean {
+  return listAttackActions(runtime).some(
     (candidate) =>
       candidate.attackerInstanceId === action.attackerInstanceId &&
       candidate.targetInstanceId === action.targetInstanceId,
   );
+}
+
+function assertLegalBlockAction(runtime: BattleRuntimeState, action: BlockBattleAction): void {
+  const isLegal = listBlockActions(runtime, action.attackAction).some(
+    (candidate) =>
+      candidate.blockerInstanceId === action.blockerInstanceId &&
+      candidate.blockerSlotId === action.blockerSlotId,
+  );
   if (!isLegal) {
-    throw new Error('Illegal attack action');
+    throw new Error('Illegal block action');
   }
 }
 
@@ -946,6 +1080,14 @@ function requireCardAbility(card: BattleCardRuntimeState, abilityId: string): Ca
   return ability;
 }
 
+function hasCardAbility(
+  card: BattleCardRuntimeState,
+  category: AbilityCategory,
+  abilityId: string,
+): boolean {
+  return listCardAbilities(card, category).some((ability) => ability.id === abilityId);
+}
+
 function getRuntimeEffectBonus(card: BattleCardRuntimeState, stat: RuntimeEffectStat): number {
   return card.abilityEffects.reduce((total, effect) => {
     if (effect.stat !== stat) {
@@ -1060,6 +1202,24 @@ function calculateAttackDamage(
   }, 0);
 
   return Math.max(0, getEffectiveAttack(runtime, attacker) + bonus);
+}
+
+function resolveAttackDamage(
+  runtime: BattleRuntimeState,
+  action: AttackBattleAction,
+  damageTarget: BattleCardRuntimeState,
+): void {
+  const attacker = findBattlefieldCardByInstanceId(runtime, action.attackerInstanceId);
+  const originalTarget = findBattlefieldCardByInstanceId(runtime, action.targetInstanceId);
+  if (!attacker || !originalTarget) {
+    throw new Error('Attack action references an unknown card');
+  }
+
+  runtime.phase = 'ATTACK';
+  attacker.hasAttackedThisTurn = true;
+  action.attack = calculateAttackDamage(runtime, attacker, originalTarget);
+  applyDamageToBattlefieldCard(runtime, attacker.side, damageTarget, action.attack);
+  resolveAfterAttackAbilities(runtime, attacker);
 }
 
 function listActiveSkillTargets(

@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import {
   applyActiveSkillAction,
   applyAttackAction,
+  applyBlockAction,
   applyAutoTurnEndIfStalled,
   applyMoveAction,
   applyPlaceAction,
@@ -14,7 +15,7 @@ import {
   listAttackActions,
   listMoveActions,
   listPlaceActions,
-  runAutomatedTurn,
+  runAutomatedTurnUntilBlockDecision,
 } from '../../game/battle/battle-engine';
 import { createInitialBattleRuntime } from '../../game/battle/create-battle-runtime';
 import {
@@ -27,6 +28,7 @@ import {
   type BattleSide,
   type BattleSlotId,
   type BattleTurnEvent,
+  type BlockBattleAction,
   type MoveBattleAction,
   type PlaceBattleAction,
 } from '../../game/battle/types';
@@ -79,6 +81,12 @@ type BattleSelection =
       skillId: string;
       skillName: string;
       activeSkillActions: ActiveSkillBattleAction[];
+    }
+  | {
+      kind: 'BLOCK_DECISION';
+      attackAction: AttackBattleAction;
+      blockActions: BlockBattleAction[];
+      automatedActionCount: number;
     };
 
 type ActiveSkillActionGroup = {
@@ -95,10 +103,11 @@ type CardViewOptions = {
 type BattleFlowResult = {
   messages: string[];
   popupEvents: BattlePopupEvent[];
+  pendingBlockSelection: Extract<BattleSelection, { kind: 'BLOCK_DECISION' }> | null;
 };
 
 type BattlePopupEvent = {
-  kind: 'PLACE' | 'MOVE' | 'ATTACK' | 'SKILL';
+  kind: 'PLACE' | 'MOVE' | 'ATTACK' | 'SKILL' | 'BLOCK';
   slotId: BattleSlotId;
   text: string;
 };
@@ -111,6 +120,7 @@ const PLACE_HIGHLIGHT_COLOR = 0x71d879;
 const MOVE_HIGHLIGHT_COLOR = 0x79b8ff;
 const ATTACK_HIGHLIGHT_COLOR = 0xff6f6f;
 const SKILL_HIGHLIGHT_COLOR = 0xf4c95d;
+const BLOCK_HIGHLIGHT_COLOR = 0xc8f47a;
 const SELECTED_HIGHLIGHT_COLOR = 0xfff1a3;
 const CARD_BACK_TEXTURE_KEY = 'cards.webp.card_back';
 const POPUP_STYLE = {
@@ -133,6 +143,11 @@ const POPUP_STYLE = {
     fill: 0x463416,
     stroke: SKILL_HIGHLIGHT_COLOR,
     color: '#fff3c2',
+  },
+  BLOCK: {
+    fill: 0x273313,
+    stroke: BLOCK_HIGHLIGHT_COLOR,
+    color: '#f4ffd2',
   },
 } as const;
 const SLOT_COLUMNS = {
@@ -848,6 +863,37 @@ export class BattlefieldScene extends Phaser.Scene {
         this.startActiveSkillTargeting();
       },
     });
+
+    if (this.selection?.kind === 'BLOCK_DECISION') {
+      this.addBlockDecisionButtons();
+    }
+  }
+
+  private addBlockDecisionButtons(): void {
+    createMenuButton(this, {
+      x: 500,
+      y: 1468,
+      width: 150,
+      height: 56,
+      label: 'Block',
+      enabled: !this.isAnimatingBattleEvents,
+      parent: this.layers.buttonLayer,
+      onClick: () => {
+        this.resolveBlockDecision(true);
+      },
+    });
+    createMenuButton(this, {
+      x: 700,
+      y: 1468,
+      width: 170,
+      height: 56,
+      label: 'No Block',
+      enabled: !this.isAnimatingBattleEvents,
+      parent: this.layers.buttonLayer,
+      onClick: () => {
+        this.resolveBlockDecision(false);
+      },
+    });
   }
 
   private addStatusText(): void {
@@ -906,6 +952,11 @@ export class BattlefieldScene extends Phaser.Scene {
 
     if (this.runtime.phase === 'GAME_OVER') {
       this.setStatus('Battle is over.');
+      return;
+    }
+
+    if (this.selection?.kind === 'BLOCK_DECISION') {
+      this.setStatus('Choose Block or No Block.');
       return;
     }
 
@@ -983,6 +1034,11 @@ export class BattlefieldScene extends Phaser.Scene {
       return;
     }
 
+    if (this.selection?.kind === 'BLOCK_DECISION') {
+      this.setStatus('Choose Block or No Block.');
+      return;
+    }
+
     if (!this.isPlayerControlActive()) {
       this.setStatus('Only the player MAIN turn accepts hand actions.');
       return;
@@ -1011,6 +1067,11 @@ export class BattlefieldScene extends Phaser.Scene {
 
   private selectBattlefieldCard(card: BattleCardRuntimeState): void {
     if (this.isAnimatingBattleEvents) {
+      return;
+    }
+
+    if (this.selection?.kind === 'BLOCK_DECISION') {
+      this.setStatus('Choose Block or No Block.');
       return;
     }
 
@@ -1139,6 +1200,13 @@ export class BattlefieldScene extends Phaser.Scene {
       }
     }
 
+    if (this.selection?.kind === 'BLOCK_DECISION') {
+      this.drawSlotHighlight(this.selection.attackAction.toSlotId, ATTACK_HIGHLIGHT_COLOR, 0.88);
+      for (const action of this.selection.blockActions) {
+        this.drawSlotHighlight(action.blockerSlotId, BLOCK_HIGHLIGHT_COLOR, 0.94);
+      }
+    }
+
     if (this.selectedSlotId) {
       this.drawSlotHighlight(this.selectedSlotId, SELECTED_HIGHLIGHT_COLOR, 0.98);
     }
@@ -1158,7 +1226,9 @@ export class BattlefieldScene extends Phaser.Scene {
     if (this.runtime.outcome) {
       messages.push(`${formatSideLabel(this.runtime.outcome.winner)} wins.`);
     }
-    this.commitBattleStateUpdate(messages, [...popupEvents, ...flow.popupEvents]);
+    this.commitBattleStateUpdate(messages, [...popupEvents, ...flow.popupEvents], {
+      selection: flow.pendingBlockSelection,
+    });
   }
 
   private endCurrentTurn(): void {
@@ -1167,11 +1237,53 @@ export class BattlefieldScene extends Phaser.Scene {
     }
 
     const flow = this.settleTurnFlow(applyTurnEnd(this.runtime, 'MANUAL'));
-    this.commitBattleStateUpdate(flow.messages, flow.popupEvents);
+    this.commitBattleStateUpdate(flow.messages, flow.popupEvents, {
+      selection: flow.pendingBlockSelection,
+    });
   }
 
-  private commitBattleStateUpdate(messages: string[], popupEvents: BattlePopupEvent[]): void {
-    this.selection = null;
+  private resolveBlockDecision(useBlock: boolean): void {
+    if (this.isAnimatingBattleEvents || this.selection?.kind !== 'BLOCK_DECISION') {
+      return;
+    }
+
+    const selection = this.selection;
+    const blockAction = useBlock ? (selection.blockActions[0] ?? null) : null;
+    const popupEvents: BattlePopupEvent[] = [];
+    let message: string;
+
+    if (blockAction) {
+      applyBlockAction(this.runtime, blockAction);
+      popupEvents.push(this.createBlockPopupEvent(blockAction));
+      message = `${this.getCardName(blockAction.blockerInstanceId)} blocked attack on ${this.getCardName(
+        selection.attackAction.targetInstanceId,
+      )}.`;
+    } else {
+      applyAttackAction(this.runtime, selection.attackAction);
+      popupEvents.push(this.createActionPopupEvent(this.runtime.currentSide, selection.attackAction));
+      message = `${this.getCardName(selection.attackAction.attackerInstanceId)} attacked ${this.getCardName(
+        selection.attackAction.targetInstanceId,
+      )}.`;
+    }
+
+    const flow = this.settleTurnFlow([], selection.automatedActionCount + 1);
+    const messages = [message, ...flow.messages];
+    if (this.runtime.outcome) {
+      messages.push(`${formatSideLabel(this.runtime.outcome.winner)} wins.`);
+    }
+    this.commitBattleStateUpdate(messages, [...popupEvents, ...flow.popupEvents], {
+      selection: flow.pendingBlockSelection,
+    });
+  }
+
+  private commitBattleStateUpdate(
+    messages: string[],
+    popupEvents: BattlePopupEvent[],
+    options: {
+      selection?: BattleSelection | null;
+    } = {},
+  ): void {
+    this.selection = options.selection ?? null;
     this.selectedSlotId = null;
     this.statusMessage = messages.join(' ');
     this.isAnimatingBattleEvents = popupEvents.length > 0;
@@ -1182,9 +1294,13 @@ export class BattlefieldScene extends Phaser.Scene {
     }
   }
 
-  private settleTurnFlow(initialEvents: readonly BattleTurnEvent[] = []): BattleFlowResult {
+  private settleTurnFlow(
+    initialEvents: readonly BattleTurnEvent[] = [],
+    initialAutomatedActionCount = 0,
+  ): BattleFlowResult {
     const messages = this.formatTurnEvents(initialEvents);
     const popupEvents = this.createPopupEventsForTurnEvents(initialEvents);
+    let pendingBlockSelection: Extract<BattleSelection, { kind: 'BLOCK_DECISION' }> | null = null;
     const stalledEvents: BattleTurnEvent[] = [];
     if (applyAutoTurnEndIfStalled(this.runtime, stalledEvents)) {
       messages.push(...this.formatTurnEvents(stalledEvents));
@@ -1192,14 +1308,34 @@ export class BattlefieldScene extends Phaser.Scene {
     }
 
     if (this.runtime.currentSide === 'enemy' && this.runtime.phase !== 'GAME_OVER') {
-      const enemyEvents = runAutomatedTurn(this.runtime, 'enemy');
-      messages.push(...this.formatTurnEvents(enemyEvents));
-      popupEvents.push(...this.createPopupEventsForTurnEvents(enemyEvents));
+      const enemyTurnResult = runAutomatedTurnUntilBlockDecision(this.runtime, 'enemy', {
+        interruptForBlockSide: 'player',
+        initialActionCount: initialAutomatedActionCount,
+      });
+      messages.push(...this.formatTurnEvents(enemyTurnResult.events));
+      popupEvents.push(...this.createPopupEventsForTurnEvents(enemyTurnResult.events));
+
+      if (enemyTurnResult.blockDecision) {
+        pendingBlockSelection = {
+          kind: 'BLOCK_DECISION',
+          attackAction: enemyTurnResult.blockDecision.attackAction,
+          blockActions: enemyTurnResult.blockDecision.blockActions,
+          automatedActionCount: enemyTurnResult.actionCount,
+        };
+        messages.push(
+          `${this.getCardName(
+            pendingBlockSelection.attackAction.attackerInstanceId,
+          )} is attacking ${this.getCardName(
+            pendingBlockSelection.attackAction.targetInstanceId,
+          )}. Choose Block or No Block.`,
+        );
+      }
     }
 
     return {
       messages,
       popupEvents,
+      pendingBlockSelection,
     };
   }
 
@@ -1310,6 +1446,14 @@ export class BattlefieldScene extends Phaser.Scene {
       kind: 'ATTACK',
       slotId: action.toSlotId,
       text: `ATTACK -${action.attack}`,
+    };
+  }
+
+  private createBlockPopupEvent(action: BlockBattleAction): BattlePopupEvent {
+    return {
+      kind: 'BLOCK',
+      slotId: action.blockerSlotId,
+      text: `BLOCK -${action.attackAction.attack}`,
     };
   }
 

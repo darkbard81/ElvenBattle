@@ -4,6 +4,7 @@ import { createGameSession } from '../save/session';
 import {
   applyActiveSkillAction,
   applyAttackAction,
+  applyBlockAction,
   applyAutoTurnEndIfStalled,
   applyMoveAction,
   applyPlaceAction,
@@ -17,10 +18,12 @@ import {
   getEffectiveHp,
   listActiveSkillActions,
   listAttackActions,
+  listBlockActions,
   listMoveActions,
   listPlaceActions,
   MAX_AUTOMATED_ACTIONS_PER_TURN,
   runAutomatedTurn,
+  runAutomatedTurnUntilBlockDecision,
 } from './battle-engine';
 import { createInitialBattleRuntime } from './create-battle-runtime';
 import {
@@ -343,6 +346,124 @@ describe('battle engine', () => {
 
     expect(action.attack).toBe((archer.card.instance.attack ?? 0) + 1);
     expect(runtime.enemy.leader.card.instance.hp).toBe(targetHpBefore - action.attack);
+  });
+
+  it('lists guardian_block cards adjacent to the original attack target as block candidates', async () => {
+    const runtime = await createRuntime();
+    const { attackAction, guardian } = setupGuardianBlockScenario(runtime, 'player:FR');
+
+    const blockActions = listBlockActions(runtime, attackAction);
+
+    expect(blockActions).toEqual([
+      {
+        type: 'BLOCK',
+        attackAction,
+        blockerInstanceId: guardian.card.instance.instanceId,
+        blockerSlotId: 'player:FR',
+      },
+    ]);
+  });
+
+  it('does not list non-adjacent guardian_block cards as block candidates', async () => {
+    const runtime = await createRuntime();
+    const { attackAction } = setupGuardianBlockScenario(runtime, 'player:BL');
+
+    expect(listBlockActions(runtime, attackAction)).toEqual([]);
+  });
+
+  it('does not list block candidates for direct leader attacks', async () => {
+    const runtime = await createRuntime();
+    const guardian = moveCardToBattlefield(
+      runtime,
+      'player',
+      'unit_elf_guardian_001',
+      'player:BR',
+    );
+    const attacker = moveCardToBattlefield(runtime, 'enemy', 'unit_dark_archer_001', 'enemy:FC');
+    runtime.currentSide = 'enemy';
+    runtime.phase = 'ATTACK';
+    const attackAction = listAttackActions(runtime, 'enemy').find(
+      (candidate) =>
+        candidate.attackerInstanceId === attacker.card.instance.instanceId &&
+        candidate.targetInstanceId === runtime.player.leader.card.instance.instanceId,
+    );
+    if (!attackAction) {
+      throw new Error('Expected a legal direct leader attack action');
+    }
+
+    expect(guardian.battlefieldSlot).toBe('player:BR');
+    expect(listBlockActions(runtime, attackAction)).toEqual([]);
+  });
+
+  it('applies block actions by damaging the blocker instead of the original target', async () => {
+    const runtime = await createRuntime();
+    const { attackAction, guardian, target } = setupGuardianBlockScenario(runtime, 'player:FR');
+    const blockAction = listBlockActions(runtime, attackAction)[0];
+    if (!blockAction) {
+      throw new Error('Expected a legal block action');
+    }
+    const targetHpBefore = target.card.instance.hp ?? 0;
+    const guardianHpBefore = guardian.card.instance.hp ?? 0;
+
+    applyBlockAction(runtime, blockAction);
+
+    expect(target.card.instance.hp).toBe(targetHpBefore);
+    expect(guardian.card.instance.hp).toBe(guardianHpBefore - blockAction.attackAction.attack);
+    expect(blockAction.attackAction.attack).toBeGreaterThan(0);
+    expect(guardian.zone).toBe('BATTLEFIELD');
+    expect(target.zone).toBe('BATTLEFIELD');
+  });
+
+  it('moves defeated blockers to drop after block damage resolves', async () => {
+    const runtime = await createRuntime();
+    const { attackAction, guardian } = setupGuardianBlockScenario(runtime, 'player:FR');
+    guardian.card.instance.hp = 1;
+    const blockAction = listBlockActions(runtime, attackAction)[0];
+    if (!blockAction) {
+      throw new Error('Expected a legal block action');
+    }
+
+    applyBlockAction(runtime, blockAction);
+
+    expect(guardian.zone).toBe('DROP');
+    expect(guardian.battlefieldSlot).toBeNull();
+    expect(runtime.player.drop).toContain(guardian);
+    expect(runtime.drop).toContain(guardian);
+  });
+
+  it('keeps existing attack resolution unchanged when no block candidate exists', async () => {
+    const runtime = await createRuntime();
+    const { attackAction, target } = setupGuardianBlockScenario(runtime, 'player:BL');
+    const targetHpBefore = target.card.instance.hp ?? 0;
+
+    expect(listBlockActions(runtime, attackAction)).toEqual([]);
+    applyAttackAction(runtime, attackAction);
+
+    expect(target.card.instance.hp).toBe(targetHpBefore - attackAction.attack);
+    expect(target.zone).toBe('DROP');
+    expect(target.battlefieldSlot).toBeNull();
+  });
+
+  it('stops automated enemy turns before applying a blockable attack', async () => {
+    const runtime = await createRuntime();
+    const { attacker, target } = setupGuardianBlockScenario(runtime, 'player:FR');
+    const targetHpBefore = target.card.instance.hp ?? 0;
+
+    const result = runAutomatedTurnUntilBlockDecision(runtime, 'enemy', {
+      interruptForBlockSide: 'player',
+    });
+
+    expect(result.events).toEqual([]);
+    expect(result.actionCount).toBe(0);
+    expect(result.blockDecision?.attackAction.attackerInstanceId).toBe(
+      attacker.card.instance.instanceId,
+    );
+    expect(result.blockDecision?.attackAction.targetInstanceId).toBe(
+      target.card.instance.instanceId,
+    );
+    expect(result.blockDecision?.blockActions).toHaveLength(1);
+    expect(target.card.instance.hp).toBe(targetHpBefore);
+    expect(attacker.hasAttackedThisTurn).toBe(false);
   });
 
   it('keeps leafwind attack bonuses until the next own turn ends', async () => {
@@ -726,6 +847,42 @@ describe('battle engine', () => {
 async function createRuntime(): Promise<BattleRuntimeState> {
   const state = await createInitialSaveState({ slotId: 1 });
   return createInitialBattleRuntime(createGameSession(state));
+}
+
+function setupGuardianBlockScenario(
+  runtime: BattleRuntimeState,
+  guardianSlotId: BattleSlotId,
+): {
+  attacker: BattleCardRuntimeState;
+  target: BattleCardRuntimeState;
+  guardian: BattleCardRuntimeState;
+  attackAction: ReturnType<typeof listAttackActions>[number];
+} {
+  const target = moveCardToBattlefield(runtime, 'player', 'unit_elf_archer_001', 'player:FC');
+  const guardian = moveCardToBattlefield(
+    runtime,
+    'player',
+    'unit_elf_guardian_001',
+    guardianSlotId,
+  );
+  const attacker = moveCardToBattlefield(runtime, 'enemy', 'unit_dark_archer_001', 'enemy:FC');
+  runtime.currentSide = 'enemy';
+  runtime.phase = 'ATTACK';
+  const attackAction = listAttackActions(runtime, 'enemy').find(
+    (candidate) =>
+      candidate.attackerInstanceId === attacker.card.instance.instanceId &&
+      candidate.targetInstanceId === target.card.instance.instanceId,
+  );
+  if (!attackAction) {
+    throw new Error('Expected a legal attack action against the block target');
+  }
+
+  return {
+    attacker,
+    target,
+    guardian,
+    attackAction,
+  };
 }
 
 function moveCardToHand(
