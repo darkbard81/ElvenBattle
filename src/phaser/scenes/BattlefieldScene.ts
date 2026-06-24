@@ -104,11 +104,7 @@ type ActiveSkillActionGroup = {
 type CardViewOptions = {
   highlightColor?: number;
   onClick?: () => void;
-  onAttackDragStart?: (
-    pointer: Phaser.Input.Pointer,
-    dragX: number,
-    dragY: number,
-  ) => boolean;
+  onAttackDragStart?: (pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => boolean;
   onAttackDrag?: (pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => void;
   onAttackDragEnd?: (pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => void;
 };
@@ -1443,7 +1439,9 @@ export class BattlefieldScene extends Phaser.Scene {
       )}.`;
     } else {
       applyAttackAction(this.runtime, selection.attackAction);
-      popupEvents.push(this.createActionPopupEvent(this.runtime.currentSide, selection.attackAction));
+      popupEvents.push(
+        this.createActionPopupEvent(this.runtime.currentSide, selection.attackAction),
+      );
       message = `${this.getCardName(selection.attackAction.attackerInstanceId)} attacked ${this.getCardName(
         selection.attackAction.targetInstanceId,
       )}.`;

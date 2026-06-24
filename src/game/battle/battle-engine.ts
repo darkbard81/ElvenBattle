@@ -1,7 +1,18 @@
 import type { AbilityCategory, CardAbility } from '../save/card-catalog';
+import {
+  ACTIVE_SKILL_DEFINITIONS,
+  AFTER_ATTACK_BUFF_ABILITY_IDS,
+  ATTACK_DAMAGE_BONUS_ABILITY_HANDLERS,
+  BLOCK_ABILITY_IDS,
+  FRONT_PASSIVE_ABILITY_HANDLERS,
+  GLOBAL_PASSIVE_ABILITY_HANDLERS,
+  MOVE_ATTACK_BONUS_ABILITY_IDS,
+  SUMMON_ATTACK_BONUS_ABILITY_IDS,
+  type ActiveSkillDefinition,
+  type BattleRuntimeEffectStat,
+} from './ability-handlers';
 import type {
   ActiveSkillBattleAction,
-  ActiveSkillBattleEffect,
   AttackBattleAction,
   BattleAutomatedTurnResult,
   BattleAutomationAction,
@@ -33,81 +44,9 @@ const SLOT_COORDINATES: Record<BattlefieldZone, { x: number; y: number }> = {
   BL: { x: 2, y: 1 },
 };
 
-type RuntimeEffectStat = 'attack' | 'hp' | 'dominance';
-
-type PassiveStatModifier = {
-  stat: RuntimeEffectStat;
-  value: number;
-};
-
-type PassiveAbilityContext = {
-  runtime: BattleRuntimeState;
-  source: BattleCardRuntimeState;
-  target: BattleCardRuntimeState;
-};
-
-type ActiveSkillDefinition = {
-  effect: ActiveSkillBattleEffect;
-  value: number;
-  targetSide: 'ally' | 'enemy';
-};
-
 type RunAutomatedTurnUntilBlockDecisionOptions = {
   interruptForBlockSide?: BattleSide;
   initialActionCount?: number;
-};
-
-const FRONT_PASSIVE_ABILITY_HANDLERS: Partial<
-  Record<string, (context: PassiveAbilityContext) => PassiveStatModifier | null>
-> = {
-  guardian_stance: ({ source, target }) =>
-    source === target && isFrontRowCard(source) ? { stat: 'hp', value: 1 } : null,
-  stonehide_stance: ({ source, target }) =>
-    source === target && isFrontRowCard(source) ? { stat: 'hp', value: 1 } : null,
-};
-
-const GLOBAL_PASSIVE_ABILITY_HANDLERS: Partial<
-  Record<string, (context: PassiveAbilityContext) => PassiveStatModifier | null>
-> = {
-  guardian_block: () => null,
-  stonewall_guard: () => null,
-  silver_chord: ({ source, target }) =>
-    source !== target && source.side === target.side && hasTrait(target, 'race', '엘프')
-      ? { stat: 'attack', value: 1 }
-      : null,
-  hollow_chorus: ({ source, target }) =>
-    source !== target && source.side === target.side && hasTrait(target, 'race', '몬스터')
-      ? { stat: 'attack', value: 1 }
-      : null,
-};
-
-const SUMMON_ATTACK_BONUS_ABILITY_IDS = new Set(['greenwood_charge', 'iron_spike_charge']);
-const MOVE_ATTACK_BONUS_ABILITY_IDS = new Set(['forest_path', 'mist_stride']);
-const AFTER_ATTACK_BUFF_ABILITY_IDS = new Set(['leafwind_flurry', 'shadow_blade_flurry']);
-
-const ATTACK_DAMAGE_BONUS_ABILITY_HANDLERS: Partial<
-  Record<
-    string,
-    (context: {
-      runtime: BattleRuntimeState;
-      attacker: BattleCardRuntimeState;
-      target: BattleCardRuntimeState;
-    }) => number
-  >
-> = {
-  moonlit_shot: ({ target }) => (isBackRowCard(target) ? 1 : 0),
-  eclipse_shot: ({ target }) => (isBackRowCard(target) ? 1 : 0),
-  shadow_leaf_strike: ({ runtime, target }) => (getEffectiveHp(runtime, target) <= 3 ? 1 : 0),
-  night_prey: ({ runtime, target }) => (getEffectiveHp(runtime, target) <= 3 ? 1 : 0),
-};
-
-const ACTIVE_SKILL_DEFINITIONS: Partial<Record<string, ActiveSkillDefinition>> = {
-  starlight_mend: { effect: 'HEAL', value: 2, targetSide: 'ally' },
-  curse_reversal: { effect: 'HEAL', value: 2, targetSide: 'ally' },
-  emerald_bolt: { effect: 'DAMAGE', value: 2, targetSide: 'enemy' },
-  blackflame_bolt: { effect: 'DAMAGE', value: 2, targetSide: 'enemy' },
-  rune_tempering: { effect: 'BUFF_ATTACK', value: 1, targetSide: 'ally' },
-  rune_forge: { effect: 'BUFF_ATTACK', value: 1, targetSide: 'ally' },
 };
 
 /**
@@ -360,7 +299,7 @@ export function listBlockActions(
       blocker.side !== target.side ||
       blocker.battlefieldSlot === null ||
       getEffectiveHp(runtime, blocker) <= 0 ||
-      !hasCardAbility(blocker, 'GLOBAL', 'guardian_block')
+      !listCardAbilities(blocker, 'GLOBAL').some((ability) => BLOCK_ABILITY_IDS.has(ability.id))
     ) {
       return [];
     }
@@ -1080,15 +1019,10 @@ function requireCardAbility(card: BattleCardRuntimeState, abilityId: string): Ca
   return ability;
 }
 
-function hasCardAbility(
+function getRuntimeEffectBonus(
   card: BattleCardRuntimeState,
-  category: AbilityCategory,
-  abilityId: string,
-): boolean {
-  return listCardAbilities(card, category).some((ability) => ability.id === abilityId);
-}
-
-function getRuntimeEffectBonus(card: BattleCardRuntimeState, stat: RuntimeEffectStat): number {
+  stat: BattleRuntimeEffectStat,
+): number {
   return card.abilityEffects.reduce((total, effect) => {
     if (effect.stat !== stat) {
       return total;
@@ -1101,7 +1035,7 @@ function getRuntimeEffectBonus(card: BattleCardRuntimeState, stat: RuntimeEffect
 function getPassiveStatBonus(
   runtime: BattleRuntimeState,
   card: BattleCardRuntimeState,
-  stat: RuntimeEffectStat,
+  stat: BattleRuntimeEffectStat,
 ): number {
   let total = 0;
   for (const ability of listCardAbilities(card, 'FRONT')) {
@@ -1109,6 +1043,9 @@ function getPassiveStatBonus(
       runtime,
       source: card,
       target: card,
+      ability,
+      isFrontRowCard,
+      hasTrait,
     });
     if (modifier?.stat === stat) {
       total += modifier.value;
@@ -1125,6 +1062,9 @@ function getPassiveStatBonus(
         runtime,
         source,
         target: card,
+        ability,
+        isFrontRowCard,
+        hasTrait,
       });
       if (modifier?.stat === stat) {
         total += modifier.value;
@@ -1198,7 +1138,7 @@ function calculateAttackDamage(
       return total;
     }
 
-    return total + handler({ runtime, attacker, target });
+    return total + handler({ runtime, attacker, target, ability, isBackRowCard, getEffectiveHp });
   }, 0);
 
   return Math.max(0, getEffectiveAttack(runtime, attacker) + bonus);
@@ -1237,7 +1177,7 @@ function addAbilityEffect(
   source: BattleCardRuntimeState,
   ability: CardAbility,
   effect: {
-    stat: RuntimeEffectStat;
+    stat: BattleRuntimeEffectStat;
     value: number;
     expiresAt: BattleAbilityEffectExpiration;
   },

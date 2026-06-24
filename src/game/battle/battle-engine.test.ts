@@ -373,12 +373,7 @@ describe('battle engine', () => {
 
   it('does not list block candidates for direct leader attacks', async () => {
     const runtime = await createRuntime();
-    const guardian = moveCardToBattlefield(
-      runtime,
-      'player',
-      'unit_elf_guardian_001',
-      'player:BR',
-    );
+    const guardian = moveCardToBattlefield(runtime, 'player', 'unit_elf_guardian_001', 'player:BR');
     const attacker = moveCardToBattlefield(runtime, 'enemy', 'unit_dark_archer_001', 'enemy:FC');
     runtime.currentSide = 'enemy';
     runtime.phase = 'ATTACK';
