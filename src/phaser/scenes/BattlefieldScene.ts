@@ -83,9 +83,10 @@ type BattleSelection =
       activeSkillActions: ActiveSkillBattleAction[];
     }
   | {
-      kind: 'ATTACK_DRAG';
+      kind: 'FIELD_CARD_DRAG';
       cardInstanceId: string;
       sourceSlotId: BattleSlotId;
+      moveActions: MoveBattleAction[];
       attackActions: AttackBattleAction[];
     }
   | {
@@ -104,9 +105,9 @@ type ActiveSkillActionGroup = {
 type CardViewOptions = {
   highlightColor?: number;
   onClick?: () => void;
-  onAttackDragStart?: (pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => boolean;
-  onAttackDrag?: (pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => void;
-  onAttackDragEnd?: (pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => void;
+  onFieldDragStart?: (pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => boolean;
+  onFieldDrag?: (pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => void;
+  onFieldDragEnd?: (pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => void;
 };
 
 type BattleFlowResult = {
@@ -295,7 +296,7 @@ export class BattlefieldScene extends Phaser.Scene {
   private isSaving = false;
   private selectedSlotId: BattleSlotId | null = null;
   private selection: BattleSelection | null = null;
-  private attackDragPreview: Phaser.GameObjects.Container | null = null;
+  private fieldCardDragPreview: Phaser.GameObjects.Container | null = null;
   private statusMessage = 'Select a hand card or battlefield card.';
 
   constructor() {
@@ -312,7 +313,7 @@ export class BattlefieldScene extends Phaser.Scene {
     this.isSaving = false;
     this.selectedSlotId = null;
     this.selection = null;
-    this.attackDragPreview = null;
+    this.fieldCardDragPreview = null;
     this.statusMessage = 'Select a hand card or battlefield card.';
     this.handDeckContainer = null;
     this.handDeckTargetY = null;
@@ -347,7 +348,7 @@ export class BattlefieldScene extends Phaser.Scene {
     this.layers.handLayer.removeAll(true);
     this.layers.buttonLayer.removeAll(true);
     this.highlightGraphics.clear();
-    this.attackDragPreview = null;
+    this.fieldCardDragPreview = null;
 
     this.addTopHud();
     this.addBoard();
@@ -597,13 +598,13 @@ export class BattlefieldScene extends Phaser.Scene {
           },
         };
         if (card.side === 'player') {
-          cardViewOptions.onAttackDragStart = (_pointer, dragX, dragY) =>
-            this.startAttackDrag(card, dragX, dragY);
-          cardViewOptions.onAttackDrag = (_pointer, dragX, dragY) => {
-            this.updateAttackDragPreview(dragX, dragY);
+          cardViewOptions.onFieldDragStart = (_pointer, dragX, dragY) =>
+            this.startFieldCardDrag(card, dragX, dragY);
+          cardViewOptions.onFieldDrag = (_pointer, dragX, dragY) => {
+            this.updateFieldCardDragPreview(dragX, dragY);
           };
-          cardViewOptions.onAttackDragEnd = (pointer) => {
-            this.finishAttackDrag(pointer.worldX, pointer.worldY);
+          cardViewOptions.onFieldDragEnd = (pointer) => {
+            this.finishFieldCardDrag(pointer.worldX, pointer.worldY);
           };
         }
         this.addCardView(this.layers.cardLayer, FIELD_SLOT_RECTS[slotId], card, 'field', {
@@ -696,32 +697,32 @@ export class BattlefieldScene extends Phaser.Scene {
       const hitArea = this.add.zone(centerX, centerY, rect.width, rect.height);
       hitArea.setInteractive({
         useHandCursor: true,
-        draggable: options.onAttackDragStart !== undefined,
+        draggable: options.onFieldDragStart !== undefined,
       });
       hitArea.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, options.onClick);
-      if (options.onAttackDragStart) {
-        let isAttackDragActive = false;
+      if (options.onFieldDragStart) {
+        let isFieldDragActive = false;
         hitArea.on(
           Phaser.Input.Events.GAMEOBJECT_DRAG_START,
           (pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => {
-            isAttackDragActive = options.onAttackDragStart?.(pointer, dragX, dragY) ?? false;
+            isFieldDragActive = options.onFieldDragStart?.(pointer, dragX, dragY) ?? false;
           },
         );
         hitArea.on(
           Phaser.Input.Events.GAMEOBJECT_DRAG,
           (pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => {
-            if (isAttackDragActive) {
-              options.onAttackDrag?.(pointer, dragX, dragY);
+            if (isFieldDragActive) {
+              options.onFieldDrag?.(pointer, dragX, dragY);
             }
           },
         );
         hitArea.on(
           Phaser.Input.Events.GAMEOBJECT_DRAG_END,
           (pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => {
-            if (isAttackDragActive) {
-              options.onAttackDragEnd?.(pointer, dragX, dragY);
+            if (isFieldDragActive) {
+              options.onFieldDragEnd?.(pointer, dragX, dragY);
             }
-            isAttackDragActive = false;
+            isFieldDragActive = false;
           },
         );
       }
@@ -1014,8 +1015,8 @@ export class BattlefieldScene extends Phaser.Scene {
       return;
     }
 
-    if (this.selection?.kind === 'ATTACK_DRAG') {
-      this.setStatus('Drop the card on a red target to attack.');
+    if (this.selection?.kind === 'FIELD_CARD_DRAG') {
+      this.setStatus('Drop the card on a blue move slot or red attack target.');
       return;
     }
 
@@ -1048,17 +1049,12 @@ export class BattlefieldScene extends Phaser.Scene {
         (candidate) => candidate.toSlotId === slotId,
       );
       if (moveAction) {
-        const popupEvent = this.createActionPopupEvent(this.runtime.currentSide, moveAction);
-        applyMoveAction(this.runtime, moveAction);
-        this.finishBattleAction(
-          `Moved ${this.getCardName(moveAction.cardInstanceId)} to ${slotId}.`,
-          [popupEvent],
-        );
+        this.setStatus('Move uses drag and drop. Drag the selected card onto a blue slot.');
         return;
       }
 
       if (this.selection.attackActions.some((candidate) => candidate.toSlotId === slotId)) {
-        this.setStatus('Attack uses drag and drop. Drag the selected card onto the target.');
+        this.setStatus('Attack uses drag and drop. Drag the selected card onto a red target.');
         return;
       }
 
@@ -1088,8 +1084,8 @@ export class BattlefieldScene extends Phaser.Scene {
       return;
     }
 
-    if (this.selection?.kind === 'ATTACK_DRAG') {
-      this.setStatus('Drop the card on a red target to attack.');
+    if (this.selection?.kind === 'FIELD_CARD_DRAG') {
+      this.setStatus('Drop the card on a blue move slot or red attack target.');
       return;
     }
 
@@ -1129,8 +1125,8 @@ export class BattlefieldScene extends Phaser.Scene {
       return;
     }
 
-    if (this.selection?.kind === 'ATTACK_DRAG') {
-      this.setStatus('Drop the card on a red target to attack.');
+    if (this.selection?.kind === 'FIELD_CARD_DRAG') {
+      this.setStatus('Drop the card on a blue move slot or red attack target.');
       return;
     }
 
@@ -1223,7 +1219,7 @@ export class BattlefieldScene extends Phaser.Scene {
     return true;
   }
 
-  private startAttackDrag(card: BattleCardRuntimeState, x: number, y: number): boolean {
+  private startFieldCardDrag(card: BattleCardRuntimeState, x: number, y: number): boolean {
     if (
       !this.isPlayerControlActive() ||
       this.selection?.kind === 'ACTIVE_SKILL' ||
@@ -1234,44 +1230,67 @@ export class BattlefieldScene extends Phaser.Scene {
       return false;
     }
 
+    const moveActions = listMoveActions(this.runtime).filter(
+      (action) => action.cardInstanceId === card.card.instance.instanceId,
+    );
     const attackActions = listAttackActions(this.runtime).filter(
       (action) => action.attackerInstanceId === card.card.instance.instanceId,
     );
-    if (attackActions.length === 0) {
+    if (moveActions.length === 0 && attackActions.length === 0) {
       return false;
     }
 
-    this.destroyAttackDragPreview();
+    this.destroyFieldCardDragPreview();
     this.selection = {
-      kind: 'ATTACK_DRAG',
+      kind: 'FIELD_CARD_DRAG',
       cardInstanceId: card.card.instance.instanceId,
       sourceSlotId: card.battlefieldSlot,
+      moveActions,
       attackActions,
     };
     this.selectedSlotId = null;
-    this.createAttackDragPreview(card, x, y);
+    this.createFieldCardDragPreview(
+      card,
+      x,
+      y,
+      attackActions.length > 0 ? ATTACK_HIGHLIGHT_COLOR : MOVE_HIGHLIGHT_COLOR,
+    );
     this.redrawHighlight();
-    this.setStatus(`Drop ${card.card.instance.name} on a red target to attack.`);
+    this.setStatus(formatFieldCardDragStatus(card, moveActions, attackActions));
     return true;
   }
 
-  private updateAttackDragPreview(x: number, y: number): void {
-    if (!this.attackDragPreview) {
+  private updateFieldCardDragPreview(x: number, y: number): void {
+    if (!this.fieldCardDragPreview) {
       return;
     }
 
-    this.attackDragPreview.setPosition(x, y);
+    this.fieldCardDragPreview.setPosition(x, y);
   }
 
-  private finishAttackDrag(x: number, y: number): void {
-    if (this.selection?.kind !== 'ATTACK_DRAG') {
-      this.destroyAttackDragPreview();
+  private finishFieldCardDrag(x: number, y: number): void {
+    if (this.selection?.kind !== 'FIELD_CARD_DRAG') {
+      this.destroyFieldCardDragPreview();
       return;
     }
 
     const selection = this.selection;
-    this.destroyAttackDragPreview();
+    this.destroyFieldCardDragPreview();
     const targetSlotId = this.findFieldSlotAtPoint(x, y);
+    const moveAction =
+      targetSlotId === null
+        ? null
+        : (selection.moveActions.find((candidate) => candidate.toSlotId === targetSlotId) ?? null);
+    if (moveAction) {
+      const popupEvent = this.createActionPopupEvent(this.runtime.currentSide, moveAction);
+      applyMoveAction(this.runtime, moveAction);
+      this.finishBattleAction(
+        `Moved ${this.getCardName(moveAction.cardInstanceId)} to ${targetSlotId}.`,
+        [popupEvent],
+      );
+      return;
+    }
+
     const attackAction =
       targetSlotId === null
         ? null
@@ -1281,7 +1300,9 @@ export class BattlefieldScene extends Phaser.Scene {
       this.selection = null;
       this.selectedSlotId = null;
       this.redrawHighlight();
-      this.setStatus('Attack canceled. Drop the card on a red target to attack.');
+      this.setStatus(
+        'Action canceled. Drop the card on a blue slot to move or red target to attack.',
+      );
       return;
     }
 
@@ -1295,7 +1316,12 @@ export class BattlefieldScene extends Phaser.Scene {
     );
   }
 
-  private createAttackDragPreview(card: BattleCardRuntimeState, x: number, y: number): void {
+  private createFieldCardDragPreview(
+    card: BattleCardRuntimeState,
+    x: number,
+    y: number,
+    borderColor: number,
+  ): void {
     const container = this.add.container(x, y).setAlpha(0.78).setDepth(100);
     const width = Math.round(FIELD_SLOT_WIDTH * 0.72);
     const height = Math.round(FIELD_SLOT_HEIGHT * 0.72);
@@ -1323,15 +1349,15 @@ export class BattlefieldScene extends Phaser.Scene {
     }
 
     const border = this.add.rectangle(0, 0, width + 8, height + 8, 0x000000, 0);
-    border.setStrokeStyle(4, ATTACK_HIGHLIGHT_COLOR, 0.94);
+    border.setStrokeStyle(4, borderColor, 0.94);
     container.add(border);
     this.layers.effectLayer.add(container);
-    this.attackDragPreview = container;
+    this.fieldCardDragPreview = container;
   }
 
-  private destroyAttackDragPreview(): void {
-    this.attackDragPreview?.destroy();
-    this.attackDragPreview = null;
+  private destroyFieldCardDragPreview(): void {
+    this.fieldCardDragPreview?.destroy();
+    this.fieldCardDragPreview = null;
   }
 
   private findFieldSlotAtPoint(x: number, y: number): BattleSlotId | null {
@@ -1372,8 +1398,11 @@ export class BattlefieldScene extends Phaser.Scene {
       }
     }
 
-    if (this.selection?.kind === 'ATTACK_DRAG') {
+    if (this.selection?.kind === 'FIELD_CARD_DRAG') {
       this.drawSlotHighlight(this.selection.sourceSlotId, SELECTED_HIGHLIGHT_COLOR, 0.98);
+      for (const action of this.selection.moveActions) {
+        this.drawSlotHighlight(action.toSlotId, MOVE_HIGHLIGHT_COLOR, 0.9);
+      }
       for (const action of this.selection.attackActions) {
         this.drawSlotHighlight(action.toSlotId, ATTACK_HIGHLIGHT_COLOR, 0.92);
       }
@@ -1835,7 +1864,7 @@ function formatFieldCardSelectionStatus(
   activeSkillGroups: readonly ActiveSkillActionGroup[],
 ): string {
   const actionLabels = [
-    moveActions.length > 0 ? 'blue move slot' : null,
+    moveActions.length > 0 ? 'drag to move' : null,
     attackActions.length > 0 ? 'drag to attack' : null,
     activeSkillGroups.length > 0 ? 'Skill' : null,
   ].filter((label): label is string => label !== null);
@@ -1845,6 +1874,22 @@ function formatFieldCardSelectionStatus(
       : '';
 
   return `Select ${actionLabels.join(', ')} for ${card.card.instance.name}.${skillText}`;
+}
+
+/**
+ * 전장 카드 드래그 중 드롭 가능한 이동/공격 대상을 상태 메시지로 안내한다.
+ */
+function formatFieldCardDragStatus(
+  card: BattleCardRuntimeState,
+  moveActions: readonly MoveBattleAction[],
+  attackActions: readonly AttackBattleAction[],
+): string {
+  const dropLabels = [
+    moveActions.length > 0 ? 'a blue slot to move' : null,
+    attackActions.length > 0 ? 'a red target to attack' : null,
+  ].filter((label): label is string => label !== null);
+
+  return `Drop ${card.card.instance.name} on ${dropLabels.join(' or ')}.`;
 }
 
 /**
