@@ -316,14 +316,14 @@ export function listBlockActions(
 }
 
 /**
- * 현재 카드 데이터 기준으로 가능한 활성 스킬 후보를 반환한다.
+ * 메인 단계에서 현재 카드 데이터 기준으로 가능한 활성 스킬 후보를 반환한다.
  * 능력별 대상 규칙은 엔진에서 해석하고, Scene은 반환된 대상 슬롯만 표시한다.
  */
 export function listActiveSkillActions(
   runtime: BattleRuntimeState,
   side: BattleSide = runtime.currentSide,
 ): ActiveSkillBattleAction[] {
-  if (runtime.phase === 'GAME_OVER' || side !== runtime.currentSide) {
+  if (runtime.phase !== 'MAIN' || side !== runtime.currentSide) {
     return [];
   }
 

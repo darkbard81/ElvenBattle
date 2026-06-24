@@ -584,6 +584,19 @@ describe('battle engine', () => {
     expect(runtime.currentSide).toBe('enemy');
   });
 
+  it('does not keep stalled attack phases open for unused active skills', async () => {
+    const runtime = await createRuntime();
+    const healer = moveCardToBattlefield(runtime, 'player', 'unit_elf_healer_001', 'player:FC');
+    runtime.player.hand = [];
+    healer.hasAttackedThisTurn = true;
+    runtime.phase = 'ATTACK';
+
+    expect(listAttackActions(runtime)).toEqual([]);
+    expect(listActiveSkillActions(runtime)).toEqual([]);
+    expect(applyAutoTurnEndIfStalled(runtime)).toBe(true);
+    expect(runtime.currentSide).toBe('enemy');
+  });
+
   it('starts turns by resetting flags and drawing one card from the current side deck', async () => {
     const runtime = await createRuntime();
     const firstDeckCard = runtime.player.deck[0];
