@@ -1,19 +1,26 @@
 import Phaser from 'phaser';
 import {
+  applyActiveSkillAction,
   applyAttackAction,
+  applyBlockAction,
   applyAutoTurnEndIfStalled,
   applyMoveAction,
   applyPlaceAction,
   applyTurnEnd,
   findBattlefieldCardAtSlot,
+  getEffectiveAttack,
+  getEffectiveDominance,
+  getEffectiveHp,
+  listActiveSkillActions,
   listAttackActions,
   listMoveActions,
   listPlaceActions,
-  runAutomatedTurn,
+  runAutomatedTurnUntilBlockDecision,
 } from '../../game/battle/battle-engine';
 import { createInitialBattleRuntime } from '../../game/battle/create-battle-runtime';
 import {
   INITIAL_HAND_SIZE,
+  type ActiveSkillBattleAction,
   type AttackBattleAction,
   type BattleAutomationAction,
   type BattleCardRuntimeState,
@@ -21,6 +28,7 @@ import {
   type BattleSide,
   type BattleSlotId,
   type BattleTurnEvent,
+  type BlockBattleAction,
   type MoveBattleAction,
   type PlaceBattleAction,
 } from '../../game/battle/types';
@@ -63,21 +71,53 @@ type BattleSelection =
       cardInstanceId: string;
       sourceSlotId: BattleSlotId;
       moveActions: MoveBattleAction[];
+      activeSkillGroups: ActiveSkillActionGroup[];
       attackActions: AttackBattleAction[];
+    }
+  | {
+      kind: 'ACTIVE_SKILL';
+      cardInstanceId: string;
+      sourceSlotId: BattleSlotId;
+      skillId: string;
+      skillName: string;
+      activeSkillActions: ActiveSkillBattleAction[];
+    }
+  | {
+      kind: 'FIELD_CARD_DRAG';
+      cardInstanceId: string;
+      sourceSlotId: BattleSlotId;
+      moveActions: MoveBattleAction[];
+      attackActions: AttackBattleAction[];
+    }
+  | {
+      kind: 'BLOCK_DECISION';
+      attackAction: AttackBattleAction;
+      blockActions: BlockBattleAction[];
+      automatedActionCount: number;
     };
+
+type ActiveSkillActionGroup = {
+  skillId: string;
+  skillName: string;
+  actions: ActiveSkillBattleAction[];
+};
 
 type CardViewOptions = {
   highlightColor?: number;
   onClick?: () => void;
+  onFieldDragStart?: (pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => boolean;
+  onFieldDrag?: (pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => void;
+  onFieldDragEnd?: (pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => void;
 };
 
 type BattleFlowResult = {
   messages: string[];
   popupEvents: BattlePopupEvent[];
+  pendingBlockSelection: Extract<BattleSelection, { kind: 'BLOCK_DECISION' }> | null;
 };
 
 type BattlePopupEvent = {
-  kind: 'PLACE' | 'MOVE' | 'ATTACK';
+  kind: 'PLACE' | 'MOVE' | 'ATTACK' | 'SKILL' | 'BLOCK';
   slotId: BattleSlotId;
   text: string;
 };
@@ -89,6 +129,8 @@ const BATTLE_POPUP_DURATION_MS = 500;
 const PLACE_HIGHLIGHT_COLOR = 0x71d879;
 const MOVE_HIGHLIGHT_COLOR = 0x79b8ff;
 const ATTACK_HIGHLIGHT_COLOR = 0xff6f6f;
+const SKILL_HIGHLIGHT_COLOR = 0xf4c95d;
+const BLOCK_HIGHLIGHT_COLOR = 0xc8f47a;
 const SELECTED_HIGHLIGHT_COLOR = 0xfff1a3;
 const CARD_BACK_TEXTURE_KEY = 'cards.webp.card_back';
 const POPUP_STYLE = {
@@ -106,6 +148,16 @@ const POPUP_STYLE = {
     fill: 0x4b1717,
     stroke: ATTACK_HIGHLIGHT_COLOR,
     color: '#ffe1dc',
+  },
+  SKILL: {
+    fill: 0x463416,
+    stroke: SKILL_HIGHLIGHT_COLOR,
+    color: '#fff3c2',
+  },
+  BLOCK: {
+    fill: 0x273313,
+    stroke: BLOCK_HIGHLIGHT_COLOR,
+    color: '#f4ffd2',
   },
 } as const;
 const SLOT_COLUMNS = {
@@ -132,18 +184,78 @@ const HAND_RECT = {
   height: 288,
 } as const satisfies Rect;
 const FIELD_SLOT_RECTS: Record<BattleSlotId, Rect> = {
-  'enemy:BR': createCenteredRect(SLOT_COLUMNS.FR, SLOT_ROWS.enemyBack, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
-  'enemy:BC': createCenteredRect(SLOT_COLUMNS.FC, SLOT_ROWS.enemyBack, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
-  'enemy:BL': createCenteredRect(SLOT_COLUMNS.FL, SLOT_ROWS.enemyBack, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
-  'enemy:FR': createCenteredRect(SLOT_COLUMNS.FR, SLOT_ROWS.enemyFront, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
-  'enemy:FC': createCenteredRect(SLOT_COLUMNS.FC, SLOT_ROWS.enemyFront, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
-  'enemy:FL': createCenteredRect(SLOT_COLUMNS.FL, SLOT_ROWS.enemyFront, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
-  'player:FR': createCenteredRect(SLOT_COLUMNS.FR, SLOT_ROWS.playerFront, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
-  'player:FC': createCenteredRect(SLOT_COLUMNS.FC, SLOT_ROWS.playerFront, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
-  'player:FL': createCenteredRect(SLOT_COLUMNS.FL, SLOT_ROWS.playerFront, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
-  'player:BR': createCenteredRect(SLOT_COLUMNS.FR, SLOT_ROWS.playerBack, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
-  'player:BC': createCenteredRect(SLOT_COLUMNS.FC, SLOT_ROWS.playerBack, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
-  'player:BL': createCenteredRect(SLOT_COLUMNS.FL, SLOT_ROWS.playerBack, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
+  'enemy:BR': createCenteredRect(
+    SLOT_COLUMNS.FR,
+    SLOT_ROWS.enemyBack,
+    FIELD_SLOT_WIDTH,
+    FIELD_SLOT_HEIGHT,
+  ),
+  'enemy:BC': createCenteredRect(
+    SLOT_COLUMNS.FC,
+    SLOT_ROWS.enemyBack,
+    FIELD_SLOT_WIDTH,
+    FIELD_SLOT_HEIGHT,
+  ),
+  'enemy:BL': createCenteredRect(
+    SLOT_COLUMNS.FL,
+    SLOT_ROWS.enemyBack,
+    FIELD_SLOT_WIDTH,
+    FIELD_SLOT_HEIGHT,
+  ),
+  'enemy:FR': createCenteredRect(
+    SLOT_COLUMNS.FR,
+    SLOT_ROWS.enemyFront,
+    FIELD_SLOT_WIDTH,
+    FIELD_SLOT_HEIGHT,
+  ),
+  'enemy:FC': createCenteredRect(
+    SLOT_COLUMNS.FC,
+    SLOT_ROWS.enemyFront,
+    FIELD_SLOT_WIDTH,
+    FIELD_SLOT_HEIGHT,
+  ),
+  'enemy:FL': createCenteredRect(
+    SLOT_COLUMNS.FL,
+    SLOT_ROWS.enemyFront,
+    FIELD_SLOT_WIDTH,
+    FIELD_SLOT_HEIGHT,
+  ),
+  'player:FR': createCenteredRect(
+    SLOT_COLUMNS.FR,
+    SLOT_ROWS.playerFront,
+    FIELD_SLOT_WIDTH,
+    FIELD_SLOT_HEIGHT,
+  ),
+  'player:FC': createCenteredRect(
+    SLOT_COLUMNS.FC,
+    SLOT_ROWS.playerFront,
+    FIELD_SLOT_WIDTH,
+    FIELD_SLOT_HEIGHT,
+  ),
+  'player:FL': createCenteredRect(
+    SLOT_COLUMNS.FL,
+    SLOT_ROWS.playerFront,
+    FIELD_SLOT_WIDTH,
+    FIELD_SLOT_HEIGHT,
+  ),
+  'player:BR': createCenteredRect(
+    SLOT_COLUMNS.FR,
+    SLOT_ROWS.playerBack,
+    FIELD_SLOT_WIDTH,
+    FIELD_SLOT_HEIGHT,
+  ),
+  'player:BC': createCenteredRect(
+    SLOT_COLUMNS.FC,
+    SLOT_ROWS.playerBack,
+    FIELD_SLOT_WIDTH,
+    FIELD_SLOT_HEIGHT,
+  ),
+  'player:BL': createCenteredRect(
+    SLOT_COLUMNS.FL,
+    SLOT_ROWS.playerBack,
+    FIELD_SLOT_WIDTH,
+    FIELD_SLOT_HEIGHT,
+  ),
 };
 const SLOT_ORDER: readonly BattleSlotId[] = [
   'enemy:BR',
@@ -184,6 +296,7 @@ export class BattlefieldScene extends Phaser.Scene {
   private isSaving = false;
   private selectedSlotId: BattleSlotId | null = null;
   private selection: BattleSelection | null = null;
+  private fieldCardDragPreview: Phaser.GameObjects.Container | null = null;
   private statusMessage = 'Select a hand card or battlefield card.';
 
   constructor() {
@@ -200,6 +313,7 @@ export class BattlefieldScene extends Phaser.Scene {
     this.isSaving = false;
     this.selectedSlotId = null;
     this.selection = null;
+    this.fieldCardDragPreview = null;
     this.statusMessage = 'Select a hand card or battlefield card.';
     this.handDeckContainer = null;
     this.handDeckTargetY = null;
@@ -234,6 +348,7 @@ export class BattlefieldScene extends Phaser.Scene {
     this.layers.handLayer.removeAll(true);
     this.layers.buttonLayer.removeAll(true);
     this.highlightGraphics.clear();
+    this.fieldCardDragPreview = null;
 
     this.addTopHud();
     this.addBoard();
@@ -274,32 +389,29 @@ export class BattlefieldScene extends Phaser.Scene {
   }
 
   private addTopHud(): void {
-    this.addInfoPanel(
-      { x: 44, y: 52, width: 320, height: 138 },
-      [
-        `ENEMY ${this.runtime.enemy.leader.card.definition.name}`,
-        `HP ${this.runtime.enemy.leader.card.instance.hp}  ATK ${this.runtime.enemy.leader.card.instance.attack}`,
-        `Deck ${this.runtime.enemy.deck.length}  Drop ${this.runtime.enemy.drop.length}`,
-      ],
-    );
-    this.addInfoPanel(
-      { x: 440, y: 52, width: 320, height: 138 },
-      [
-        `${formatSideLabel(this.runtime.currentSide)} TURN`,
-        `Round ${this.runtime.turnNumber}`,
-        this.runtime.outcome
-          ? `${formatSideLabel(this.runtime.outcome.winner)} WINS`
-          : this.runtime.phase,
-      ],
-    );
-    this.addInfoPanel(
-      { x: 836, y: 52, width: 320, height: 138 },
-      [
-        `PLAYER ${this.runtime.player.leader.card.definition.name}`,
-        `HP ${this.runtime.player.leader.card.instance.hp}  ATK ${this.runtime.player.leader.card.instance.attack}`,
-        `Deck ${this.runtime.player.deck.length}  Hand ${this.runtime.player.hand.length}`,
-      ],
-    );
+    this.addInfoPanel({ x: 44, y: 52, width: 320, height: 138 }, [
+      `ENEMY ${this.runtime.enemy.leader.card.definition.name}`,
+      `HP ${getEffectiveHp(this.runtime, this.runtime.enemy.leader)}  ATK ${getEffectiveAttack(
+        this.runtime,
+        this.runtime.enemy.leader,
+      )}`,
+      `Deck ${this.runtime.enemy.deck.length}  Drop ${this.runtime.enemy.drop.length}`,
+    ]);
+    this.addInfoPanel({ x: 440, y: 52, width: 320, height: 138 }, [
+      `${formatSideLabel(this.runtime.currentSide)} TURN`,
+      `Round ${this.runtime.turnNumber}`,
+      this.runtime.outcome
+        ? `${formatSideLabel(this.runtime.outcome.winner)} WINS`
+        : this.runtime.phase,
+    ]);
+    this.addInfoPanel({ x: 836, y: 52, width: 320, height: 138 }, [
+      `PLAYER ${this.runtime.player.leader.card.definition.name}`,
+      `HP ${getEffectiveHp(this.runtime, this.runtime.player.leader)}  ATK ${getEffectiveAttack(
+        this.runtime,
+        this.runtime.player.leader,
+      )}`,
+      `Deck ${this.runtime.player.deck.length}  Hand ${this.runtime.player.hand.length}`,
+    ]);
   }
 
   private addInfoPanel(rect: Rect, lines: [string, string, string]): void {
@@ -480,10 +592,23 @@ export class BattlefieldScene extends Phaser.Scene {
     for (const slotId of SLOT_ORDER) {
       const card = slotCards.get(slotId);
       if (card) {
-        this.addCardView(this.layers.cardLayer, FIELD_SLOT_RECTS[slotId], card, 'field', {
+        const cardViewOptions: CardViewOptions = {
           onClick: () => {
             this.selectBattlefieldCard(card);
           },
+        };
+        if (card.side === 'player') {
+          cardViewOptions.onFieldDragStart = (_pointer, dragX, dragY) =>
+            this.startFieldCardDrag(card, dragX, dragY);
+          cardViewOptions.onFieldDrag = (_pointer, dragX, dragY) => {
+            this.updateFieldCardDragPreview(dragX, dragY);
+          };
+          cardViewOptions.onFieldDragEnd = (pointer) => {
+            this.finishFieldCardDrag(pointer.worldX, pointer.worldY);
+          };
+        }
+        this.addCardView(this.layers.cardLayer, FIELD_SLOT_RECTS[slotId], card, 'field', {
+          ...cardViewOptions,
         });
       }
     }
@@ -501,7 +626,9 @@ export class BattlefieldScene extends Phaser.Scene {
     const textureKey = `cards.webp.${card.card.instance.id}`;
 
     if (this.textures.exists(textureKey)) {
-      parent.add(this.add.image(centerX, centerY, textureKey).setDisplaySize(rect.width, rect.height));
+      parent.add(
+        this.add.image(centerX, centerY, textureKey).setDisplaySize(rect.width, rect.height),
+      );
     } else {
       const fallback = this.add.rectangle(
         centerX,
@@ -515,7 +642,6 @@ export class BattlefieldScene extends Phaser.Scene {
       parent.add(fallback);
     }
 
-    const instance = card.card.instance;
     const paddingX = mode === 'field' ? 21 : 16;
     const paddingY = mode === 'field' ? 18 : 14;
     const badgeSize = mode === 'field' ? 34 : 30;
@@ -525,7 +651,7 @@ export class BattlefieldScene extends Phaser.Scene {
       parent,
       rect.x + paddingX,
       rect.y + paddingY,
-      String(instance.dominance ?? 0),
+      String(getEffectiveDominance(this.runtime, card)),
       badgeSize,
       fontSize,
     );
@@ -533,7 +659,7 @@ export class BattlefieldScene extends Phaser.Scene {
       parent,
       rect.x + rect.width - paddingX - 4,
       rect.y + paddingY,
-      String(instance.cost ?? 0),
+      String(card.card.instance.cost ?? 0),
       badgeSize,
       fontSize,
     );
@@ -541,7 +667,7 @@ export class BattlefieldScene extends Phaser.Scene {
       parent,
       rect.x + paddingX,
       rect.y + rect.height - paddingY - 8,
-      String(instance.hp),
+      String(getEffectiveHp(this.runtime, card)),
       badgeSize,
       fontSize,
     );
@@ -549,7 +675,7 @@ export class BattlefieldScene extends Phaser.Scene {
       parent,
       rect.x + rect.width - paddingX - 4,
       rect.y + rect.height - paddingY - 8,
-      String(instance.attack),
+      String(getEffectiveAttack(this.runtime, card)),
       badgeSize,
       fontSize,
     );
@@ -569,8 +695,37 @@ export class BattlefieldScene extends Phaser.Scene {
 
     if (options.onClick) {
       const hitArea = this.add.zone(centerX, centerY, rect.width, rect.height);
-      hitArea.setInteractive({ useHandCursor: true });
+      hitArea.setInteractive({
+        useHandCursor: true,
+        draggable: options.onFieldDragStart !== undefined,
+      });
       hitArea.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, options.onClick);
+      if (options.onFieldDragStart) {
+        let isFieldDragActive = false;
+        hitArea.on(
+          Phaser.Input.Events.GAMEOBJECT_DRAG_START,
+          (pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => {
+            isFieldDragActive = options.onFieldDragStart?.(pointer, dragX, dragY) ?? false;
+          },
+        );
+        hitArea.on(
+          Phaser.Input.Events.GAMEOBJECT_DRAG,
+          (pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => {
+            if (isFieldDragActive) {
+              options.onFieldDrag?.(pointer, dragX, dragY);
+            }
+          },
+        );
+        hitArea.on(
+          Phaser.Input.Events.GAMEOBJECT_DRAG_END,
+          (pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => {
+            if (isFieldDragActive) {
+              options.onFieldDragEnd?.(pointer, dragX, dragY);
+            }
+            isFieldDragActive = false;
+          },
+        );
+      }
       parent.add(hitArea);
     }
   }
@@ -603,7 +758,9 @@ export class BattlefieldScene extends Phaser.Scene {
     this.handDeckContainer = container;
     this.layers.handLayer.add(container);
 
-    const panel = this.add.rectangle(0, 0, HAND_RECT.width, HAND_RECT.height, 0x10211b, 0.95).setOrigin(0.5, 0);
+    const panel = this.add
+      .rectangle(0, 0, HAND_RECT.width, HAND_RECT.height, 0x10211b, 0.95)
+      .setOrigin(0.5, 0);
     panel.setStrokeStyle(2, 0xcde7cb, 0.78);
     container.add(panel);
     this.addHandCards(container);
@@ -754,9 +911,43 @@ export class BattlefieldScene extends Phaser.Scene {
       y: 1818,
       width: 152,
       height: 52,
-      label: 'Undo',
-      enabled: false,
+      label: 'Skill',
+      enabled: this.canStartActiveSkillTargeting(),
       parent: this.layers.buttonLayer,
+      onClick: () => {
+        this.startActiveSkillTargeting();
+      },
+    });
+
+    if (this.selection?.kind === 'BLOCK_DECISION') {
+      this.addBlockDecisionButtons();
+    }
+  }
+
+  private addBlockDecisionButtons(): void {
+    createMenuButton(this, {
+      x: 500,
+      y: 1468,
+      width: 150,
+      height: 56,
+      label: 'Block',
+      enabled: !this.isAnimatingBattleEvents,
+      parent: this.layers.buttonLayer,
+      onClick: () => {
+        this.resolveBlockDecision(true);
+      },
+    });
+    createMenuButton(this, {
+      x: 700,
+      y: 1468,
+      width: 170,
+      height: 56,
+      label: 'No Block',
+      enabled: !this.isAnimatingBattleEvents,
+      parent: this.layers.buttonLayer,
+      onClick: () => {
+        this.resolveBlockDecision(false);
+      },
     });
   }
 
@@ -774,6 +965,41 @@ export class BattlefieldScene extends Phaser.Scene {
     this.layers.hudLayer.add(this.statusText);
   }
 
+  private canStartActiveSkillTargeting(): boolean {
+    return (
+      this.isPlayerControlActive() &&
+      this.selection?.kind === 'FIELD_CARD' &&
+      this.selection.activeSkillGroups.length > 0
+    );
+  }
+
+  private startActiveSkillTargeting(): void {
+    if (!this.canStartActiveSkillTargeting() || this.selection?.kind !== 'FIELD_CARD') {
+      return;
+    }
+
+    const skillGroup = this.selection.activeSkillGroups[0];
+    if (!skillGroup) {
+      return;
+    }
+
+    this.selection = {
+      kind: 'ACTIVE_SKILL',
+      cardInstanceId: this.selection.cardInstanceId,
+      sourceSlotId: this.selection.sourceSlotId,
+      skillId: skillGroup.skillId,
+      skillName: skillGroup.skillName,
+      activeSkillActions: skillGroup.actions,
+    };
+    this.selectedSlotId = null;
+    this.redrawHighlight();
+    this.setStatus(
+      `Skill: ${this.selection.skillName}. Select a gold target for ${this.getCardName(
+        this.selection.cardInstanceId,
+      )}.`,
+    );
+  }
+
   private selectSlot(slotId: BattleSlotId): void {
     if (this.isAnimatingBattleEvents) {
       return;
@@ -781,6 +1007,16 @@ export class BattlefieldScene extends Phaser.Scene {
 
     if (this.runtime.phase === 'GAME_OVER') {
       this.setStatus('Battle is over.');
+      return;
+    }
+
+    if (this.selection?.kind === 'BLOCK_DECISION') {
+      this.setStatus('Choose Block or No Block.');
+      return;
+    }
+
+    if (this.selection?.kind === 'FIELD_CARD_DRAG') {
+      this.setStatus('Drop the card on a blue move slot or red attack target.');
       return;
     }
 
@@ -799,32 +1035,26 @@ export class BattlefieldScene extends Phaser.Scene {
       return;
     }
 
+    if (this.selection?.kind === 'ACTIVE_SKILL') {
+      if (this.applySelectedActiveSkillToSlot(slotId)) {
+        return;
+      }
+
+      this.setStatus(`Selected skill has no target on ${slotId}.`);
+      return;
+    }
+
     if (this.selection?.kind === 'FIELD_CARD') {
       const moveAction = this.selection.moveActions.find(
         (candidate) => candidate.toSlotId === slotId,
       );
       if (moveAction) {
-        const popupEvent = this.createActionPopupEvent(this.runtime.currentSide, moveAction);
-        applyMoveAction(this.runtime, moveAction);
-        this.finishBattleAction(
-          `Moved ${this.getCardName(moveAction.cardInstanceId)} to ${slotId}.`,
-          [popupEvent],
-        );
+        this.setStatus('Move uses drag and drop. Drag the selected card onto a blue slot.');
         return;
       }
 
-      const attackAction = this.selection.attackActions.find(
-        (candidate) => candidate.toSlotId === slotId,
-      );
-      if (attackAction) {
-        const popupEvent = this.createActionPopupEvent(this.runtime.currentSide, attackAction);
-        applyAttackAction(this.runtime, attackAction);
-        this.finishBattleAction(
-          `${this.getCardName(attackAction.attackerInstanceId)} attacked ${this.getCardName(
-            attackAction.targetInstanceId,
-          )}.`,
-          [popupEvent],
-        );
+      if (this.selection.attackActions.some((candidate) => candidate.toSlotId === slotId)) {
+        this.setStatus('Attack uses drag and drop. Drag the selected card onto a red target.');
         return;
       }
 
@@ -846,6 +1076,16 @@ export class BattlefieldScene extends Phaser.Scene {
 
   private selectHandCard(card: BattleCardRuntimeState): void {
     if (this.isAnimatingBattleEvents) {
+      return;
+    }
+
+    if (this.selection?.kind === 'BLOCK_DECISION') {
+      this.setStatus('Choose Block or No Block.');
+      return;
+    }
+
+    if (this.selection?.kind === 'FIELD_CARD_DRAG') {
+      this.setStatus('Drop the card on a blue move slot or red attack target.');
       return;
     }
 
@@ -880,23 +1120,36 @@ export class BattlefieldScene extends Phaser.Scene {
       return;
     }
 
+    if (this.selection?.kind === 'BLOCK_DECISION') {
+      this.setStatus('Choose Block or No Block.');
+      return;
+    }
+
+    if (this.selection?.kind === 'FIELD_CARD_DRAG') {
+      this.setStatus('Drop the card on a blue move slot or red attack target.');
+      return;
+    }
+
+    if (this.selection?.kind === 'ACTIVE_SKILL' && card.battlefieldSlot !== null) {
+      if (this.applySelectedActiveSkillToSlot(card.battlefieldSlot)) {
+        return;
+      }
+
+      this.setStatus(`${card.card.instance.name} is not a selected skill target.`);
+      return;
+    }
+
     if (
       this.selection?.kind === 'FIELD_CARD' &&
       card.battlefieldSlot !== null &&
       card.side !== this.runtime.currentSide
     ) {
-      const attackAction = this.selection.attackActions.find(
-        (candidate) => candidate.toSlotId === card.battlefieldSlot,
-      );
-      if (attackAction) {
-        const popupEvent = this.createActionPopupEvent(this.runtime.currentSide, attackAction);
-        applyAttackAction(this.runtime, attackAction);
-        this.finishBattleAction(
-          `${this.getCardName(attackAction.attackerInstanceId)} attacked ${this.getCardName(
-            attackAction.targetInstanceId,
-          )}.`,
-          [popupEvent],
-        );
+      if (
+        this.selection.attackActions.some(
+          (candidate) => candidate.toSlotId === card.battlefieldSlot,
+        )
+      ) {
+        this.setStatus('Attack uses drag and drop. Drag the selected card onto this target.');
         return;
       }
     }
@@ -917,7 +1170,11 @@ export class BattlefieldScene extends Phaser.Scene {
     const attackActions = listAttackActions(this.runtime).filter(
       (action) => action.attackerInstanceId === card.card.instance.instanceId,
     );
-    if (moveActions.length === 0 && attackActions.length === 0) {
+    const activeSkillActions = listActiveSkillActions(this.runtime).filter(
+      (action) => action.cardInstanceId === card.card.instance.instanceId,
+    );
+    const activeSkillGroups = groupActiveSkillActions(card, activeSkillActions);
+    if (moveActions.length === 0 && attackActions.length === 0 && activeSkillGroups.length === 0) {
       this.selection = null;
       this.selectedSlotId = card.battlefieldSlot;
       this.redrawHighlight();
@@ -931,10 +1188,187 @@ export class BattlefieldScene extends Phaser.Scene {
       sourceSlotId: card.battlefieldSlot,
       moveActions,
       attackActions,
+      activeSkillGroups,
     };
     this.selectedSlotId = null;
     this.redrawHighlight();
-    this.setStatus(`Select a blue move slot or red attack target for ${card.card.instance.name}.`);
+    this.setStatus(
+      formatFieldCardSelectionStatus(card, moveActions, attackActions, activeSkillGroups),
+    );
+  }
+
+  private applySelectedActiveSkillToSlot(slotId: BattleSlotId): boolean {
+    if (this.selection?.kind !== 'ACTIVE_SKILL') {
+      return false;
+    }
+
+    const action = this.selection.activeSkillActions.find(
+      (candidate) => candidate.targetSlotId === slotId,
+    );
+    if (!action) {
+      return false;
+    }
+
+    applyActiveSkillAction(this.runtime, action);
+    this.finishBattleAction(
+      `${this.getCardName(action.cardInstanceId)} used ${this.selection.skillName} (${formatActiveSkillEffect(
+        action,
+      )}) on ${this.getCardName(action.targetInstanceId)}.`,
+      [this.createActiveSkillPopupEvent(action, this.selection.skillName)],
+    );
+    return true;
+  }
+
+  private startFieldCardDrag(card: BattleCardRuntimeState, x: number, y: number): boolean {
+    if (
+      !this.isPlayerControlActive() ||
+      this.selection?.kind === 'ACTIVE_SKILL' ||
+      this.selection?.kind === 'BLOCK_DECISION' ||
+      card.side !== this.runtime.currentSide ||
+      card.battlefieldSlot === null
+    ) {
+      return false;
+    }
+
+    const moveActions = listMoveActions(this.runtime).filter(
+      (action) => action.cardInstanceId === card.card.instance.instanceId,
+    );
+    const attackActions = listAttackActions(this.runtime).filter(
+      (action) => action.attackerInstanceId === card.card.instance.instanceId,
+    );
+    if (moveActions.length === 0 && attackActions.length === 0) {
+      return false;
+    }
+
+    this.destroyFieldCardDragPreview();
+    this.selection = {
+      kind: 'FIELD_CARD_DRAG',
+      cardInstanceId: card.card.instance.instanceId,
+      sourceSlotId: card.battlefieldSlot,
+      moveActions,
+      attackActions,
+    };
+    this.selectedSlotId = null;
+    this.createFieldCardDragPreview(
+      card,
+      x,
+      y,
+      attackActions.length > 0 ? ATTACK_HIGHLIGHT_COLOR : MOVE_HIGHLIGHT_COLOR,
+    );
+    this.redrawHighlight();
+    this.setStatus(formatFieldCardDragStatus(card, moveActions, attackActions));
+    return true;
+  }
+
+  private updateFieldCardDragPreview(x: number, y: number): void {
+    if (!this.fieldCardDragPreview) {
+      return;
+    }
+
+    this.fieldCardDragPreview.setPosition(x, y);
+  }
+
+  private finishFieldCardDrag(x: number, y: number): void {
+    if (this.selection?.kind !== 'FIELD_CARD_DRAG') {
+      this.destroyFieldCardDragPreview();
+      return;
+    }
+
+    const selection = this.selection;
+    this.destroyFieldCardDragPreview();
+    const targetSlotId = this.findFieldSlotAtPoint(x, y);
+    const moveAction =
+      targetSlotId === null
+        ? null
+        : (selection.moveActions.find((candidate) => candidate.toSlotId === targetSlotId) ?? null);
+    if (moveAction) {
+      const popupEvent = this.createActionPopupEvent(this.runtime.currentSide, moveAction);
+      applyMoveAction(this.runtime, moveAction);
+      this.finishBattleAction(
+        `Moved ${this.getCardName(moveAction.cardInstanceId)} to ${targetSlotId}.`,
+        [popupEvent],
+      );
+      return;
+    }
+
+    const attackAction =
+      targetSlotId === null
+        ? null
+        : (selection.attackActions.find((candidate) => candidate.toSlotId === targetSlotId) ??
+          null);
+    if (!attackAction) {
+      this.selection = null;
+      this.selectedSlotId = null;
+      this.redrawHighlight();
+      this.setStatus(
+        'Action canceled. Drop the card on a blue slot to move or red target to attack.',
+      );
+      return;
+    }
+
+    applyAttackAction(this.runtime, attackAction);
+    const popupEvent = this.createActionPopupEvent(this.runtime.currentSide, attackAction);
+    this.finishBattleAction(
+      `${this.getCardName(attackAction.attackerInstanceId)} attacked ${this.getCardName(
+        attackAction.targetInstanceId,
+      )}.`,
+      [popupEvent],
+    );
+  }
+
+  private createFieldCardDragPreview(
+    card: BattleCardRuntimeState,
+    x: number,
+    y: number,
+    borderColor: number,
+  ): void {
+    const container = this.add.container(x, y).setAlpha(0.78).setDepth(100);
+    const width = Math.round(FIELD_SLOT_WIDTH * 0.72);
+    const height = Math.round(FIELD_SLOT_HEIGHT * 0.72);
+    const textureKey = `cards.webp.${card.card.instance.id}`;
+
+    if (this.textures.exists(textureKey)) {
+      container.add(this.add.image(0, 0, textureKey).setDisplaySize(width, height));
+    } else {
+      const fallback = this.add.rectangle(0, 0, width, height, 0x1c4238, 0.98);
+      fallback.setStrokeStyle(2, 0xf6ffe3, 0.86);
+      container.add(fallback);
+      container.add(
+        this.add
+          .text(0, 0, card.card.instance.name, {
+            fontFamily: DEFAULT_FONT_FAMILY,
+            fontSize: '18px',
+            color: '#ffffff',
+            stroke: '#000000',
+            strokeThickness: 4,
+            align: 'center',
+            wordWrap: { width: width - 18 },
+          })
+          .setOrigin(0.5),
+      );
+    }
+
+    const border = this.add.rectangle(0, 0, width + 8, height + 8, 0x000000, 0);
+    border.setStrokeStyle(4, borderColor, 0.94);
+    container.add(border);
+    this.layers.effectLayer.add(container);
+    this.fieldCardDragPreview = container;
+  }
+
+  private destroyFieldCardDragPreview(): void {
+    this.fieldCardDragPreview?.destroy();
+    this.fieldCardDragPreview = null;
+  }
+
+  private findFieldSlotAtPoint(x: number, y: number): BattleSlotId | null {
+    for (const slotId of SLOT_ORDER) {
+      const rect = FIELD_SLOT_RECTS[slotId];
+      if (x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height) {
+        return slotId;
+      }
+    }
+
+    return null;
   }
 
   private redrawHighlight(): void {
@@ -951,8 +1385,33 @@ export class BattlefieldScene extends Phaser.Scene {
       for (const action of this.selection.moveActions) {
         this.drawSlotHighlight(action.toSlotId, MOVE_HIGHLIGHT_COLOR, 0.9);
       }
+    }
+
+    if (this.selection?.kind === 'ACTIVE_SKILL') {
+      this.drawSlotHighlight(this.selection.sourceSlotId, SELECTED_HIGHLIGHT_COLOR, 0.98);
+      for (const action of this.selection.activeSkillActions) {
+        if (action.skillId !== this.selection.skillId) {
+          continue;
+        }
+
+        this.drawSlotHighlight(action.targetSlotId, SKILL_HIGHLIGHT_COLOR, 0.92);
+      }
+    }
+
+    if (this.selection?.kind === 'FIELD_CARD_DRAG') {
+      this.drawSlotHighlight(this.selection.sourceSlotId, SELECTED_HIGHLIGHT_COLOR, 0.98);
+      for (const action of this.selection.moveActions) {
+        this.drawSlotHighlight(action.toSlotId, MOVE_HIGHLIGHT_COLOR, 0.9);
+      }
       for (const action of this.selection.attackActions) {
         this.drawSlotHighlight(action.toSlotId, ATTACK_HIGHLIGHT_COLOR, 0.92);
+      }
+    }
+
+    if (this.selection?.kind === 'BLOCK_DECISION') {
+      this.drawSlotHighlight(this.selection.attackAction.toSlotId, ATTACK_HIGHLIGHT_COLOR, 0.88);
+      for (const action of this.selection.blockActions) {
+        this.drawSlotHighlight(action.blockerSlotId, BLOCK_HIGHLIGHT_COLOR, 0.94);
       }
     }
 
@@ -975,7 +1434,9 @@ export class BattlefieldScene extends Phaser.Scene {
     if (this.runtime.outcome) {
       messages.push(`${formatSideLabel(this.runtime.outcome.winner)} wins.`);
     }
-    this.commitBattleStateUpdate(messages, [...popupEvents, ...flow.popupEvents]);
+    this.commitBattleStateUpdate(messages, [...popupEvents, ...flow.popupEvents], {
+      selection: flow.pendingBlockSelection,
+    });
   }
 
   private endCurrentTurn(): void {
@@ -984,11 +1445,55 @@ export class BattlefieldScene extends Phaser.Scene {
     }
 
     const flow = this.settleTurnFlow(applyTurnEnd(this.runtime, 'MANUAL'));
-    this.commitBattleStateUpdate(flow.messages, flow.popupEvents);
+    this.commitBattleStateUpdate(flow.messages, flow.popupEvents, {
+      selection: flow.pendingBlockSelection,
+    });
   }
 
-  private commitBattleStateUpdate(messages: string[], popupEvents: BattlePopupEvent[]): void {
-    this.selection = null;
+  private resolveBlockDecision(useBlock: boolean): void {
+    if (this.isAnimatingBattleEvents || this.selection?.kind !== 'BLOCK_DECISION') {
+      return;
+    }
+
+    const selection = this.selection;
+    const blockAction = useBlock ? (selection.blockActions[0] ?? null) : null;
+    const popupEvents: BattlePopupEvent[] = [];
+    let message: string;
+
+    if (blockAction) {
+      applyBlockAction(this.runtime, blockAction);
+      popupEvents.push(this.createBlockPopupEvent(blockAction));
+      message = `${this.getCardName(blockAction.blockerInstanceId)} blocked attack on ${this.getCardName(
+        selection.attackAction.targetInstanceId,
+      )}.`;
+    } else {
+      applyAttackAction(this.runtime, selection.attackAction);
+      popupEvents.push(
+        this.createActionPopupEvent(this.runtime.currentSide, selection.attackAction),
+      );
+      message = `${this.getCardName(selection.attackAction.attackerInstanceId)} attacked ${this.getCardName(
+        selection.attackAction.targetInstanceId,
+      )}.`;
+    }
+
+    const flow = this.settleTurnFlow([], selection.automatedActionCount + 1);
+    const messages = [message, ...flow.messages];
+    if (this.runtime.outcome) {
+      messages.push(`${formatSideLabel(this.runtime.outcome.winner)} wins.`);
+    }
+    this.commitBattleStateUpdate(messages, [...popupEvents, ...flow.popupEvents], {
+      selection: flow.pendingBlockSelection,
+    });
+  }
+
+  private commitBattleStateUpdate(
+    messages: string[],
+    popupEvents: BattlePopupEvent[],
+    options: {
+      selection?: BattleSelection | null;
+    } = {},
+  ): void {
+    this.selection = options.selection ?? null;
     this.selectedSlotId = null;
     this.statusMessage = messages.join(' ');
     this.isAnimatingBattleEvents = popupEvents.length > 0;
@@ -999,9 +1504,13 @@ export class BattlefieldScene extends Phaser.Scene {
     }
   }
 
-  private settleTurnFlow(initialEvents: readonly BattleTurnEvent[] = []): BattleFlowResult {
+  private settleTurnFlow(
+    initialEvents: readonly BattleTurnEvent[] = [],
+    initialAutomatedActionCount = 0,
+  ): BattleFlowResult {
     const messages = this.formatTurnEvents(initialEvents);
     const popupEvents = this.createPopupEventsForTurnEvents(initialEvents);
+    let pendingBlockSelection: Extract<BattleSelection, { kind: 'BLOCK_DECISION' }> | null = null;
     const stalledEvents: BattleTurnEvent[] = [];
     if (applyAutoTurnEndIfStalled(this.runtime, stalledEvents)) {
       messages.push(...this.formatTurnEvents(stalledEvents));
@@ -1009,14 +1518,34 @@ export class BattlefieldScene extends Phaser.Scene {
     }
 
     if (this.runtime.currentSide === 'enemy' && this.runtime.phase !== 'GAME_OVER') {
-      const enemyEvents = runAutomatedTurn(this.runtime, 'enemy');
-      messages.push(...this.formatTurnEvents(enemyEvents));
-      popupEvents.push(...this.createPopupEventsForTurnEvents(enemyEvents));
+      const enemyTurnResult = runAutomatedTurnUntilBlockDecision(this.runtime, 'enemy', {
+        interruptForBlockSide: 'player',
+        initialActionCount: initialAutomatedActionCount,
+      });
+      messages.push(...this.formatTurnEvents(enemyTurnResult.events));
+      popupEvents.push(...this.createPopupEventsForTurnEvents(enemyTurnResult.events));
+
+      if (enemyTurnResult.blockDecision) {
+        pendingBlockSelection = {
+          kind: 'BLOCK_DECISION',
+          attackAction: enemyTurnResult.blockDecision.attackAction,
+          blockActions: enemyTurnResult.blockDecision.blockActions,
+          automatedActionCount: enemyTurnResult.actionCount,
+        };
+        messages.push(
+          `${this.getCardName(
+            pendingBlockSelection.attackAction.attackerInstanceId,
+          )} is attacking ${this.getCardName(
+            pendingBlockSelection.attackAction.targetInstanceId,
+          )}. Choose Block or No Block.`,
+        );
+      }
     }
 
     return {
       messages,
       popupEvents,
+      pendingBlockSelection,
     };
   }
 
@@ -1096,7 +1625,9 @@ export class BattlefieldScene extends Phaser.Scene {
 
   private createPopupEventsForTurnEvents(events: readonly BattleTurnEvent[]): BattlePopupEvent[] {
     return events
-      .filter((event): event is Extract<BattleTurnEvent, { type: 'ACTION' }> => event.type === 'ACTION')
+      .filter(
+        (event): event is Extract<BattleTurnEvent, { type: 'ACTION' }> => event.type === 'ACTION',
+      )
       .map((event) => this.createActionPopupEvent(event.side, event.action));
   }
 
@@ -1125,6 +1656,41 @@ export class BattlefieldScene extends Phaser.Scene {
       kind: 'ATTACK',
       slotId: action.toSlotId,
       text: `ATTACK -${action.attack}`,
+    };
+  }
+
+  private createBlockPopupEvent(action: BlockBattleAction): BattlePopupEvent {
+    return {
+      kind: 'BLOCK',
+      slotId: action.blockerSlotId,
+      text: `BLOCK -${action.attackAction.attack}`,
+    };
+  }
+
+  private createActiveSkillPopupEvent(
+    action: ActiveSkillBattleAction,
+    skillName: string,
+  ): BattlePopupEvent {
+    if (action.effect === 'HEAL') {
+      return {
+        kind: 'SKILL',
+        slotId: action.targetSlotId,
+        text: `${skillName} +${action.value}`,
+      };
+    }
+
+    if (action.effect === 'DAMAGE') {
+      return {
+        kind: 'SKILL',
+        slotId: action.targetSlotId,
+        text: `${skillName} -${action.value}`,
+      };
+    }
+
+    return {
+      kind: 'SKILL',
+      slotId: action.targetSlotId,
+      text: `${skillName} ATK+${action.value}`,
     };
   }
 
@@ -1159,14 +1725,7 @@ export class BattlefieldScene extends Phaser.Scene {
         align: 'center',
       })
       .setOrigin(0.5);
-    const bubble = this.add.rectangle(
-      0,
-      0,
-      Math.max(112, text.width + 34),
-      44,
-      style.fill,
-      0.94,
-    );
+    const bubble = this.add.rectangle(0, 0, Math.max(112, text.width + 34), 44, style.fill, 0.94);
     bubble.setStrokeStyle(3, style.stroke, 0.92);
 
     container.add([bubble, text]);
@@ -1259,6 +1818,92 @@ function formatSlotLabel(slotId: BattleSlotId): string {
  */
 function formatSideLabel(side: BattleSide): string {
   return side === 'player' ? 'PLAYER' : 'ENEMY';
+}
+
+/**
+ * 같은 ACTION 능력에서 나온 대상별 액션을 하나의 선택 단위로 묶는다.
+ * Scene은 이 그룹의 첫 번째 항목만 단일 Skill 버튼에 연결한다.
+ */
+function groupActiveSkillActions(
+  card: BattleCardRuntimeState,
+  actions: ActiveSkillBattleAction[],
+): ActiveSkillActionGroup[] {
+  const groupedActions = new Map<string, ActiveSkillBattleAction[]>();
+  for (const action of actions) {
+    const group = groupedActions.get(action.skillId);
+    if (group) {
+      group.push(action);
+      continue;
+    }
+
+    groupedActions.set(action.skillId, [action]);
+  }
+
+  return [...groupedActions.entries()].map(([skillId, group]) => ({
+    skillId,
+    skillName: resolveActiveSkillName(card, skillId),
+    actions: group,
+  }));
+}
+
+/**
+ * 카드 definition의 ACTION 능력 이름을 UI 표시명으로 해석한다.
+ * 일치하는 카드 능력이 없으면 데이터 문제를 화면에서 추적할 수 있게 skillId를 그대로 사용한다.
+ */
+function resolveActiveSkillName(card: BattleCardRuntimeState, skillId: string): string {
+  return card.card.definition.abilities.find((ability) => ability.id === skillId)?.name ?? skillId;
+}
+
+/**
+ * 전장 카드 선택 상태 메시지를 후보 action 종류와 ACTION 능력명에 맞춰 구성한다.
+ */
+function formatFieldCardSelectionStatus(
+  card: BattleCardRuntimeState,
+  moveActions: readonly MoveBattleAction[],
+  attackActions: readonly AttackBattleAction[],
+  activeSkillGroups: readonly ActiveSkillActionGroup[],
+): string {
+  const actionLabels = [
+    moveActions.length > 0 ? 'drag to move' : null,
+    attackActions.length > 0 ? 'drag to attack' : null,
+    activeSkillGroups.length > 0 ? 'Skill' : null,
+  ].filter((label): label is string => label !== null);
+  const skillText =
+    activeSkillGroups.length > 0
+      ? ` Skill: ${activeSkillGroups.map((group) => group.skillName).join(', ')}.`
+      : '';
+
+  return `Select ${actionLabels.join(', ')} for ${card.card.instance.name}.${skillText}`;
+}
+
+/**
+ * 전장 카드 드래그 중 드롭 가능한 이동/공격 대상을 상태 메시지로 안내한다.
+ */
+function formatFieldCardDragStatus(
+  card: BattleCardRuntimeState,
+  moveActions: readonly MoveBattleAction[],
+  attackActions: readonly AttackBattleAction[],
+): string {
+  const dropLabels = [
+    moveActions.length > 0 ? 'a blue slot to move' : null,
+    attackActions.length > 0 ? 'a red target to attack' : null,
+  ].filter((label): label is string => label !== null);
+
+  return `Drop ${card.card.instance.name} on ${dropLabels.join(' or ')}.`;
+}
+
+/**
+ * 활성 스킬 효과를 상태 메시지에 넣을 짧은 영문 문구로 변환한다.
+ */
+function formatActiveSkillEffect(action: ActiveSkillBattleAction): string {
+  if (action.effect === 'HEAL') {
+    return `Heal +${action.value}`;
+  }
+  if (action.effect === 'DAMAGE') {
+    return `Damage ${action.value}`;
+  }
+
+  return `Attack +${action.value}`;
 }
 
 /**

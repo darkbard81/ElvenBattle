@@ -122,4 +122,21 @@ describe('createInitialBattleRuntime', () => {
     expect(cards.every((card) => !card.hasAttackedThisTurn)).toBe(true);
     expect(cards.every((card) => !card.hasUsedActiveSkillThisTurn)).toBe(true);
   });
+
+  it('initializes empty ability effect state on every battle runtime card', async () => {
+    const state = await createInitialSaveState({ slotId: 1 });
+    const session = createGameSession(state);
+    const runtime = createInitialBattleRuntime(session);
+    const cards = [
+      runtime.player.leader,
+      runtime.enemy.leader,
+      ...runtime.player.hand,
+      ...runtime.player.deck,
+      ...runtime.enemy.hand,
+      ...runtime.enemy.deck,
+    ];
+
+    expect(cards.every((card) => Array.isArray(card.abilityEffects))).toBe(true);
+    expect(cards.every((card) => card.abilityEffects.length === 0)).toBe(true);
+  });
 });
