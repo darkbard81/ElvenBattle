@@ -83,6 +83,12 @@ type BattleSelection =
       activeSkillActions: ActiveSkillBattleAction[];
     }
   | {
+      kind: 'ATTACK_DRAG';
+      cardInstanceId: string;
+      sourceSlotId: BattleSlotId;
+      attackActions: AttackBattleAction[];
+    }
+  | {
       kind: 'BLOCK_DECISION';
       attackAction: AttackBattleAction;
       blockActions: BlockBattleAction[];
@@ -98,6 +104,13 @@ type ActiveSkillActionGroup = {
 type CardViewOptions = {
   highlightColor?: number;
   onClick?: () => void;
+  onAttackDragStart?: (
+    pointer: Phaser.Input.Pointer,
+    dragX: number,
+    dragY: number,
+  ) => boolean;
+  onAttackDrag?: (pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => void;
+  onAttackDragEnd?: (pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => void;
 };
 
 type BattleFlowResult = {
@@ -286,6 +299,7 @@ export class BattlefieldScene extends Phaser.Scene {
   private isSaving = false;
   private selectedSlotId: BattleSlotId | null = null;
   private selection: BattleSelection | null = null;
+  private attackDragPreview: Phaser.GameObjects.Container | null = null;
   private statusMessage = 'Select a hand card or battlefield card.';
 
   constructor() {
@@ -302,6 +316,7 @@ export class BattlefieldScene extends Phaser.Scene {
     this.isSaving = false;
     this.selectedSlotId = null;
     this.selection = null;
+    this.attackDragPreview = null;
     this.statusMessage = 'Select a hand card or battlefield card.';
     this.handDeckContainer = null;
     this.handDeckTargetY = null;
@@ -336,6 +351,7 @@ export class BattlefieldScene extends Phaser.Scene {
     this.layers.handLayer.removeAll(true);
     this.layers.buttonLayer.removeAll(true);
     this.highlightGraphics.clear();
+    this.attackDragPreview = null;
 
     this.addTopHud();
     this.addBoard();
@@ -579,10 +595,23 @@ export class BattlefieldScene extends Phaser.Scene {
     for (const slotId of SLOT_ORDER) {
       const card = slotCards.get(slotId);
       if (card) {
-        this.addCardView(this.layers.cardLayer, FIELD_SLOT_RECTS[slotId], card, 'field', {
+        const cardViewOptions: CardViewOptions = {
           onClick: () => {
             this.selectBattlefieldCard(card);
           },
+        };
+        if (card.side === 'player') {
+          cardViewOptions.onAttackDragStart = (_pointer, dragX, dragY) =>
+            this.startAttackDrag(card, dragX, dragY);
+          cardViewOptions.onAttackDrag = (_pointer, dragX, dragY) => {
+            this.updateAttackDragPreview(dragX, dragY);
+          };
+          cardViewOptions.onAttackDragEnd = (pointer) => {
+            this.finishAttackDrag(pointer.worldX, pointer.worldY);
+          };
+        }
+        this.addCardView(this.layers.cardLayer, FIELD_SLOT_RECTS[slotId], card, 'field', {
+          ...cardViewOptions,
         });
       }
     }
@@ -669,8 +698,37 @@ export class BattlefieldScene extends Phaser.Scene {
 
     if (options.onClick) {
       const hitArea = this.add.zone(centerX, centerY, rect.width, rect.height);
-      hitArea.setInteractive({ useHandCursor: true });
+      hitArea.setInteractive({
+        useHandCursor: true,
+        draggable: options.onAttackDragStart !== undefined,
+      });
       hitArea.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, options.onClick);
+      if (options.onAttackDragStart) {
+        let isAttackDragActive = false;
+        hitArea.on(
+          Phaser.Input.Events.GAMEOBJECT_DRAG_START,
+          (pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => {
+            isAttackDragActive = options.onAttackDragStart?.(pointer, dragX, dragY) ?? false;
+          },
+        );
+        hitArea.on(
+          Phaser.Input.Events.GAMEOBJECT_DRAG,
+          (pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => {
+            if (isAttackDragActive) {
+              options.onAttackDrag?.(pointer, dragX, dragY);
+            }
+          },
+        );
+        hitArea.on(
+          Phaser.Input.Events.GAMEOBJECT_DRAG_END,
+          (pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => {
+            if (isAttackDragActive) {
+              options.onAttackDragEnd?.(pointer, dragX, dragY);
+            }
+            isAttackDragActive = false;
+          },
+        );
+      }
       parent.add(hitArea);
     }
   }
@@ -960,6 +1018,11 @@ export class BattlefieldScene extends Phaser.Scene {
       return;
     }
 
+    if (this.selection?.kind === 'ATTACK_DRAG') {
+      this.setStatus('Drop the card on a red target to attack.');
+      return;
+    }
+
     if (this.selection?.kind === 'HAND_CARD') {
       const action = this.selection.placeActions.find((candidate) => candidate.toSlotId === slotId);
       if (action) {
@@ -998,18 +1061,8 @@ export class BattlefieldScene extends Phaser.Scene {
         return;
       }
 
-      const attackAction = this.selection.attackActions.find(
-        (candidate) => candidate.toSlotId === slotId,
-      );
-      if (attackAction) {
-        applyAttackAction(this.runtime, attackAction);
-        const popupEvent = this.createActionPopupEvent(this.runtime.currentSide, attackAction);
-        this.finishBattleAction(
-          `${this.getCardName(attackAction.attackerInstanceId)} attacked ${this.getCardName(
-            attackAction.targetInstanceId,
-          )}.`,
-          [popupEvent],
-        );
+      if (this.selection.attackActions.some((candidate) => candidate.toSlotId === slotId)) {
+        this.setStatus('Attack uses drag and drop. Drag the selected card onto the target.');
         return;
       }
 
@@ -1036,6 +1089,11 @@ export class BattlefieldScene extends Phaser.Scene {
 
     if (this.selection?.kind === 'BLOCK_DECISION') {
       this.setStatus('Choose Block or No Block.');
+      return;
+    }
+
+    if (this.selection?.kind === 'ATTACK_DRAG') {
+      this.setStatus('Drop the card on a red target to attack.');
       return;
     }
 
@@ -1075,6 +1133,11 @@ export class BattlefieldScene extends Phaser.Scene {
       return;
     }
 
+    if (this.selection?.kind === 'ATTACK_DRAG') {
+      this.setStatus('Drop the card on a red target to attack.');
+      return;
+    }
+
     if (this.selection?.kind === 'ACTIVE_SKILL' && card.battlefieldSlot !== null) {
       if (this.applySelectedActiveSkillToSlot(card.battlefieldSlot)) {
         return;
@@ -1089,18 +1152,12 @@ export class BattlefieldScene extends Phaser.Scene {
       card.battlefieldSlot !== null &&
       card.side !== this.runtime.currentSide
     ) {
-      const attackAction = this.selection.attackActions.find(
-        (candidate) => candidate.toSlotId === card.battlefieldSlot,
-      );
-      if (attackAction) {
-        applyAttackAction(this.runtime, attackAction);
-        const popupEvent = this.createActionPopupEvent(this.runtime.currentSide, attackAction);
-        this.finishBattleAction(
-          `${this.getCardName(attackAction.attackerInstanceId)} attacked ${this.getCardName(
-            attackAction.targetInstanceId,
-          )}.`,
-          [popupEvent],
-        );
+      if (
+        this.selection.attackActions.some(
+          (candidate) => candidate.toSlotId === card.battlefieldSlot,
+        )
+      ) {
+        this.setStatus('Attack uses drag and drop. Drag the selected card onto this target.');
         return;
       }
     }
@@ -1170,6 +1227,128 @@ export class BattlefieldScene extends Phaser.Scene {
     return true;
   }
 
+  private startAttackDrag(card: BattleCardRuntimeState, x: number, y: number): boolean {
+    if (
+      !this.isPlayerControlActive() ||
+      this.selection?.kind === 'ACTIVE_SKILL' ||
+      this.selection?.kind === 'BLOCK_DECISION' ||
+      card.side !== this.runtime.currentSide ||
+      card.battlefieldSlot === null
+    ) {
+      return false;
+    }
+
+    const attackActions = listAttackActions(this.runtime).filter(
+      (action) => action.attackerInstanceId === card.card.instance.instanceId,
+    );
+    if (attackActions.length === 0) {
+      return false;
+    }
+
+    this.destroyAttackDragPreview();
+    this.selection = {
+      kind: 'ATTACK_DRAG',
+      cardInstanceId: card.card.instance.instanceId,
+      sourceSlotId: card.battlefieldSlot,
+      attackActions,
+    };
+    this.selectedSlotId = null;
+    this.createAttackDragPreview(card, x, y);
+    this.redrawHighlight();
+    this.setStatus(`Drop ${card.card.instance.name} on a red target to attack.`);
+    return true;
+  }
+
+  private updateAttackDragPreview(x: number, y: number): void {
+    if (!this.attackDragPreview) {
+      return;
+    }
+
+    this.attackDragPreview.setPosition(x, y);
+  }
+
+  private finishAttackDrag(x: number, y: number): void {
+    if (this.selection?.kind !== 'ATTACK_DRAG') {
+      this.destroyAttackDragPreview();
+      return;
+    }
+
+    const selection = this.selection;
+    this.destroyAttackDragPreview();
+    const targetSlotId = this.findFieldSlotAtPoint(x, y);
+    const attackAction =
+      targetSlotId === null
+        ? null
+        : (selection.attackActions.find((candidate) => candidate.toSlotId === targetSlotId) ??
+          null);
+    if (!attackAction) {
+      this.selection = null;
+      this.selectedSlotId = null;
+      this.redrawHighlight();
+      this.setStatus('Attack canceled. Drop the card on a red target to attack.');
+      return;
+    }
+
+    applyAttackAction(this.runtime, attackAction);
+    const popupEvent = this.createActionPopupEvent(this.runtime.currentSide, attackAction);
+    this.finishBattleAction(
+      `${this.getCardName(attackAction.attackerInstanceId)} attacked ${this.getCardName(
+        attackAction.targetInstanceId,
+      )}.`,
+      [popupEvent],
+    );
+  }
+
+  private createAttackDragPreview(card: BattleCardRuntimeState, x: number, y: number): void {
+    const container = this.add.container(x, y).setAlpha(0.78).setDepth(100);
+    const width = Math.round(FIELD_SLOT_WIDTH * 0.72);
+    const height = Math.round(FIELD_SLOT_HEIGHT * 0.72);
+    const textureKey = `cards.webp.${card.card.instance.id}`;
+
+    if (this.textures.exists(textureKey)) {
+      container.add(this.add.image(0, 0, textureKey).setDisplaySize(width, height));
+    } else {
+      const fallback = this.add.rectangle(0, 0, width, height, 0x1c4238, 0.98);
+      fallback.setStrokeStyle(2, 0xf6ffe3, 0.86);
+      container.add(fallback);
+      container.add(
+        this.add
+          .text(0, 0, card.card.instance.name, {
+            fontFamily: DEFAULT_FONT_FAMILY,
+            fontSize: '18px',
+            color: '#ffffff',
+            stroke: '#000000',
+            strokeThickness: 4,
+            align: 'center',
+            wordWrap: { width: width - 18 },
+          })
+          .setOrigin(0.5),
+      );
+    }
+
+    const border = this.add.rectangle(0, 0, width + 8, height + 8, 0x000000, 0);
+    border.setStrokeStyle(4, ATTACK_HIGHLIGHT_COLOR, 0.94);
+    container.add(border);
+    this.layers.effectLayer.add(container);
+    this.attackDragPreview = container;
+  }
+
+  private destroyAttackDragPreview(): void {
+    this.attackDragPreview?.destroy();
+    this.attackDragPreview = null;
+  }
+
+  private findFieldSlotAtPoint(x: number, y: number): BattleSlotId | null {
+    for (const slotId of SLOT_ORDER) {
+      const rect = FIELD_SLOT_RECTS[slotId];
+      if (x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height) {
+        return slotId;
+      }
+    }
+
+    return null;
+  }
+
   private redrawHighlight(): void {
     this.highlightGraphics.clear();
 
@@ -1184,9 +1363,6 @@ export class BattlefieldScene extends Phaser.Scene {
       for (const action of this.selection.moveActions) {
         this.drawSlotHighlight(action.toSlotId, MOVE_HIGHLIGHT_COLOR, 0.9);
       }
-      for (const action of this.selection.attackActions) {
-        this.drawSlotHighlight(action.toSlotId, ATTACK_HIGHLIGHT_COLOR, 0.92);
-      }
     }
 
     if (this.selection?.kind === 'ACTIVE_SKILL') {
@@ -1197,6 +1373,13 @@ export class BattlefieldScene extends Phaser.Scene {
         }
 
         this.drawSlotHighlight(action.targetSlotId, SKILL_HIGHLIGHT_COLOR, 0.92);
+      }
+    }
+
+    if (this.selection?.kind === 'ATTACK_DRAG') {
+      this.drawSlotHighlight(this.selection.sourceSlotId, SELECTED_HIGHLIGHT_COLOR, 0.98);
+      for (const action of this.selection.attackActions) {
+        this.drawSlotHighlight(action.toSlotId, ATTACK_HIGHLIGHT_COLOR, 0.92);
       }
     }
 
@@ -1655,7 +1838,7 @@ function formatFieldCardSelectionStatus(
 ): string {
   const actionLabels = [
     moveActions.length > 0 ? 'blue move slot' : null,
-    attackActions.length > 0 ? 'red attack target' : null,
+    attackActions.length > 0 ? 'drag to attack' : null,
     activeSkillGroups.length > 0 ? 'Skill' : null,
   ].filter((label): label is string => label !== null);
   const skillText =
