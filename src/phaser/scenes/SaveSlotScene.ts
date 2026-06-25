@@ -9,7 +9,7 @@ import {
 } from '../../game/save/client-api';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
 import { createMenuButton } from '../ui/menu-button';
-import type { BattlefieldSceneData, MainMenuSceneData } from './scene-data';
+import type { MainMenuSceneData, StageSceneData } from './scene-data';
 
 /**
  * `Start Game` 진입 후 3개의 저장 슬롯을 보여주는 선택 화면이다.
@@ -239,14 +239,14 @@ export class SaveSlotScene extends Phaser.Scene {
         this.setStatus(`Initializing Slot ${slot.slotId}...`);
         const result = await initializeSaveSlot(slot.slotId);
         const session = createGameSession(result.state);
-        this.scene.start('BattlefieldScene', { session } satisfies BattlefieldSceneData);
+        this.scene.start('StageScene', { session } satisfies StageSceneData);
         return;
       }
 
       this.setStatus(`Loading Slot ${slot.slotId}...`);
       const state = await fetchSaveSlot(slot.slotId);
       const session = createGameSession(state);
-      this.scene.start('BattlefieldScene', { session } satisfies BattlefieldSceneData);
+      this.scene.start('StageScene', { session } satisfies StageSceneData);
     } catch (error: unknown) {
       this.showFailureState(error);
     }

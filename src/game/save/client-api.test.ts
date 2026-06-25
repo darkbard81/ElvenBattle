@@ -36,6 +36,10 @@ function createValidSaveSlotState(): SaveSlotState {
       leader: createValidCardInstance(),
       cards: [],
     },
+    stageProgress: {
+      clearedStageIds: [],
+      lastSelectedStageId: null,
+    },
   };
 }
 
@@ -186,6 +190,10 @@ describe('save slot client api', () => {
                 id: 'deck-1',
                 leader: createValidCardInstance(),
                 cards: [],
+              },
+              stageProgress: {
+                clearedStageIds: [],
+                lastSelectedStageId: null,
               },
             },
             summary: {

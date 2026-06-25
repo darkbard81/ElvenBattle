@@ -12,6 +12,10 @@ describe('createGameSession', () => {
     expect(session.deck.leader.definition.name).toBe('미네르바');
     expect(session.deck.cards).toHaveLength(29);
     expect(session.deck.cards.every((card) => card.definition.id.startsWith('unit_'))).toBe(true);
+    expect(session.stageProgress).toEqual({
+      clearedStageIds: [],
+      lastSelectedStageId: null,
+    });
   });
 
   it('throws when a definitionId cannot be resolved', async () => {
@@ -57,6 +61,10 @@ describe('createGameSession', () => {
     const createdAt = new Date('2024-01-01T00:00:00.000Z');
     const updatedAt = new Date('2024-01-02T00:00:00.000Z');
     const state = await createInitialSaveState({ slotId: 1, now: createdAt });
+    state.stageProgress = {
+      clearedStageIds: ['test-stage-dark'],
+      lastSelectedStageId: 'test-stage-dark',
+    };
     const session = createGameSession(state);
 
     (session.deck.leader.instance as unknown as Record<string, unknown>).battlefieldSlot = 'BC';
@@ -70,6 +78,10 @@ describe('createGameSession', () => {
       createdAt: createdAt.toISOString(),
       updatedAt: updatedAt.toISOString(),
       saveName: 'Slot 1',
+      stageProgress: {
+        clearedStageIds: ['test-stage-dark'],
+        lastSelectedStageId: 'test-stage-dark',
+      },
       deck: {
         id: state.deck.id,
       },

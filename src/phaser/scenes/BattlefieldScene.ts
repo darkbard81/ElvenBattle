@@ -38,6 +38,8 @@ import {
   createSaveSlotStateFromGameSession,
   type GameSession,
 } from '../../game/save/session';
+import { requireStageDefinition } from '../../game/stage/stage-definitions';
+import type { StageDefinition } from '../../game/stage/types';
 import { DEFAULT_FONT_FAMILY } from '../../theme';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
 import { createMenuButton } from '../ui/menu-button';
@@ -300,6 +302,7 @@ export class BattlefieldScene extends Phaser.Scene {
   private layers!: BattlefieldSceneLayers;
   private runtime!: BattleRuntimeState;
   private session!: GameSession;
+  private stageDefinition!: StageDefinition;
   private statusText: Phaser.GameObjects.Text | null = null;
   private isAnimatingBattleEvents = false;
   private isSaving = false;
@@ -319,7 +322,8 @@ export class BattlefieldScene extends Phaser.Scene {
    */
   create(data: BattlefieldSceneData): void {
     this.session = data.session;
-    this.runtime = createInitialBattleRuntime(this.session);
+    this.stageDefinition = requireStageDefinition(data.stageId);
+    this.runtime = createInitialBattleRuntime(this.session, this.stageDefinition);
     this.isAnimatingBattleEvents = false;
     this.isSaving = false;
     this.selectedSlotId = null;

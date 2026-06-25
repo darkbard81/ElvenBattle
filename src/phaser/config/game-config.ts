@@ -4,6 +4,7 @@ import { BattlefieldScene } from '../scenes/BattlefieldScene';
 import { LoaderScene } from '../scenes/LoaderScene';
 import { MainMenuScene } from '../scenes/MainMenuScene';
 import { SaveSlotScene } from '../scenes/SaveSlotScene';
+import { StageScene } from '../scenes/StageScene';
 import { TitleScene } from '../scenes/TitleScene';
 import { GAME_HEIGHT, GAME_WIDTH } from './constants';
 
@@ -18,7 +19,15 @@ export function createGameConfig(parent: HTMLElement): Phaser.Types.Core.GameCon
     width: GAME_WIDTH,
     height: GAME_HEIGHT,
     backgroundColor: '#071018',
-    scene: [BootScene, TitleScene, LoaderScene, MainMenuScene, SaveSlotScene, BattlefieldScene],
+    scene: [
+      BootScene,
+      TitleScene,
+      LoaderScene,
+      MainMenuScene,
+      SaveSlotScene,
+      StageScene,
+      BattlefieldScene,
+    ],
     scale: {
       mode: Phaser.Scale.FIT,
       autoCenter: Phaser.Scale.CENTER_BOTH,

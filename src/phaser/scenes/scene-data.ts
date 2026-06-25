@@ -9,6 +9,11 @@ export type MainMenuSceneData = {
   failedCount: number;
 };
 
+export type StageSceneData = {
+  session: GameSession;
+};
+
 export type BattlefieldSceneData = {
   session: GameSession;
+  stageId: string;
 };

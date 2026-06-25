@@ -17,6 +17,7 @@
     "src/config.ts",
     "vite.config.ts",
     "src/game/save/**/*",
+    "src/game/stage/**/*",
     "src/server",
     "src/tools/card-text/server",
     "src/type",

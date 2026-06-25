@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createInitialSaveState } from '../save/create-initial-save';
 import { createGameSession } from '../save/session';
+import { requireStageDefinition } from '../stage/stage-definitions';
 import {
   applyActiveSkillAction,
   applyAttackAction,
@@ -33,6 +34,8 @@ import {
   type BattleSide,
   type BattleSlotId,
 } from './types';
+
+const TEST_STAGE_DEFINITION = requireStageDefinition('test-stage-dark');
 
 describe('battle engine', () => {
   it('calculates dominance from only orthogonally adjacent allied cards on empty slots', async () => {
@@ -854,7 +857,7 @@ describe('battle engine', () => {
 
 async function createRuntime(): Promise<BattleRuntimeState> {
   const state = await createInitialSaveState({ slotId: 1 });
-  return createInitialBattleRuntime(createGameSession(state));
+  return createInitialBattleRuntime(createGameSession(state), TEST_STAGE_DEFINITION);
 }
 
 function setupGuardianBlockScenario(
