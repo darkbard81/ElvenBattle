@@ -25,7 +25,7 @@ export const STAGE_DEFINITIONS: readonly StageDefinition[] = [
     rewards: {
       description: '승리 시 적 배하 카드 일부를 보상 후보로 사용할 수 있습니다.',
       enemyCardDrop: {
-        source: 'ENEMY_DECK',
+        source: 'ENEMY_DROP',
         chancePercent: 20,
         maxCards: 1,
         excludeLeader: true,

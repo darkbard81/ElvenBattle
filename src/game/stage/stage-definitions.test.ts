@@ -21,6 +21,14 @@ describe('stage definitions', () => {
       enemyDeckPath: 'cards/deck_dark.json',
       victoryCondition: { type: 'DEFEAT_ENEMY_LEADER' },
       defeatConditions: [{ type: 'PLAYER_LEADER_DEFEATED' }],
+      rewards: {
+        enemyCardDrop: {
+          source: 'ENEMY_DROP',
+          chancePercent: 20,
+          maxCards: 1,
+          excludeLeader: true,
+        },
+      },
       unlock: { type: 'ALWAYS' },
     });
   });

@@ -7,6 +7,7 @@ import {
 } from '../../game/save/session';
 import { isStageUnlocked, listStageDefinitions } from '../../game/stage/stage-definitions';
 import type {
+  StageBattleResult,
   StageDefeatCondition,
   StageDefinition,
   StageRewardDefinition,
@@ -28,8 +29,10 @@ export class StageScene extends Phaser.Scene {
   private stageDefinitions: StageDefinition[] = [];
   private stageListContainer: Phaser.GameObjects.Container | null = null;
   private detailContainer: Phaser.GameObjects.Container | null = null;
+  private resultSummaryContainer: Phaser.GameObjects.Container | null = null;
   private hudContainer: Phaser.GameObjects.Container | null = null;
   private statusText!: Phaser.GameObjects.Text;
+  private lastBattleResult: StageBattleResult | null = null;
   private isStartingBattle = false;
 
   constructor() {
@@ -41,6 +44,7 @@ export class StageScene extends Phaser.Scene {
    */
   create(data: StageSceneData): void {
     this.session = data.session;
+    this.lastBattleResult = data.lastBattleResult ?? null;
     this.stageDefinitions = listStageDefinitions();
     this.selectedStageId = this.resolveInitialSelectedStage().id;
     this.isStartingBattle = false;
@@ -50,6 +54,7 @@ export class StageScene extends Phaser.Scene {
     this.addStatusText();
     this.renderStageList();
     this.renderStageDetail();
+    this.renderBattleResultSummary();
     this.renderHud();
   }
 
@@ -88,13 +93,18 @@ export class StageScene extends Phaser.Scene {
 
   private addStatusText(): void {
     this.statusText = this.add
-      .text(GAME_WIDTH / 2, 1514, 'Select a stage and start battle.', {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '22px',
-        color: '#e6f4df',
-        align: 'center',
-        wordWrap: { width: GAME_WIDTH - 120 },
-      })
+      .text(
+        GAME_WIDTH / 2,
+        this.lastBattleResult ? 1626 : 1514,
+        'Select a stage and start battle.',
+        {
+          fontFamily: DEFAULT_FONT_FAMILY,
+          fontSize: '22px',
+          color: '#e6f4df',
+          align: 'center',
+          wordWrap: { width: GAME_WIDTH - 120 },
+        },
+      )
       .setOrigin(0.5);
   }
 
@@ -129,6 +139,7 @@ export class StageScene extends Phaser.Scene {
     y: number,
   ): void {
     const unlocked = isStageUnlocked(stageDefinition, this.session.stageProgress);
+    const cleared = this.session.stageProgress.clearedStageIds.includes(stageDefinition.id);
     const selected = stageDefinition.id === this.selectedStageId;
     const fillColor = unlocked ? 0x1a3a2d : 0x15201d;
     const strokeColor = selected ? 0xffe4a8 : unlocked ? 0xbfeec5 : 0x51605a;
@@ -158,10 +169,10 @@ export class StageScene extends Phaser.Scene {
       })
       .setOrigin(0, 0.5);
     const stateText = this.add
-      .text(52, y + 36, unlocked ? 'Unlocked' : 'Locked', {
+      .text(52, y + 36, cleared ? 'CLEARED' : unlocked ? 'Unlocked' : 'Locked', {
         fontFamily: DEFAULT_FONT_FAMILY,
         fontSize: '16px',
-        color: detailColor,
+        color: cleared ? '#fff3c2' : detailColor,
         align: 'left',
       })
       .setOrigin(0, 0.5);
@@ -224,6 +235,60 @@ export class StageScene extends Phaser.Scene {
     rows.forEach(([label, value], index) => {
       this.addDetailRow(container, label, value, 244 + index * 156);
     });
+  }
+
+  private renderBattleResultSummary(): void {
+    this.resultSummaryContainer?.destroy();
+    if (!this.lastBattleResult) {
+      this.resultSummaryContainer = null;
+      return;
+    }
+
+    const container = this.add.container(74, 1416);
+    this.resultSummaryContainer = container;
+    const result = this.lastBattleResult;
+    const stageName = this.getStageName(result.stageId);
+    const panel = this.add.rectangle(0, 0, 1052, 168, 0x10261f, 0.94).setOrigin(0, 0);
+    panel.setStrokeStyle(2, result.outcome === 'WIN' ? 0xffe4a8 : 0xff8e8e, 0.82);
+    container.add(panel);
+
+    container.add(
+      this.add
+        .text(
+          28,
+          28,
+          result.outcome === 'WIN' ? 'Recent Result: VICTORY' : 'Recent Result: DEFEAT',
+          {
+            fontFamily: DEFAULT_FONT_FAMILY,
+            fontSize: '26px',
+            color: result.outcome === 'WIN' ? '#fff3c2' : '#ffd8d8',
+            align: 'left',
+          },
+        )
+        .setOrigin(0, 0.5),
+    );
+    container.add(
+      this.add
+        .text(28, 66, `${stageName} · ${formatBattleResultReason(result)}`, {
+          fontFamily: DEFAULT_FONT_FAMILY,
+          fontSize: '20px',
+          color: '#d7ead4',
+          align: 'left',
+          wordWrap: { width: 980 },
+        })
+        .setOrigin(0, 0.5),
+    );
+    container.add(
+      this.add
+        .text(28, 108, `Rewards: ${formatBattleResultRewards(result)}`, {
+          fontFamily: DEFAULT_FONT_FAMILY,
+          fontSize: '19px',
+          color: '#f1f8ec',
+          align: 'left',
+          wordWrap: { width: 980 },
+        })
+        .setOrigin(0, 0),
+    );
   }
 
   private addDetailRow(
@@ -325,6 +390,7 @@ export class StageScene extends Phaser.Scene {
     };
     this.renderStageList();
     this.renderStageDetail();
+    this.renderBattleResultSummary();
     this.renderHud();
     this.setStatus(`Selected ${this.getSelectedStageDefinition().name}.`);
   }
@@ -405,6 +471,13 @@ export class StageScene extends Phaser.Scene {
   private setStatus(message: string): void {
     this.statusText.setText(message);
   }
+
+  private getStageName(stageId: string): string {
+    return (
+      this.stageDefinitions.find((stageDefinition) => stageDefinition.id === stageId)?.name ??
+      stageId
+    );
+  }
 }
 
 function formatVictoryCondition(condition: StageVictoryCondition): string {
@@ -433,6 +506,22 @@ function formatRewards(rewards: StageRewardDefinition): string {
 
   const leaderText = rewards.enemyCardDrop.excludeLeader ? 'Leader excluded.' : 'Leader included.';
   return `${rewards.description}\nEnemy card drop ${rewards.enemyCardDrop.chancePercent}%, up to ${rewards.enemyCardDrop.maxCards}. ${leaderText}`;
+}
+
+function formatBattleResultReason(result: StageBattleResult): string {
+  if (result.reason === 'ENEMY_LEADER_DEFEATED') {
+    return 'Enemy leader defeated';
+  }
+
+  return 'Player leader defeated';
+}
+
+function formatBattleResultRewards(result: StageBattleResult): string {
+  if (result.rewardCardNames.length === 0) {
+    return 'No rewards';
+  }
+
+  return result.rewardCardNames.join(', ');
 }
 
 function formatUnlockCondition(condition: StageUnlockCondition, unlocked: boolean): string {

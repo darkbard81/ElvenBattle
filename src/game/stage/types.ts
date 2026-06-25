@@ -14,7 +14,7 @@ export type StageEnemyDeckPath = 'cards/deck_dark.json';
 export type StageRewardDefinition = {
   description: string;
   enemyCardDrop: {
-    source: 'ENEMY_DECK';
+    source: 'ENEMY_DROP';
     chancePercent: number;
     maxCards: number;
     excludeLeader: boolean;
@@ -37,4 +37,18 @@ export type StageDefinition = {
 export type StageProgressState = {
   clearedStageIds: string[];
   lastSelectedStageId: string | null;
+};
+
+export type StageBattleResult = {
+  stageId: string;
+  outcome: 'WIN' | 'LOSE';
+  reason: 'ENEMY_LEADER_DEFEATED' | 'PLAYER_LEADER_DEFEATED';
+  rewardCardInstanceIds: string[];
+  rewardCardNames: string[];
+  turnNumber: number;
+};
+
+export type StageRewardResult = {
+  rewardCardInstanceIds: string[];
+  rewardCardNames: string[];
 };
