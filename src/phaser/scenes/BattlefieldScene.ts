@@ -102,6 +102,8 @@ type ActiveSkillActionGroup = {
   actions: ActiveSkillBattleAction[];
 };
 
+type CardInfoPanelSide = 'left' | 'right';
+
 type CardViewOptions = {
   highlightColor?: number;
   onClick?: () => void;
@@ -133,6 +135,13 @@ const SKILL_HIGHLIGHT_COLOR = 0xf4c95d;
 const BLOCK_HIGHLIGHT_COLOR = 0xc8f47a;
 const SELECTED_HIGHLIGHT_COLOR = 0xfff1a3;
 const CARD_BACK_TEXTURE_KEY = 'cards.webp.card_back';
+const CARD_INFO_PANEL_WIDTH = 576;
+const CARD_INFO_PANEL_HEIGHT = 1328;
+const CARD_INFO_PANEL_MARGIN_X = 24;
+const CARD_INFO_PANEL_Y = 196;
+const CARD_INFO_PANEL_PADDING = 24;
+const CARD_INFO_PREVIEW_WIDTH = 512;
+const CARD_INFO_PREVIEW_HEIGHT = 768;
 const POPUP_STYLE = {
   PLACE: {
     fill: 0x173a24,
@@ -297,6 +306,8 @@ export class BattlefieldScene extends Phaser.Scene {
   private selectedSlotId: BattleSlotId | null = null;
   private selection: BattleSelection | null = null;
   private fieldCardDragPreview: Phaser.GameObjects.Container | null = null;
+  private cardInfoContainer: Phaser.GameObjects.Container | null = null;
+  private hoveredCardInstanceId: string | null = null;
   private statusMessage = 'Select a hand card or battlefield card.';
 
   constructor() {
@@ -314,6 +325,8 @@ export class BattlefieldScene extends Phaser.Scene {
     this.selectedSlotId = null;
     this.selection = null;
     this.fieldCardDragPreview = null;
+    this.cardInfoContainer = null;
+    this.hoveredCardInstanceId = null;
     this.statusMessage = 'Select a hand card or battlefield card.';
     this.handDeckContainer = null;
     this.handDeckTargetY = null;
@@ -341,6 +354,9 @@ export class BattlefieldScene extends Phaser.Scene {
     this.handDeckContainer = null;
     this.handDeckTargetY = null;
     this.statusText = null;
+    this.cardInfoContainer?.destroy();
+    this.cardInfoContainer = null;
+    this.hoveredCardInstanceId = null;
 
     this.layers.boardLayer.removeAll(true);
     this.layers.cardLayer.removeAll(true);
@@ -700,6 +716,13 @@ export class BattlefieldScene extends Phaser.Scene {
         draggable: options.onFieldDragStart !== undefined,
       });
       hitArea.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, options.onClick);
+      hitArea.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OVER, () => {
+        const worldCenter = hitArea.getWorldTransformMatrix().transformPoint(0, 0);
+        this.showCardInfo(card, worldCenter.x);
+      });
+      hitArea.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OUT, () => {
+        this.hideCardInfo(card.card.instance.instanceId);
+      });
       if (options.onFieldDragStart) {
         let isFieldDragActive = false;
         hitArea.on(
@@ -750,6 +773,176 @@ export class BattlefieldScene extends Phaser.Scene {
         })
         .setOrigin(0.5),
     );
+  }
+
+  private showCardInfo(card: BattleCardRuntimeState, anchorWorldX: number): void {
+    const cardInstanceId = card.card.instance.instanceId;
+    if (this.cardInfoContainer && this.hoveredCardInstanceId === cardInstanceId) {
+      return;
+    }
+
+    this.hideCardInfo();
+    const side: CardInfoPanelSide = anchorWorldX < GAME_WIDTH / 2 ? 'right' : 'left';
+    this.cardInfoContainer = this.createCardInfoPanel(card, side);
+    this.hoveredCardInstanceId = cardInstanceId;
+    this.layers.hudLayer.add(this.cardInfoContainer);
+  }
+
+  private hideCardInfo(cardInstanceId?: string): void {
+    if (cardInstanceId !== undefined && this.hoveredCardInstanceId !== cardInstanceId) {
+      return;
+    }
+
+    this.cardInfoContainer?.destroy();
+    this.cardInfoContainer = null;
+    this.hoveredCardInstanceId = null;
+  }
+
+  private createCardInfoPanel(
+    card: BattleCardRuntimeState,
+    side: CardInfoPanelSide,
+  ): Phaser.GameObjects.Container {
+    const x =
+      side === 'left'
+        ? CARD_INFO_PANEL_MARGIN_X
+        : GAME_WIDTH - CARD_INFO_PANEL_MARGIN_X - CARD_INFO_PANEL_WIDTH;
+    const container = this.add.container(x, CARD_INFO_PANEL_Y);
+    const background = this.add
+      .rectangle(0, 0, CARD_INFO_PANEL_WIDTH, CARD_INFO_PANEL_HEIGHT, 0x10211b, 0.96)
+      .setOrigin(0, 0);
+    background.setStrokeStyle(3, 0xd8efcd, 0.86);
+    container.add(background);
+
+    const previewX = CARD_INFO_PANEL_WIDTH / 2;
+    const previewY = CARD_INFO_PANEL_PADDING + CARD_INFO_PREVIEW_HEIGHT / 2;
+    const previewBackground = this.add.rectangle(
+      previewX,
+      previewY,
+      CARD_INFO_PREVIEW_WIDTH + 16,
+      CARD_INFO_PREVIEW_HEIGHT + 16,
+      card.side === 'enemy' ? 0x281c2c : 0x132c25,
+      0.94,
+    );
+    previewBackground.setStrokeStyle(2, 0xf5ffe9, 0.64);
+    container.add(previewBackground);
+
+    const textureKey = `cards.webp.${card.card.instance.id}`;
+    if (this.textures.exists(textureKey)) {
+      const preview = this.add.image(previewX, previewY, textureKey);
+      const previewScale = Math.min(
+        CARD_INFO_PREVIEW_WIDTH / Math.max(1, preview.width),
+        CARD_INFO_PREVIEW_HEIGHT / Math.max(1, preview.height),
+      );
+      preview.setDisplaySize(
+        Math.round(preview.width * previewScale),
+        Math.round(preview.height * previewScale),
+      );
+      container.add(preview);
+    } else {
+      const fallback = this.add.rectangle(
+        previewX,
+        previewY,
+        CARD_INFO_PREVIEW_WIDTH,
+        CARD_INFO_PREVIEW_HEIGHT,
+        card.side === 'enemy' ? 0x42233c : 0x1c4238,
+        0.98,
+      );
+      fallback.setStrokeStyle(2, 0xf6ffe3, 0.86);
+      container.add(fallback);
+      container.add(
+        this.add
+          .text(previewX, previewY, card.card.instance.name, {
+            fontFamily: DEFAULT_FONT_FAMILY,
+            fontSize: '34px',
+            color: '#ffffff',
+            stroke: '#000000',
+            strokeThickness: 6,
+            align: 'center',
+            wordWrap: { width: CARD_INFO_PREVIEW_WIDTH - 36 },
+          })
+          .setOrigin(0.5),
+      );
+    }
+
+    const textY = CARD_INFO_PANEL_PADDING * 2 + CARD_INFO_PREVIEW_HEIGHT;
+    const infoText = this.add
+      .text(CARD_INFO_PANEL_PADDING, textY, this.formatCardInfoLines(card).join('\n'), {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '19px',
+        color: '#edf7e8',
+        stroke: '#07100d',
+        strokeThickness: 2,
+        align: 'left',
+        lineSpacing: 5,
+        wordWrap: {
+          width: CARD_INFO_PANEL_WIDTH - CARD_INFO_PANEL_PADDING * 2,
+          useAdvancedWrap: true,
+        },
+      })
+      .setOrigin(0, 0);
+
+    const maxTextHeight = CARD_INFO_PANEL_HEIGHT - textY - CARD_INFO_PANEL_PADDING;
+    if (infoText.height > maxTextHeight) {
+      infoText.setFontSize('17px');
+      infoText.setLineSpacing(2);
+    }
+    container.add(infoText);
+
+    return container;
+  }
+
+  private formatCardInfoLines(card: BattleCardRuntimeState): string[] {
+    const instance = card.card.instance;
+    const definition = card.card.definition;
+    const traitTexts = instance.traits
+      .map((trait) => trait.text.trim() || trait.key.trim())
+      .filter((trait) => trait.length > 0);
+    const lines = [
+      instance.name,
+      `${instance.rarity} / ${instance.type}`,
+      traitTexts.length > 0 ? `Trait ${traitTexts.join(', ')}` : null,
+      '',
+      `Cost ${instance.cost ?? 0}`,
+      this.formatCardInfoStat(
+        'Dominance',
+        getEffectiveDominance(this.runtime, card),
+        definition.dominance,
+      ),
+      this.formatCardInfoStat(
+        instance.type === 'LEADER' ? 'LP' : 'HP',
+        getEffectiveHp(this.runtime, card),
+        definition.hp,
+      ),
+      this.formatCardInfoStat('ATK', getEffectiveAttack(this.runtime, card), definition.attack),
+      `Slot ${instance.slot ?? '-'}`,
+    ].filter((line): line is string => line !== null);
+
+    if (instance.abilities.length > 0) {
+      lines.push('');
+      for (const ability of instance.abilities) {
+        lines.push(`${ability.category} ${ability.name}: ${ability.text}`);
+      }
+    }
+
+    const description = instance.description.trim();
+    if (description.length > 0) {
+      lines.push('', `Description: ${description}`);
+    }
+
+    const note = instance.note.trim();
+    if (note.length > 0) {
+      lines.push(`Note: ${note}`);
+    }
+
+    return lines;
+  }
+
+  private formatCardInfoStat(label: string, effectiveValue: number, baseValue?: number): string {
+    if (baseValue !== undefined && effectiveValue !== baseValue) {
+      return `${label} ${effectiveValue} (base ${baseValue})`;
+    }
+
+    return `${label} ${effectiveValue}`;
   }
 
   private addHandDeckContainer(): void {
@@ -1240,6 +1433,7 @@ export class BattlefieldScene extends Phaser.Scene {
       return false;
     }
 
+    this.hideCardInfo(card.card.instance.instanceId);
     this.destroyFieldCardDragPreview();
     this.selection = {
       kind: 'FIELD_CARD_DRAG',
