@@ -43,7 +43,7 @@ import type { StageDefinition } from '../../game/stage/types';
 import { DEFAULT_FONT_FAMILY } from '../../theme';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
 import { createMenuButton } from '../ui/menu-button';
-import type { BattlefieldSceneData } from './scene-data';
+import type { BattlefieldSceneData, StageSceneData } from './scene-data';
 
 type Rect = {
   x: number;
@@ -1067,7 +1067,16 @@ export class BattlefieldScene extends Phaser.Scene {
       enabled: true,
       parent: this.layers.buttonLayer,
       onClick: () => {
-        this.scene.start('SaveSlotScene');
+        this.scene.start('StageScene', {
+          session: {
+            ...this.session,
+            stageProgress: {
+              ...this.session.stageProgress,
+              clearedStageIds: [...this.session.stageProgress.clearedStageIds],
+              lastSelectedStageId: this.stageDefinition.id,
+            },
+          },
+        } satisfies StageSceneData);
       },
     });
     createMenuButton(this, {
