@@ -90,7 +90,7 @@ function createBattleCardRuntimeState(
   options: CreateBattleCardRuntimeStateOptions,
 ): BattleCardRuntimeState {
   return {
-    card,
+    card: createBattleRuntimeCardInstance(card),
     side,
     zone,
     battlefieldSlot: options.battlefieldSlot ?? null,
@@ -100,5 +100,12 @@ function createBattleCardRuntimeState(
     hasAttackedThisTurn: false,
     hasUsedActiveSkillThisTurn: false,
     abilityEffects: [],
+  };
+}
+
+function createBattleRuntimeCardInstance(card: RuntimeCardInstance): RuntimeCardInstance {
+  return {
+    instance: structuredClone(card.instance),
+    definition: card.definition,
   };
 }

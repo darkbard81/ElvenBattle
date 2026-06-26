@@ -63,6 +63,51 @@ describe('createInitialBattleRuntime', () => {
     );
   });
 
+  it('keeps battle stat changes isolated from the source game session', async () => {
+    const state = await createInitialSaveState({ slotId: 1 });
+    const session = createGameSession(state);
+    const originalLeaderStats = {
+      hp: session.deck.leader.instance.hp,
+      attack: session.deck.leader.instance.attack,
+      cost: session.deck.leader.instance.cost,
+      dominance: session.deck.leader.instance.dominance,
+    };
+    const originalHandCardStats = {
+      hp: session.deck.cards[0]!.instance.hp,
+      attack: session.deck.cards[0]!.instance.attack,
+      cost: session.deck.cards[0]!.instance.cost,
+      dominance: session.deck.cards[0]!.instance.dominance,
+    };
+    const runtime = createInitialBattleRuntime(session, TEST_STAGE_DEFINITION);
+
+    expect(runtime.player.leader.card).not.toBe(session.deck.leader);
+    expect(runtime.player.leader.card.instance).not.toBe(session.deck.leader.instance);
+    expect(runtime.player.hand[0]!.card).not.toBe(session.deck.cards[0]);
+    expect(runtime.player.hand[0]!.card.instance).not.toBe(session.deck.cards[0]!.instance);
+
+    runtime.player.leader.card.instance.hp = 1;
+    runtime.player.leader.card.instance.attack = 1;
+    runtime.player.leader.card.instance.cost = 0;
+    runtime.player.leader.card.instance.dominance = 0;
+    runtime.player.hand[0]!.card.instance.hp = 1;
+    runtime.player.hand[0]!.card.instance.attack = 1;
+    runtime.player.hand[0]!.card.instance.cost = 0;
+    runtime.player.hand[0]!.card.instance.dominance = 0;
+
+    expect({
+      hp: session.deck.leader.instance.hp,
+      attack: session.deck.leader.instance.attack,
+      cost: session.deck.leader.instance.cost,
+      dominance: session.deck.leader.instance.dominance,
+    }).toEqual(originalLeaderStats);
+    expect({
+      hp: session.deck.cards[0]!.instance.hp,
+      attack: session.deck.cards[0]!.instance.attack,
+      cost: session.deck.cards[0]!.instance.cost,
+      dominance: session.deck.cards[0]!.instance.dominance,
+    }).toEqual(originalHandCardStats);
+  });
+
   it('creates enemy hand and deck from deck_dark.json as runtime card instances', async () => {
     const state = await createInitialSaveState({ slotId: 1 });
     const session = createGameSession(state);

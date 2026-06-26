@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createInitialBattleRuntime } from '../battle/create-battle-runtime';
 import type { BattleCardRuntimeState, BattleRuntimeState } from '../battle/types';
 import { createInitialSaveState } from '../save/create-initial-save';
-import { createGameSession } from '../save/session';
+import { createGameSession, createSaveSlotStateFromGameSession } from '../save/session';
 import { requireStageDefinition } from './stage-definitions';
 import {
   applyStageBattleResultToSession,
@@ -161,6 +161,60 @@ describe('stage battle result', () => {
       clearedStageIds: [],
       lastSelectedStageId: 'test-stage-dark',
     });
+  });
+
+  it('does not persist battle-time player stat changes after applying a stage result', async () => {
+    const state = await createInitialSaveState({ slotId: 1 });
+    const session = createGameSession(state);
+    const originalLeaderStats = {
+      hp: session.deck.leader.instance.hp,
+      attack: session.deck.leader.instance.attack,
+      cost: session.deck.leader.instance.cost,
+      dominance: session.deck.leader.instance.dominance,
+    };
+    const originalFirstCardStats = {
+      hp: session.deck.cards[0]!.instance.hp,
+      attack: session.deck.cards[0]!.instance.attack,
+      cost: session.deck.cards[0]!.instance.cost,
+      dominance: session.deck.cards[0]!.instance.dominance,
+    };
+    const runtime = createInitialBattleRuntime(session, TEST_STAGE_DEFINITION);
+
+    runtime.player.leader.card.instance.hp = 1;
+    runtime.player.leader.card.instance.attack = 1;
+    runtime.player.leader.card.instance.cost = 0;
+    runtime.player.leader.card.instance.dominance = 0;
+    runtime.player.hand[0]!.card.instance.hp = 1;
+    runtime.player.hand[0]!.card.instance.attack = 1;
+    runtime.player.hand[0]!.card.instance.cost = 0;
+    runtime.player.hand[0]!.card.instance.dominance = 0;
+    runtime.phase = 'GAME_OVER';
+    runtime.outcome = {
+      winner: 'player',
+      loser: 'enemy',
+      reason: 'LEADER_DEFEATED',
+    };
+
+    const result = createStageBattleResult(runtime, TEST_STAGE_DEFINITION, {
+      random: () => 1,
+    });
+    const nextSession = applyStageBattleResultToSession(session, result);
+    const savedState = createSaveSlotStateFromGameSession(nextSession, {
+      now: new Date('2024-01-02T00:00:00.000Z'),
+    });
+
+    expect({
+      hp: savedState.deck.leader.hp,
+      attack: savedState.deck.leader.attack,
+      cost: savedState.deck.leader.cost,
+      dominance: savedState.deck.leader.dominance,
+    }).toEqual(originalLeaderStats);
+    expect({
+      hp: savedState.deck.cards[0]!.hp,
+      attack: savedState.deck.cards[0]!.attack,
+      cost: savedState.deck.cards[0]!.cost,
+      dominance: savedState.deck.cards[0]!.dominance,
+    }).toEqual(originalFirstCardStats);
   });
 });
 
