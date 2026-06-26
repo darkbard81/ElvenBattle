@@ -1138,6 +1138,11 @@ export class BattlefieldScene extends Phaser.Scene {
     }
   }
 
+  private refreshUtilityButtons(): void {
+    this.layers.buttonLayer.removeAll(true);
+    this.addUtilityButtons();
+  }
+
   private addBlockDecisionButtons(): void {
     createMenuButton(this, {
       x: 500,
@@ -1298,6 +1303,7 @@ export class BattlefieldScene extends Phaser.Scene {
     };
     this.selectedSlotId = null;
     this.redrawHighlight();
+    this.refreshUtilityButtons();
     this.setStatus(
       `Skill: ${this.selection.skillName}. Select a gold target for ${this.getCardName(
         this.selection.cardInstanceId,
@@ -1376,6 +1382,7 @@ export class BattlefieldScene extends Phaser.Scene {
     this.selectedSlotId = slotId;
     this.selection = null;
     this.redrawHighlight();
+    this.refreshUtilityButtons();
     this.setStatus(`Selected ${slotId}`);
   }
 
@@ -1411,6 +1418,7 @@ export class BattlefieldScene extends Phaser.Scene {
       this.selection = null;
       this.selectedSlotId = null;
       this.redrawHighlight();
+      this.refreshUtilityButtons();
       this.setStatus(`${card.card.instance.name} has no legal place slot.`);
       return;
     }
@@ -1422,6 +1430,7 @@ export class BattlefieldScene extends Phaser.Scene {
     };
     this.selectedSlotId = null;
     this.redrawHighlight();
+    this.refreshUtilityButtons();
     this.setStatus(`Select a green slot to place ${card.card.instance.name}.`);
   }
 
@@ -1493,6 +1502,7 @@ export class BattlefieldScene extends Phaser.Scene {
       this.selection = null;
       this.selectedSlotId = card.battlefieldSlot;
       this.redrawHighlight();
+      this.refreshUtilityButtons();
       this.setStatus(`${card.card.instance.name} has no legal action.`);
       return;
     }
@@ -1507,6 +1517,7 @@ export class BattlefieldScene extends Phaser.Scene {
     };
     this.selectedSlotId = null;
     this.redrawHighlight();
+    this.refreshUtilityButtons();
     this.setStatus(
       formatFieldCardSelectionStatus(card, moveActions, attackActions, activeSkillGroups),
     );
@@ -1573,6 +1584,7 @@ export class BattlefieldScene extends Phaser.Scene {
       attackActions.length > 0 ? ATTACK_HIGHLIGHT_COLOR : MOVE_HIGHLIGHT_COLOR,
     );
     this.redrawHighlight();
+    this.refreshUtilityButtons();
     this.setStatus(formatFieldCardDragStatus(card, moveActions, attackActions));
     return true;
   }
@@ -1622,6 +1634,7 @@ export class BattlefieldScene extends Phaser.Scene {
       this.selection = null;
       this.selectedSlotId = null;
       this.redrawHighlight();
+      this.refreshUtilityButtons();
       this.setStatus(
         'Action canceled. Drop the card on a blue slot to move or red target to attack.',
       );
