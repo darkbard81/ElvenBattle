@@ -6,6 +6,7 @@ import {
   type SaveSlotId,
 } from './types';
 import { CARD_DEFINITIONS, createCardDefinitionMap, type CardDefinition } from './card-catalog';
+import type { StageProgressState } from '../stage/types';
 
 export type RuntimeCardInstance = {
   instance: CardInstance;
@@ -25,6 +26,7 @@ export type GameSession = {
   updatedAt: string;
   saveName: string;
   deck: RuntimeDeckInstance;
+  stageProgress: StageProgressState;
 };
 
 export function createGameSession(
@@ -46,6 +48,7 @@ export function createGameSession(
         createRuntimeCardInstance(instance, cardDefinitionMap),
       ),
     },
+    stageProgress: structuredClone(state.stageProgress),
   };
 }
 
@@ -68,6 +71,7 @@ export function createSaveSlotStateFromGameSession(
       leader: createSavedCardInstance(session.deck.leader.instance, 'LEADER'),
       cards: session.deck.cards.map((card) => createSavedCardInstance(card.instance, 'DECK')),
     },
+    stageProgress: structuredClone(session.stageProgress),
   };
 }
 

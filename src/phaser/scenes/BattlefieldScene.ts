@@ -38,10 +38,13 @@ import {
   createSaveSlotStateFromGameSession,
   type GameSession,
 } from '../../game/save/session';
+import { applyStageBattleResultToSession, createStageBattleResult } from '../../game/stage/result';
+import { requireStageDefinition } from '../../game/stage/stage-definitions';
+import type { StageBattleResult, StageDefinition } from '../../game/stage/types';
 import { DEFAULT_FONT_FAMILY } from '../../theme';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
 import { createMenuButton } from '../ui/menu-button';
-import type { BattlefieldSceneData } from './scene-data';
+import type { BattlefieldSceneData, StageSceneData } from './scene-data';
 
 type Rect = {
   x: number;
@@ -300,9 +303,13 @@ export class BattlefieldScene extends Phaser.Scene {
   private layers!: BattlefieldSceneLayers;
   private runtime!: BattleRuntimeState;
   private session!: GameSession;
+  private stageDefinition!: StageDefinition;
+  private stageBattleResult: StageBattleResult | null = null;
   private statusText: Phaser.GameObjects.Text | null = null;
   private isAnimatingBattleEvents = false;
   private isSaving = false;
+  private isReturningToStage = false;
+  private resultReturnStatusMessage: string | null = null;
   private selectedSlotId: BattleSlotId | null = null;
   private selection: BattleSelection | null = null;
   private fieldCardDragPreview: Phaser.GameObjects.Container | null = null;
@@ -319,9 +326,13 @@ export class BattlefieldScene extends Phaser.Scene {
    */
   create(data: BattlefieldSceneData): void {
     this.session = data.session;
-    this.runtime = createInitialBattleRuntime(this.session);
+    this.stageDefinition = requireStageDefinition(data.stageId);
+    this.runtime = createInitialBattleRuntime(this.session, this.stageDefinition);
+    this.stageBattleResult = null;
     this.isAnimatingBattleEvents = false;
     this.isSaving = false;
+    this.isReturningToStage = false;
+    this.resultReturnStatusMessage = null;
     this.selectedSlotId = null;
     this.selection = null;
     this.fieldCardDragPreview = null;
@@ -375,6 +386,7 @@ export class BattlefieldScene extends Phaser.Scene {
     this.addUtilityButtons();
     this.addStatusText();
     this.redrawHighlight();
+    this.addBattleResultPanelIfReady();
   }
 
   private createLayers(): BattlefieldSceneLayers {
@@ -1060,10 +1072,19 @@ export class BattlefieldScene extends Phaser.Scene {
       width: 132,
       height: 52,
       label: 'Back',
-      enabled: true,
+      enabled: !this.isBattleEnded() && !this.isReturningToStage,
       parent: this.layers.buttonLayer,
       onClick: () => {
-        this.scene.start('SaveSlotScene');
+        this.scene.start('StageScene', {
+          session: {
+            ...this.session,
+            stageProgress: {
+              ...this.session.stageProgress,
+              clearedStageIds: [...this.session.stageProgress.clearedStageIds],
+              lastSelectedStageId: this.stageDefinition.id,
+            },
+          },
+        } satisfies StageSceneData);
       },
     });
     createMenuButton(this, {
@@ -1072,7 +1093,7 @@ export class BattlefieldScene extends Phaser.Scene {
       width: 132,
       height: 52,
       label: 'Save',
-      enabled: true,
+      enabled: !this.isBattleEnded() && !this.isReturningToStage,
       parent: this.layers.buttonLayer,
       onClick: () => {
         void this.saveCurrentSession();
@@ -1117,6 +1138,11 @@ export class BattlefieldScene extends Phaser.Scene {
     }
   }
 
+  private refreshUtilityButtons(): void {
+    this.layers.buttonLayer.removeAll(true);
+    this.addUtilityButtons();
+  }
+
   private addBlockDecisionButtons(): void {
     createMenuButton(this, {
       x: 500,
@@ -1124,7 +1150,7 @@ export class BattlefieldScene extends Phaser.Scene {
       width: 150,
       height: 56,
       label: 'Block',
-      enabled: !this.isAnimatingBattleEvents,
+      enabled: !this.isAnimatingBattleEvents && !this.isBattleEnded(),
       parent: this.layers.buttonLayer,
       onClick: () => {
         this.resolveBlockDecision(true);
@@ -1136,7 +1162,7 @@ export class BattlefieldScene extends Phaser.Scene {
       width: 170,
       height: 56,
       label: 'No Block',
-      enabled: !this.isAnimatingBattleEvents,
+      enabled: !this.isAnimatingBattleEvents && !this.isBattleEnded(),
       parent: this.layers.buttonLayer,
       onClick: () => {
         this.resolveBlockDecision(false);
@@ -1158,6 +1184,93 @@ export class BattlefieldScene extends Phaser.Scene {
     this.layers.hudLayer.add(this.statusText);
   }
 
+  private addBattleResultPanelIfReady(): void {
+    if (this.isAnimatingBattleEvents) {
+      return;
+    }
+
+    const result = this.ensureStageBattleResult();
+    if (!result) {
+      return;
+    }
+
+    const container = this.add.container(0, 0);
+    this.layers.buttonLayer.add(container);
+
+    const blocker = this.add.zone(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT);
+    blocker.setInteractive();
+    container.add(blocker);
+    container.add(this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.52).setOrigin(0));
+
+    const panelX = GAME_WIDTH / 2;
+    const panelY = 940;
+    const panel = this.add.rectangle(panelX, panelY, 720, 610, 0x10241e, 0.98);
+    panel.setStrokeStyle(3, result.outcome === 'WIN' ? 0xffe4a8 : 0xff8e8e, 0.94);
+    container.add(panel);
+
+    container.add(
+      this.add
+        .text(panelX, panelY - 238, result.outcome === 'WIN' ? 'VICTORY' : 'DEFEAT', {
+          fontFamily: DEFAULT_FONT_FAMILY,
+          fontSize: '58px',
+          fontStyle: '700',
+          color: result.outcome === 'WIN' ? '#fff3c2' : '#ffd8d8',
+          stroke: '#07100d',
+          strokeThickness: 7,
+          align: 'center',
+        })
+        .setOrigin(0.5),
+    );
+
+    const resultLines = [
+      `Stage: ${this.stageDefinition.name}`,
+      `Reason: ${formatStageBattleResultReason(result)}`,
+      `Turn: ${result.turnNumber}`,
+      '',
+      'Rewards',
+      formatStageBattleResultRewards(result),
+    ];
+    container.add(
+      this.add
+        .text(panelX, panelY - 140, resultLines.join('\n'), {
+          fontFamily: DEFAULT_FONT_FAMILY,
+          fontSize: '24px',
+          color: '#edf8e9',
+          align: 'center',
+          lineSpacing: 8,
+          wordWrap: { width: 620 },
+        })
+        .setOrigin(0.5, 0),
+    );
+
+    if (this.resultReturnStatusMessage) {
+      container.add(
+        this.add
+          .text(panelX, panelY + 188, this.resultReturnStatusMessage, {
+            fontFamily: DEFAULT_FONT_FAMILY,
+            fontSize: '18px',
+            color: '#d7ead4',
+            align: 'center',
+            wordWrap: { width: 620 },
+          })
+          .setOrigin(0.5),
+      );
+    }
+
+    createMenuButton(this, {
+      x: panelX,
+      y: panelY + 250,
+      width: 280,
+      height: 62,
+      label: 'Back to Stage',
+      enabled: !this.isReturningToStage,
+      parent: container,
+      onClick: () => {
+        void this.returnToStageWithBattleResult();
+      },
+    });
+  }
+
   private canStartActiveSkillTargeting(): boolean {
     return (
       this.isPlayerControlActive() &&
@@ -1167,6 +1280,10 @@ export class BattlefieldScene extends Phaser.Scene {
   }
 
   private startActiveSkillTargeting(): void {
+    if (this.isBattleEnded()) {
+      return;
+    }
+
     if (!this.canStartActiveSkillTargeting() || this.selection?.kind !== 'FIELD_CARD') {
       return;
     }
@@ -1186,6 +1303,7 @@ export class BattlefieldScene extends Phaser.Scene {
     };
     this.selectedSlotId = null;
     this.redrawHighlight();
+    this.refreshUtilityButtons();
     this.setStatus(
       `Skill: ${this.selection.skillName}. Select a gold target for ${this.getCardName(
         this.selection.cardInstanceId,
@@ -1198,7 +1316,7 @@ export class BattlefieldScene extends Phaser.Scene {
       return;
     }
 
-    if (this.runtime.phase === 'GAME_OVER') {
+    if (this.isBattleEnded()) {
       this.setStatus('Battle is over.');
       return;
     }
@@ -1264,11 +1382,17 @@ export class BattlefieldScene extends Phaser.Scene {
     this.selectedSlotId = slotId;
     this.selection = null;
     this.redrawHighlight();
+    this.refreshUtilityButtons();
     this.setStatus(`Selected ${slotId}`);
   }
 
   private selectHandCard(card: BattleCardRuntimeState): void {
     if (this.isAnimatingBattleEvents) {
+      return;
+    }
+
+    if (this.isBattleEnded()) {
+      this.setStatus('Battle is over.');
       return;
     }
 
@@ -1294,6 +1418,7 @@ export class BattlefieldScene extends Phaser.Scene {
       this.selection = null;
       this.selectedSlotId = null;
       this.redrawHighlight();
+      this.refreshUtilityButtons();
       this.setStatus(`${card.card.instance.name} has no legal place slot.`);
       return;
     }
@@ -1305,11 +1430,17 @@ export class BattlefieldScene extends Phaser.Scene {
     };
     this.selectedSlotId = null;
     this.redrawHighlight();
+    this.refreshUtilityButtons();
     this.setStatus(`Select a green slot to place ${card.card.instance.name}.`);
   }
 
   private selectBattlefieldCard(card: BattleCardRuntimeState): void {
     if (this.isAnimatingBattleEvents) {
+      return;
+    }
+
+    if (this.isBattleEnded()) {
+      this.setStatus('Battle is over.');
       return;
     }
 
@@ -1371,6 +1502,7 @@ export class BattlefieldScene extends Phaser.Scene {
       this.selection = null;
       this.selectedSlotId = card.battlefieldSlot;
       this.redrawHighlight();
+      this.refreshUtilityButtons();
       this.setStatus(`${card.card.instance.name} has no legal action.`);
       return;
     }
@@ -1385,6 +1517,7 @@ export class BattlefieldScene extends Phaser.Scene {
     };
     this.selectedSlotId = null;
     this.redrawHighlight();
+    this.refreshUtilityButtons();
     this.setStatus(
       formatFieldCardSelectionStatus(card, moveActions, attackActions, activeSkillGroups),
     );
@@ -1414,6 +1547,7 @@ export class BattlefieldScene extends Phaser.Scene {
 
   private startFieldCardDrag(card: BattleCardRuntimeState, x: number, y: number): boolean {
     if (
+      this.isBattleEnded() ||
       !this.isPlayerControlActive() ||
       this.selection?.kind === 'ACTIVE_SKILL' ||
       this.selection?.kind === 'BLOCK_DECISION' ||
@@ -1450,6 +1584,7 @@ export class BattlefieldScene extends Phaser.Scene {
       attackActions.length > 0 ? ATTACK_HIGHLIGHT_COLOR : MOVE_HIGHLIGHT_COLOR,
     );
     this.redrawHighlight();
+    this.refreshUtilityButtons();
     this.setStatus(formatFieldCardDragStatus(card, moveActions, attackActions));
     return true;
   }
@@ -1463,6 +1598,11 @@ export class BattlefieldScene extends Phaser.Scene {
   }
 
   private finishFieldCardDrag(x: number, y: number): void {
+    if (this.isBattleEnded()) {
+      this.destroyFieldCardDragPreview();
+      return;
+    }
+
     if (this.selection?.kind !== 'FIELD_CARD_DRAG') {
       this.destroyFieldCardDragPreview();
       return;
@@ -1494,6 +1634,7 @@ export class BattlefieldScene extends Phaser.Scene {
       this.selection = null;
       this.selectedSlotId = null;
       this.redrawHighlight();
+      this.refreshUtilityButtons();
       this.setStatus(
         'Action canceled. Drop the card on a blue slot to move or red target to attack.',
       );
@@ -1634,6 +1775,10 @@ export class BattlefieldScene extends Phaser.Scene {
   }
 
   private endCurrentTurn(): void {
+    if (this.isBattleEnded()) {
+      return;
+    }
+
     if (!this.isPlayerControlActive()) {
       return;
     }
@@ -1645,7 +1790,11 @@ export class BattlefieldScene extends Phaser.Scene {
   }
 
   private resolveBlockDecision(useBlock: boolean): void {
-    if (this.isAnimatingBattleEvents || this.selection?.kind !== 'BLOCK_DECISION') {
+    if (
+      this.isBattleEnded() ||
+      this.isAnimatingBattleEvents ||
+      this.selection?.kind !== 'BLOCK_DECISION'
+    ) {
       return;
     }
 
@@ -1749,6 +1898,53 @@ export class BattlefieldScene extends Phaser.Scene {
       this.runtime.currentSide === 'player' &&
       this.runtime.phase !== 'GAME_OVER'
     );
+  }
+
+  private isBattleEnded(): boolean {
+    return (
+      this.stageBattleResult !== null ||
+      this.runtime.outcome !== null ||
+      this.runtime.phase === 'GAME_OVER'
+    );
+  }
+
+  private ensureStageBattleResult(): StageBattleResult | null {
+    if (!this.runtime.outcome) {
+      return null;
+    }
+
+    if (!this.stageBattleResult) {
+      this.stageBattleResult = createStageBattleResult(this.runtime, this.stageDefinition);
+      this.session = applyStageBattleResultToSession(this.session, this.stageBattleResult);
+      this.resultReturnStatusMessage = 'Return to Stage to save this result.';
+    }
+
+    return this.stageBattleResult;
+  }
+
+  private async returnToStageWithBattleResult(): Promise<void> {
+    const result = this.ensureStageBattleResult();
+    if (!result || this.isReturningToStage) {
+      return;
+    }
+
+    this.isReturningToStage = true;
+    this.resultReturnStatusMessage = 'Saving result...';
+    this.renderBattleState();
+
+    try {
+      const savedState = await saveSlotState(createSaveSlotStateFromGameSession(this.session));
+      const savedSession = createGameSession(savedState);
+      this.scene.start('StageScene', {
+        session: savedSession,
+        lastBattleResult: result,
+      } satisfies StageSceneData);
+    } catch (error: unknown) {
+      this.isReturningToStage = false;
+      const message = error instanceof Error ? error.message : String(error);
+      this.resultReturnStatusMessage = `Save failed: ${message}`;
+      this.renderBattleState();
+    }
   }
 
   private getCardName(instanceId: string): string {
@@ -2113,4 +2309,20 @@ function formatSaveStatusDate(value: string): string {
     dateStyle: 'medium',
     timeStyle: 'short',
   }).format(date);
+}
+
+function formatStageBattleResultReason(result: StageBattleResult): string {
+  if (result.reason === 'ENEMY_LEADER_DEFEATED') {
+    return 'Enemy leader defeated.';
+  }
+
+  return 'Player leader defeated.';
+}
+
+function formatStageBattleResultRewards(result: StageBattleResult): string {
+  if (result.rewardCardNames.length === 0) {
+    return 'No rewards.';
+  }
+
+  return result.rewardCardNames.join('\n');
 }

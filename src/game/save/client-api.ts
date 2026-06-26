@@ -1,4 +1,5 @@
 import type { SaveSlotId, SaveSlotState, SaveSlotSummary } from './types';
+import type { StageProgressState } from '../stage/types';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -57,7 +58,17 @@ function isSaveSlotState(value: unknown): value is SaveSlotState {
     typeof value.deck.id === 'string' &&
     isCardInstance(value.deck.leader) &&
     Array.isArray(value.deck.cards) &&
-    value.deck.cards.every((entry) => isCardInstance(entry))
+    value.deck.cards.every((entry) => isCardInstance(entry)) &&
+    isStageProgressState(value.stageProgress)
+  );
+}
+
+function isStageProgressState(value: unknown): value is StageProgressState {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.clearedStageIds) &&
+    value.clearedStageIds.every((stageId) => typeof stageId === 'string') &&
+    (typeof value.lastSelectedStageId === 'string' || value.lastSelectedStageId === null)
   );
 }
 

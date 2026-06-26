@@ -17,6 +17,7 @@ import {
   type SaveSlotState,
   type SaveSlotsResponse,
 } from '../game/save/types';
+import { normalizeStageProgressState } from '../game/stage/progress';
 
 type SaveSlotsApiOptions = {
   projectRoot?: string;
@@ -222,6 +223,7 @@ function validateSaveSlotState(value: unknown, slotId: SaveSlotId): SaveSlotStat
     throw new Error('deck must be a deck instance');
   }
   const deck = normalizeDeckInstance(value.deck);
+  const stageProgress = normalizeStageProgressState(value.stageProgress);
 
   return {
     schemaVersion: SAVE_SLOT_SCHEMA_VERSION,
@@ -230,6 +232,7 @@ function validateSaveSlotState(value: unknown, slotId: SaveSlotId): SaveSlotStat
     updatedAt: value.updatedAt,
     saveName: value.saveName,
     deck,
+    stageProgress,
   };
 }
 
@@ -351,6 +354,7 @@ function getErrorStatusCode(error: unknown): number {
       error.message.startsWith('createdAt and updatedAt must be strings') ||
       error.message.startsWith('saveName must be a non-empty string') ||
       error.message.startsWith('deck must be a deck instance') ||
+      error.message.startsWith('stageProgress') ||
       error.message.startsWith('Expected exactly one LEADER card') ||
       error.message.startsWith('Expected at least one UNIT card') ||
       error.message.startsWith('Invalid ')

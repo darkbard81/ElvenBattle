@@ -1,4 +1,5 @@
 import type { CardDefinition } from './card-catalog';
+import type { StageProgressState } from '../stage/types';
 
 export const SAVE_SLOT_SCHEMA_VERSION = 1 as const;
 
@@ -29,6 +30,7 @@ export type SaveSlotState = {
   updatedAt: string;
   saveName: string;
   deck: DeckInstance;
+  stageProgress: StageProgressState;
 };
 
 export type SaveSlotSummary = {

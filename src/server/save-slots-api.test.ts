@@ -91,6 +91,10 @@ describe('save slots api', () => {
     expect(initBody.state.deck.leader.name).toBe('미네르바');
     expect(initBody.state.deck.leader.description).toBeTypeOf('string');
     expect(initBody.state.deck.leader.abilities).toEqual([]);
+    expect(initBody.state.stageProgress).toEqual({
+      clearedStageIds: [],
+      lastSelectedStageId: null,
+    });
     expect(initBody.summary.isEmpty).toBe(false);
     expect(initBody.summary.leaderName).toBe('미네르바');
 
@@ -102,6 +106,10 @@ describe('save slots api', () => {
       ...initBody.state,
       updatedAt: '2024-01-02T03:04:05.000Z',
       saveName: 'Manual Save',
+      stageProgress: {
+        clearedStageIds: ['test-stage-dark'],
+        lastSelectedStageId: 'test-stage-dark',
+      },
       deck: {
         ...initBody.state.deck,
         leader: {
@@ -184,6 +192,10 @@ describe('save slots api', () => {
     });
     expect(body.deck.leader).not.toHaveProperty('definitionId');
     expect(body.deck.leader.abilities).toEqual([]);
+    expect(body.stageProgress).toEqual({
+      clearedStageIds: [],
+      lastSelectedStageId: null,
+    });
   });
 
   it('rejects invalid slot numbers', async () => {

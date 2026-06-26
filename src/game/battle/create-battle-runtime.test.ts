@@ -1,14 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { createInitialSaveState } from '../save/create-initial-save';
 import { createGameSession } from '../save/session';
+import { requireStageDefinition } from '../stage/stage-definitions';
 import { createInitialBattleRuntime } from './create-battle-runtime';
 import { ENEMY_INITIAL_LEADER_SLOT, INITIAL_HAND_SIZE, PLAYER_INITIAL_LEADER_SLOT } from './types';
+
+const TEST_STAGE_DEFINITION = requireStageDefinition('test-stage-dark');
 
 describe('createInitialBattleRuntime', () => {
   it('places both leaders on their center back battlefield slots', async () => {
     const state = await createInitialSaveState({ slotId: 1 });
     const session = createGameSession(state);
-    const runtime = createInitialBattleRuntime(session);
+    const runtime = createInitialBattleRuntime(session, TEST_STAGE_DEFINITION);
 
     expect(runtime.player.leader.card.instance.instanceId).toBe(
       session.deck.leader.instance.instanceId,
@@ -25,7 +28,7 @@ describe('createInitialBattleRuntime', () => {
   it('does not use the save-only LEADER zone in battle runtime state', async () => {
     const state = await createInitialSaveState({ slotId: 1 });
     const session = createGameSession(state);
-    const runtime = createInitialBattleRuntime(session);
+    const runtime = createInitialBattleRuntime(session, TEST_STAGE_DEFINITION);
     const zones = [
       runtime.player.leader.zone,
       runtime.enemy.leader.zone,
@@ -48,7 +51,7 @@ describe('createInitialBattleRuntime', () => {
   it('draws the initial hand from the top of the saved deck', async () => {
     const state = await createInitialSaveState({ slotId: 1 });
     const session = createGameSession(state);
-    const runtime = createInitialBattleRuntime(session);
+    const runtime = createInitialBattleRuntime(session, TEST_STAGE_DEFINITION);
 
     expect(runtime.player.hand).toHaveLength(INITIAL_HAND_SIZE);
     expect(runtime.player.deck).toHaveLength(session.deck.cards.length - INITIAL_HAND_SIZE);
@@ -60,10 +63,55 @@ describe('createInitialBattleRuntime', () => {
     );
   });
 
+  it('keeps battle stat changes isolated from the source game session', async () => {
+    const state = await createInitialSaveState({ slotId: 1 });
+    const session = createGameSession(state);
+    const originalLeaderStats = {
+      hp: session.deck.leader.instance.hp,
+      attack: session.deck.leader.instance.attack,
+      cost: session.deck.leader.instance.cost,
+      dominance: session.deck.leader.instance.dominance,
+    };
+    const originalHandCardStats = {
+      hp: session.deck.cards[0]!.instance.hp,
+      attack: session.deck.cards[0]!.instance.attack,
+      cost: session.deck.cards[0]!.instance.cost,
+      dominance: session.deck.cards[0]!.instance.dominance,
+    };
+    const runtime = createInitialBattleRuntime(session, TEST_STAGE_DEFINITION);
+
+    expect(runtime.player.leader.card).not.toBe(session.deck.leader);
+    expect(runtime.player.leader.card.instance).not.toBe(session.deck.leader.instance);
+    expect(runtime.player.hand[0]!.card).not.toBe(session.deck.cards[0]);
+    expect(runtime.player.hand[0]!.card.instance).not.toBe(session.deck.cards[0]!.instance);
+
+    runtime.player.leader.card.instance.hp = 1;
+    runtime.player.leader.card.instance.attack = 1;
+    runtime.player.leader.card.instance.cost = 0;
+    runtime.player.leader.card.instance.dominance = 0;
+    runtime.player.hand[0]!.card.instance.hp = 1;
+    runtime.player.hand[0]!.card.instance.attack = 1;
+    runtime.player.hand[0]!.card.instance.cost = 0;
+    runtime.player.hand[0]!.card.instance.dominance = 0;
+
+    expect({
+      hp: session.deck.leader.instance.hp,
+      attack: session.deck.leader.instance.attack,
+      cost: session.deck.leader.instance.cost,
+      dominance: session.deck.leader.instance.dominance,
+    }).toEqual(originalLeaderStats);
+    expect({
+      hp: session.deck.cards[0]!.instance.hp,
+      attack: session.deck.cards[0]!.instance.attack,
+      cost: session.deck.cards[0]!.instance.cost,
+      dominance: session.deck.cards[0]!.instance.dominance,
+    }).toEqual(originalHandCardStats);
+  });
+
   it('creates enemy hand and deck from deck_dark.json as runtime card instances', async () => {
     const state = await createInitialSaveState({ slotId: 1 });
     const session = createGameSession(state);
-    const runtime = createInitialBattleRuntime(session);
+    const runtime = createInitialBattleRuntime(session, TEST_STAGE_DEFINITION);
 
     expect(runtime.enemy.hand).toHaveLength(INITIAL_HAND_SIZE);
     expect(runtime.enemy.deck).toHaveLength(24);
@@ -77,7 +125,7 @@ describe('createInitialBattleRuntime', () => {
   it('keeps battlefield slot data only on battlefield cards', async () => {
     const state = await createInitialSaveState({ slotId: 1 });
     const session = createGameSession(state);
-    const runtime = createInitialBattleRuntime(session);
+    const runtime = createInitialBattleRuntime(session, TEST_STAGE_DEFINITION);
 
     expect(runtime.battlefield.every((card) => card.battlefieldSlot !== null)).toBe(true);
     expect(runtime.player.deck.every((card) => card.battlefieldSlot === null)).toBe(true);
@@ -91,7 +139,7 @@ describe('createInitialBattleRuntime', () => {
   it('initializes empty drop and exile piles for both sides and shared runtime state', async () => {
     const state = await createInitialSaveState({ slotId: 1 });
     const session = createGameSession(state);
-    const runtime = createInitialBattleRuntime(session);
+    const runtime = createInitialBattleRuntime(session, TEST_STAGE_DEFINITION);
 
     expect(runtime.drop).toHaveLength(0);
     expect(runtime.exile).toHaveLength(0);
@@ -104,7 +152,7 @@ describe('createInitialBattleRuntime', () => {
   it('initializes turn state and per-card action flags', async () => {
     const state = await createInitialSaveState({ slotId: 1 });
     const session = createGameSession(state);
-    const runtime = createInitialBattleRuntime(session);
+    const runtime = createInitialBattleRuntime(session, TEST_STAGE_DEFINITION);
     const cards = [
       runtime.player.leader,
       runtime.enemy.leader,
@@ -126,7 +174,7 @@ describe('createInitialBattleRuntime', () => {
   it('initializes empty ability effect state on every battle runtime card', async () => {
     const state = await createInitialSaveState({ slotId: 1 });
     const session = createGameSession(state);
-    const runtime = createInitialBattleRuntime(session);
+    const runtime = createInitialBattleRuntime(session, TEST_STAGE_DEFINITION);
     const cards = [
       runtime.player.leader,
       runtime.enemy.leader,

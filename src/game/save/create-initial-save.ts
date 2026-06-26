@@ -2,6 +2,7 @@ import { SAVE_SLOT_SCHEMA_VERSION, type SaveSlotId, type SaveSlotState } from '.
 import { CARD_DEFINITIONS } from './card-catalog';
 import { createDeckInstanceFromDefinitions } from './deck-instancing';
 import { createRuntimeId } from './runtime-id';
+import { createDefaultStageProgressState } from '../stage/progress';
 
 type CreateInitialSaveStateOptions = {
   slotId: SaveSlotId;
@@ -31,5 +32,6 @@ export async function createInitialSaveState(
       owner: 'PLAYER',
       unitCount: 29,
     }),
+    stageProgress: createDefaultStageProgressState(),
   };
 }

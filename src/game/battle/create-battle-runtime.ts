@@ -1,9 +1,10 @@
-import darkDeckDefinitionData from '../../../cards/deck_dark.json';
 import type { GameSession, RuntimeCardInstance } from '../save/session';
 import {
   createRuntimeDeckInstanceFromDefinitions,
   readCardDefinitionFile,
 } from '../save/deck-instancing';
+import { resolveStageEnemyDeck } from '../stage/stage-definitions';
+import type { StageDefinition } from '../stage/types';
 import {
   ENEMY_INITIAL_LEADER_SLOT,
   INITIAL_HAND_SIZE,
@@ -17,18 +18,22 @@ import {
 } from './types';
 
 /**
- * 저장 슬롯의 플레이어 덱과 테스트용 적 덱을 전투 중에만 쓰는 런타임 Zone 상태로 변환한다.
+ * 저장 슬롯의 플레이어 덱과 Stage가 지정한 적 덱을 전투 중에만 쓰는 런타임 Zone 상태로 변환한다.
  * 저장 호환용 `LEADER` Zone은 사용하지 않고, 양측 리더는 각자의 `Side:BC` 전장 슬롯에 배치한다.
  */
-export function createInitialBattleRuntime(session: GameSession): BattleRuntimeState {
+export function createInitialBattleRuntime(
+  session: GameSession,
+  stageDefinition: StageDefinition,
+): BattleRuntimeState {
   const player = createBattleParticipantRuntimeState(
     'player',
     session.deck,
     PLAYER_INITIAL_LEADER_SLOT,
   );
+  const enemyDeckDefinition = resolveStageEnemyDeck(stageDefinition);
   const enemyDeck = createRuntimeDeckInstanceFromDefinitions({
-    deckId: 'deck-enemy-dark-test',
-    cardDefinitions: readCardDefinitionFile(darkDeckDefinitionData).cards,
+    deckId: enemyDeckDefinition.deckId,
+    cardDefinitions: readCardDefinitionFile(enemyDeckDefinition.cardDefinitionFile).cards,
     owner: 'ENEMY',
     unitCount: 29,
   });
@@ -85,7 +90,7 @@ function createBattleCardRuntimeState(
   options: CreateBattleCardRuntimeStateOptions,
 ): BattleCardRuntimeState {
   return {
-    card,
+    card: createBattleRuntimeCardInstance(card),
     side,
     zone,
     battlefieldSlot: options.battlefieldSlot ?? null,
@@ -95,5 +100,12 @@ function createBattleCardRuntimeState(
     hasAttackedThisTurn: false,
     hasUsedActiveSkillThisTurn: false,
     abilityEffects: [],
+  };
+}
+
+function createBattleRuntimeCardInstance(card: RuntimeCardInstance): RuntimeCardInstance {
+  return {
+    instance: structuredClone(card.instance),
+    definition: card.definition,
   };
 }

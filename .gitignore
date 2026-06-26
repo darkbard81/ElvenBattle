@@ -22,6 +22,8 @@ coverage/
 
 # Generated card and asset outputs
 /cards/*/
+!/cards/stages/
+!/cards/stages/*.json
 /assets/*
 !/assets/README.md
 

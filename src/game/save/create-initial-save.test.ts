@@ -17,6 +17,10 @@ describe('createInitialSaveState', () => {
     expect(state.deck.cards).toHaveLength(29);
     expect(state.deck.cards.every((card) => card.zone === 'DECK')).toBe(true);
     expect(state.deck.cards.every((card) => typeof card.description === 'string')).toBe(true);
+    expect(state.stageProgress).toEqual({
+      clearedStageIds: [],
+      lastSelectedStageId: null,
+    });
 
     const instanceIds = new Set([
       state.deck.leader.instanceId,
