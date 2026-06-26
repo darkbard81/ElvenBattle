@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createDefaultStageProgressState } from './progress';
+import { loadStageDefinitions } from './stage-loader';
 import {
   findStageDefinition,
   isStageUnlocked,
@@ -7,6 +8,28 @@ import {
   requireStageDefinition,
   resolveStageEnemyDeck,
 } from './stage-definitions';
+import type { StageDefinition } from './types';
+
+const TEST_STAGE_DATA = {
+  id: 'test-stage-dark',
+  order: 1,
+  name: 'Test Stage',
+  description: '기본 전투 흐름과 리더 격파 승리 조건을 검증하는 테스트 Stage입니다.',
+  enemyDeckId: 'deck-enemy-dark-test',
+  enemyDeckPath: 'cards/deck_dark.json',
+  victoryCondition: { type: 'DEFEAT_ENEMY_LEADER' },
+  defeatConditions: [{ type: 'PLAYER_LEADER_DEFEATED' }],
+  rewards: {
+    description: '승리 시 적 배하 카드 일부를 보상 후보로 사용할 수 있습니다.',
+    enemyCardDrop: {
+      source: 'ENEMY_DROP',
+      chancePercent: 20,
+      maxCards: 1,
+      excludeLeader: true,
+    },
+  },
+  unlock: { type: 'ALWAYS' },
+} satisfies StageDefinition;
 
 describe('stage definitions', () => {
   it('lists the test stage as data-driven stage content', () => {
@@ -53,4 +76,90 @@ describe('stage definitions', () => {
   it('returns null for unknown stage ids', () => {
     expect(findStageDefinition('missing-stage')).toBeNull();
   });
+
+  it('sorts loaded JSON stages by order', () => {
+    const stages = loadStageDefinitions({
+      'cards/stages/stage_second.json': createStageData({ id: 'second-stage', order: 2 }),
+      'cards/stages/stage_first.json': createStageData({ id: 'first-stage', order: 1 }),
+    });
+
+    expect(stages.map((stage) => stage.id)).toEqual(['first-stage', 'second-stage']);
+  });
+
+  it('throws when a required stage field is missing', () => {
+    expect(() =>
+      loadStageDefinitions({
+        'cards/stages/stage_missing_name.json': createStageData({ name: undefined }),
+      }),
+    ).toThrow('cards/stages/stage_missing_name.json.name must be a non-empty string');
+  });
+
+  it('throws when stage ids are duplicated', () => {
+    expect(() =>
+      loadStageDefinitions({
+        'cards/stages/stage_first.json': createStageData({ id: 'duplicated-stage', order: 1 }),
+        'cards/stages/stage_second.json': createStageData({ id: 'duplicated-stage', order: 2 }),
+      }),
+    ).toThrow('Duplicate stage id: duplicated-stage');
+  });
+
+  it('throws when stage orders are duplicated', () => {
+    expect(() =>
+      loadStageDefinitions({
+        'cards/stages/stage_first.json': createStageData({ id: 'first-stage', order: 1 }),
+        'cards/stages/stage_second.json': createStageData({ id: 'second-stage', order: 1 }),
+      }),
+    ).toThrow('Duplicate stage order: 1');
+  });
+
+  it('throws when a stage references an unsupported enemy deck path', () => {
+    expect(() =>
+      loadStageDefinitions({
+        'cards/stages/stage_bad_deck.json': createStageData({
+          enemyDeckPath: 'cards/deck_missing.json',
+        }),
+      }),
+    ).toThrow(
+      'cards/stages/stage_bad_deck.json.enemyDeckPath is not supported: cards/deck_missing.json',
+    );
+  });
+
+  it('throws when a stage reward uses an unsupported source', () => {
+    expect(() =>
+      loadStageDefinitions({
+        'cards/stages/stage_bad_reward.json': createStageData({
+          rewards: {
+            description: TEST_STAGE_DATA.rewards.description,
+            enemyCardDrop: {
+              source: 'CHEST',
+              chancePercent: 20,
+              maxCards: 1,
+              excludeLeader: true,
+            },
+          },
+        }),
+      }),
+    ).toThrow(
+      'cards/stages/stage_bad_reward.json.rewards.enemyCardDrop.source is not supported: CHEST',
+    );
+  });
 });
+
+function createStageData(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    ...TEST_STAGE_DATA,
+    victoryCondition: { type: 'DEFEAT_ENEMY_LEADER' },
+    defeatConditions: [{ type: 'PLAYER_LEADER_DEFEATED' }],
+    rewards: {
+      description: TEST_STAGE_DATA.rewards.description,
+      enemyCardDrop: {
+        source: 'ENEMY_DROP',
+        chancePercent: 20,
+        maxCards: 1,
+        excludeLeader: true,
+      },
+    },
+    unlock: { type: 'ALWAYS' },
+    ...overrides,
+  };
+}

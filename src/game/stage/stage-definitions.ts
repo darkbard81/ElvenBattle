@@ -1,5 +1,6 @@
 import darkDeckDefinitionData from '../../../cards/deck_dark.json';
 import type { CardDefinitionFile } from '../save/card-catalog';
+import { loadStageDefinitions } from './stage-loader';
 import type { StageDefinition, StageEnemyDeckPath, StageProgressState } from './types';
 
 export type StageEnemyDeckDefinition = {
@@ -12,28 +13,13 @@ const ENEMY_DECK_DEFINITIONS: Record<StageEnemyDeckPath, CardDefinitionFile> = {
   'cards/deck_dark.json': darkDeckDefinitionData as unknown as CardDefinitionFile,
 };
 
-export const STAGE_DEFINITIONS: readonly StageDefinition[] = [
-  {
-    id: 'test-stage-dark',
-    order: 1,
-    name: 'Test Stage',
-    description: '기본 전투 흐름과 리더 격파 승리 조건을 검증하는 테스트 Stage입니다.',
-    enemyDeckId: 'deck-enemy-dark-test',
-    enemyDeckPath: 'cards/deck_dark.json',
-    victoryCondition: { type: 'DEFEAT_ENEMY_LEADER' },
-    defeatConditions: [{ type: 'PLAYER_LEADER_DEFEATED' }],
-    rewards: {
-      description: '승리 시 적 배하 카드 일부를 보상 후보로 사용할 수 있습니다.',
-      enemyCardDrop: {
-        source: 'ENEMY_DROP',
-        chancePercent: 20,
-        maxCards: 1,
-        excludeLeader: true,
-      },
-    },
-    unlock: { type: 'ALWAYS' },
-  },
-];
+const stageDefinitionData = import.meta.glob<unknown>('../../../cards/stages/*.json', {
+  eager: true,
+  import: 'default',
+});
+
+export const STAGE_DEFINITIONS: readonly StageDefinition[] =
+  loadStageDefinitions(stageDefinitionData);
 
 /**
  * Stage 목록을 표시 순서 기준으로 돌려준다.
