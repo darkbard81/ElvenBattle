@@ -4,6 +4,7 @@ import type { BattleCardRuntimeState, BattleRuntimeState } from '../battle/types
 import { createInitialSaveState } from '../save/create-initial-save';
 import { createGameSession, createSaveSlotStateFromGameSession } from '../save/session';
 import type { CardInstance } from '../save/types';
+import type { StageGrowthResult } from './types';
 import { requireStageDefinition } from './stage-definitions';
 import {
   applyStageBattleResultToSession,
@@ -35,6 +36,13 @@ describe('stage battle result', () => {
       rewardCards: [],
       rewardCardInstanceIds: [],
       rewardCardNames: [],
+      growth: {
+        expPerCard: 100,
+        cardInstanceIds: expect.arrayContaining([
+          runtime.player.leader.card.instance.instanceId,
+          runtime.player.hand[0]!.card.instance.instanceId,
+        ]),
+      },
     });
   });
 
@@ -58,6 +66,13 @@ describe('stage battle result', () => {
       rewardCards: [],
       rewardCardInstanceIds: [],
       rewardCardNames: [],
+      growth: {
+        expPerCard: 100,
+        cardInstanceIds: expect.arrayContaining([
+          runtime.player.leader.card.instance.instanceId,
+          runtime.player.hand[0]!.card.instance.instanceId,
+        ]),
+      },
     });
   });
 
@@ -150,6 +165,7 @@ describe('stage battle result', () => {
       rewardCards: [],
       rewardCardInstanceIds: [],
       rewardCardNames: [],
+      growth: createStageGrowthResult(),
       turnNumber: 1,
     });
 
@@ -171,6 +187,7 @@ describe('stage battle result', () => {
       rewardCards: [rewardCard],
       rewardCardInstanceIds: [rewardCard.instanceId],
       rewardCardNames: [rewardCard.name],
+      growth: createStageGrowthResult(),
       turnNumber: 1,
     });
     const savedState = createSaveSlotStateFromGameSession(nextSession, {
@@ -208,6 +225,7 @@ describe('stage battle result', () => {
       rewardCards: [createRewardCard(state.deck.cards[0]!, 'ignored-reward')],
       rewardCardInstanceIds: [],
       rewardCardNames: [],
+      growth: createStageGrowthResult(),
       turnNumber: 1,
     });
 
@@ -269,7 +287,41 @@ describe('stage battle result', () => {
       attack: savedState.deck.cards[0]!.attack,
       cost: savedState.deck.cards[0]!.cost,
       dominance: savedState.deck.cards[0]!.dominance,
-    }).toEqual(originalFirstCardStats);
+    }).toEqual({
+      ...originalFirstCardStats,
+      hp: (originalFirstCardStats.hp ?? 0) + 1,
+    });
+  });
+
+  it('applies battle participation exp and level growth to the saved deck', async () => {
+    const state = await createInitialSaveState({ slotId: 1 });
+    const session = createGameSession(state);
+    const targetCard = session.deck.cards[0]!;
+
+    const nextSession = applyStageBattleResultToSession(session, {
+      stageId: 'test-stage-dark',
+      outcome: 'WIN',
+      reason: 'ENEMY_LEADER_DEFEATED',
+      rewardCards: [],
+      rewardCardInstanceIds: [],
+      rewardCardNames: [],
+      growth: createStageGrowthResult({
+        expPerCard: 500,
+        cardInstanceIds: [targetCard.instance.instanceId],
+        cardNames: [targetCard.instance.name],
+      }),
+      turnNumber: 1,
+    });
+    const savedState = createSaveSlotStateFromGameSession(nextSession, {
+      now: new Date('2024-01-02T00:00:00.000Z'),
+    });
+    const reloadedSession = createGameSession(savedState);
+    const reloadedTarget = reloadedSession.deck.cards[0]!;
+
+    expect(reloadedTarget.instance.exp).toBe(500);
+    expect(reloadedTarget.instance.level).toBe(4);
+    expect(reloadedTarget.instance.hp).toBe((targetCard.instance.hp ?? 0) + 1);
+    expect(reloadedTarget.instance.attack).toBe((targetCard.instance.attack ?? 0) + 1);
   });
 });
 
@@ -284,6 +336,15 @@ function createRewardCard(card: CardInstance, instanceId: string): CardInstance 
     instanceId,
     owner: 'PLAYER',
     zone: 'COLLECTION',
+  };
+}
+
+function createStageGrowthResult(overrides: Partial<StageGrowthResult> = {}): StageGrowthResult {
+  return {
+    expPerCard: 0,
+    cardInstanceIds: [],
+    cardNames: [],
+    ...overrides,
   };
 }
 

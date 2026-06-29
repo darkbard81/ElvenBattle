@@ -1,8 +1,17 @@
 import type { BattleCardRuntimeState, BattleRuntimeState } from '../battle/types';
+import {
+  BATTLE_PARTICIPATION_EXP,
+  applyBattleParticipationExpToSession,
+} from '../save/card-growth';
 import { createCardInstanceFromDefinition } from '../save/deck-instancing';
 import type { GameSession } from '../save/session';
 import type { CardInstance } from '../save/types';
-import type { StageBattleResult, StageDefinition, StageRewardResult } from './types';
+import type {
+  StageBattleResult,
+  StageDefinition,
+  StageGrowthResult,
+  StageRewardResult,
+} from './types';
 
 type StageRewardOptions = {
   random?: () => number;
@@ -27,6 +36,7 @@ export function createStageBattleResult(
     outcome === 'WIN'
       ? calculateStageRewards(runtime, stageDefinition, options)
       : { rewardCards: [], rewardCardInstanceIds: [], rewardCardNames: [] };
+  const growthResult = calculateStageGrowth(runtime);
 
   return {
     stageId: stageDefinition.id,
@@ -35,6 +45,7 @@ export function createStageBattleResult(
     rewardCards: rewardResult.rewardCards,
     rewardCardInstanceIds: rewardResult.rewardCardInstanceIds,
     rewardCardNames: rewardResult.rewardCardNames,
+    growth: growthResult,
     turnNumber: runtime.turnNumber,
   };
 }
@@ -123,7 +134,7 @@ export function applyStageBattleResultToSession(
     }
   }
 
-  return {
+  const sessionWithRewards: GameSession = {
     ...session,
     collection: {
       cards: [
@@ -138,6 +149,38 @@ export function applyStageBattleResultToSession(
       clearedStageIds,
       lastSelectedStageId: result.stageId,
     },
+  };
+
+  return applyBattleParticipationExpToSession(
+    sessionWithRewards,
+    result.growth.cardInstanceIds,
+    result.growth.expPerCard,
+  ).session;
+}
+
+/**
+ * 전투가 종료된 시점의 플레이어 카드 런타임 상태에서 저장 덱에 EXP를 줄 대상 목록을 만든다.
+ * 카드는 전투 중 여러 Zone을 이동할 수 있으므로 instanceId 기준으로 중복을 제거한다.
+ */
+export function calculateStageGrowth(runtime: BattleRuntimeState): StageGrowthResult {
+  const participantCards = [
+    runtime.player.leader,
+    ...runtime.player.hand,
+    ...runtime.player.deck,
+    ...runtime.player.drop,
+    ...runtime.player.exile,
+    ...runtime.battlefield.filter((card) => card.side === 'player'),
+  ];
+  const cardsByInstanceId = new Map<string, BattleCardRuntimeState>();
+  for (const card of participantCards) {
+    cardsByInstanceId.set(card.card.instance.instanceId, card);
+  }
+
+  const cards = Array.from(cardsByInstanceId.values());
+  return {
+    expPerCard: BATTLE_PARTICIPATION_EXP,
+    cardInstanceIds: cards.map((card) => card.card.instance.instanceId),
+    cardNames: cards.map((card) => card.card.instance.name),
   };
 }
 

@@ -48,6 +48,7 @@ export type StageBattleResult = {
   rewardCards: CardInstance[];
   rewardCardInstanceIds: string[];
   rewardCardNames: string[];
+  growth: StageGrowthResult;
   turnNumber: number;
 };
 
@@ -55,4 +56,10 @@ export type StageRewardResult = {
   rewardCards: CardInstance[];
   rewardCardInstanceIds: string[];
   rewardCardNames: string[];
+};
+
+export type StageGrowthResult = {
+  expPerCard: number;
+  cardInstanceIds: string[];
+  cardNames: string[];
 };

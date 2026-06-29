@@ -17,7 +17,12 @@ import type {
 import { DEFAULT_FONT_FAMILY } from '../../theme';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
 import { createMenuButton } from '../ui/menu-button';
-import type { BattlefieldSceneData, DeckBuildSceneData, StageSceneData } from './scene-data';
+import type {
+  BattlefieldSceneData,
+  DeckBuildSceneData,
+  GrowthSceneData,
+  StageSceneData,
+} from './scene-data';
 
 /**
  * 저장 슬롯 선택 이후 전투 시작 전 Stage 목록과 상세 정보를 보여주는 허브 씬이다.
@@ -95,7 +100,7 @@ export class StageScene extends Phaser.Scene {
     this.statusText = this.add
       .text(
         GAME_WIDTH / 2,
-        this.lastBattleResult ? 1626 : 1514,
+        this.lastBattleResult ? 1648 : 1514,
         'Select a stage and start battle.',
         {
           fontFamily: DEFAULT_FONT_FAMILY,
@@ -248,7 +253,7 @@ export class StageScene extends Phaser.Scene {
     this.resultSummaryContainer = container;
     const result = this.lastBattleResult;
     const stageName = this.getStageName(result.stageId);
-    const panel = this.add.rectangle(0, 0, 1052, 168, 0x10261f, 0.94).setOrigin(0, 0);
+    const panel = this.add.rectangle(0, 0, 1052, 196, 0x10261f, 0.94).setOrigin(0, 0);
     panel.setStrokeStyle(2, result.outcome === 'WIN' ? 0xffe4a8 : 0xff8e8e, 0.82);
     container.add(panel);
 
@@ -280,13 +285,20 @@ export class StageScene extends Phaser.Scene {
     );
     container.add(
       this.add
-        .text(28, 108, `Rewards: ${formatBattleResultRewards(result)}`, {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '19px',
-          color: '#f1f8ec',
-          align: 'left',
-          wordWrap: { width: 980 },
-        })
+        .text(
+          28,
+          108,
+          `Rewards: ${formatBattleResultRewards(result)}\nGrowth: ${formatBattleResultGrowth(
+            result,
+          )}`,
+          {
+            fontFamily: DEFAULT_FONT_FAMILY,
+            fontSize: '19px',
+            color: '#f1f8ec',
+            align: 'left',
+            wordWrap: { width: 980 },
+          },
+        )
         .setOrigin(0, 0),
     );
   }
@@ -374,21 +386,37 @@ export class StageScene extends Phaser.Scene {
       },
     });
 
-    const disabledButtons = [
-      ['장비', 752],
-      ['성장', 900],
-      ['연성', 1048],
-    ] as const;
-    disabledButtons.forEach(([label, x]) => {
-      createMenuButton(this, {
-        x,
-        y: 1760,
-        width: 128,
-        height: 64,
-        label,
-        enabled: false,
-        parent: container,
-      });
+    createMenuButton(this, {
+      x: 752,
+      y: 1760,
+      width: 128,
+      height: 64,
+      label: '장비',
+      enabled: false,
+      parent: container,
+    });
+    createMenuButton(this, {
+      x: 900,
+      y: 1760,
+      width: 128,
+      height: 64,
+      label: '성장',
+      enabled: !this.isStartingBattle,
+      parent: container,
+      onClick: () => {
+        this.scene.start('GrowthScene', {
+          session: this.session,
+        } satisfies GrowthSceneData);
+      },
+    });
+    createMenuButton(this, {
+      x: 1048,
+      y: 1760,
+      width: 128,
+      height: 64,
+      label: '연성',
+      enabled: false,
+      parent: container,
     });
   }
 
@@ -536,6 +564,14 @@ function formatBattleResultRewards(result: StageBattleResult): string {
   }
 
   return result.rewardCardNames.join(', ');
+}
+
+function formatBattleResultGrowth(result: StageBattleResult): string {
+  if (result.growth.cardInstanceIds.length === 0 || result.growth.expPerCard <= 0) {
+    return 'No growth EXP';
+  }
+
+  return `+${result.growth.expPerCard} EXP to ${result.growth.cardInstanceIds.length} cards`;
 }
 
 function formatUnlockCondition(condition: StageUnlockCondition, unlocked: boolean): string {

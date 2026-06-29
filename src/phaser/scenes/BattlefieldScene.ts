@@ -1229,6 +1229,9 @@ export class BattlefieldScene extends Phaser.Scene {
       '',
       'Rewards',
       formatStageBattleResultRewards(result),
+      '',
+      'Growth',
+      formatStageBattleResultGrowth(result),
     ];
     container.add(
       this.add
@@ -2325,4 +2328,12 @@ function formatStageBattleResultRewards(result: StageBattleResult): string {
   }
 
   return result.rewardCardNames.join('\n');
+}
+
+function formatStageBattleResultGrowth(result: StageBattleResult): string {
+  if (result.growth.cardInstanceIds.length === 0 || result.growth.expPerCard <= 0) {
+    return 'No growth EXP.';
+  }
+
+  return `+${result.growth.expPerCard} EXP to ${result.growth.cardInstanceIds.length} cards.`;
 }
