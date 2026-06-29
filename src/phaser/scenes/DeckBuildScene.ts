@@ -1,6 +1,10 @@
 import Phaser from 'phaser';
 import { saveSlotState } from '../../game/save/client-api';
-import { moveCollectionCardToDeck, moveDeckCardToCollection } from '../../game/save/deck-building';
+import {
+  changeDeckLeaderWithCollectionLeader,
+  moveCollectionUnitToDeck,
+  moveDeckUnitToCollection,
+} from '../../game/save/deck-building';
 import {
   createGameSession,
   createSaveSlotStateFromGameSession,
@@ -24,13 +28,16 @@ type DeckBuildListEntry = {
   index: number;
 };
 
+type DeckBuildMode = 'LEADER' | 'UNIT';
+
 /**
- * 전투 전 리더를 제외한 카드 구성을 덱과 보유 컬렉션 사이에서 조정하는 화면이다.
+ * 전투 전 LEADER 교체와 UNIT 구성을 덱과 보유 컬렉션 사이에서 조정하는 화면이다.
  * 실제 카드 이동 규칙과 저장 직렬화는 save 도메인 모듈에 위임하고, 이 씬은 선택과 저장 흐름만 담당한다.
  */
 export class DeckBuildScene extends Phaser.Scene {
   private savedSession!: GameSession;
   private draftSession!: GameSession;
+  private mode: DeckBuildMode = 'UNIT';
   private selectedDeckCardInstanceId: string | null = null;
   private selectedCollectionCardInstanceId: string | null = null;
   private deckPage = 0;
@@ -51,6 +58,7 @@ export class DeckBuildScene extends Phaser.Scene {
   create(data: DeckBuildSceneData): void {
     this.savedSession = data.session;
     this.draftSession = data.session;
+    this.mode = 'UNIT';
     this.selectedDeckCardInstanceId = null;
     this.selectedCollectionCardInstanceId = null;
     this.deckPage = 0;
@@ -88,7 +96,7 @@ export class DeckBuildScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     this.add
-      .text(GAME_WIDTH / 2, 154, 'Move cards between deck and collection', {
+      .text(GAME_WIDTH / 2, 154, 'Build LEADER and UNIT cards before battle', {
         fontFamily: DEFAULT_FONT_FAMILY,
         fontSize: '24px',
         color: '#d9ebd1',
@@ -100,7 +108,7 @@ export class DeckBuildScene extends Phaser.Scene {
 
   private addStatusText(): void {
     this.statusText = this.add
-      .text(GAME_WIDTH / 2, 1642, 'Select a deck card to remove or a collection card to add.', {
+      .text(GAME_WIDTH / 2, 1642, 'Select UNIT cards to add or remove.', {
         fontFamily: DEFAULT_FONT_FAMILY,
         fontSize: '22px',
         color: '#e6f4df',
@@ -114,20 +122,30 @@ export class DeckBuildScene extends Phaser.Scene {
     this.listContainer?.destroy();
     const container = this.add.container(0, 0);
     this.listContainer = container;
+    this.renderModeTabs(container);
 
+    if (this.mode === 'LEADER') {
+      this.renderLeaderLists(container);
+      return;
+    }
+
+    this.renderUnitLists(container);
+  }
+
+  private renderUnitLists(container: Phaser.GameObjects.Container): void {
     this.renderCardPanel({
       container,
       x: 72,
-      title: 'Current Deck',
-      subtitle: `${this.getDeckCardEntries().length} cards`,
-      entries: this.getDeckCardEntries(),
+      title: 'Deck UNIT',
+      subtitle: `${this.getDeckUnitEntries().length} cards`,
+      entries: this.getDeckUnitEntries(),
       page: this.deckPage,
       selectedInstanceId: this.selectedDeckCardInstanceId,
-      emptyMessage: 'No non-leader cards in deck.',
+      emptyMessage: 'No UNIT cards in deck.',
       onSelect: (instanceId) => {
         this.selectedDeckCardInstanceId = instanceId;
         this.selectedCollectionCardInstanceId = null;
-        this.setStatus('Deck card selected. Remove is ready.');
+        this.setStatus('UNIT selected. Remove is ready.');
         this.renderLists();
         this.renderHud();
       },
@@ -140,16 +158,16 @@ export class DeckBuildScene extends Phaser.Scene {
     this.renderCardPanel({
       container,
       x: 628,
-      title: 'Collection',
-      subtitle: `${this.getCollectionCardEntries().length} cards`,
-      entries: this.getCollectionCardEntries(),
+      title: 'Collection UNIT',
+      subtitle: `${this.getCollectionUnitEntries().length} cards`,
+      entries: this.getCollectionUnitEntries(),
       page: this.collectionPage,
       selectedInstanceId: this.selectedCollectionCardInstanceId,
-      emptyMessage: 'No collection cards yet.',
+      emptyMessage: 'No collection UNIT cards yet.',
       onSelect: (instanceId) => {
         this.selectedDeckCardInstanceId = null;
         this.selectedCollectionCardInstanceId = instanceId;
-        this.setStatus('Collection card selected. Add to Deck is ready.');
+        this.setStatus('Collection UNIT selected. Add to Deck is ready.');
         this.renderLists();
         this.renderHud();
       },
@@ -157,6 +175,78 @@ export class DeckBuildScene extends Phaser.Scene {
         this.collectionPage = page;
         this.renderLists();
       },
+    });
+  }
+
+  private renderLeaderLists(container: Phaser.GameObjects.Container): void {
+    this.renderCardPanel({
+      container,
+      x: 72,
+      title: 'Current LEADER',
+      subtitle: '1 card',
+      entries: this.getDeckLeaderEntries(),
+      page: 0,
+      selectedInstanceId: this.draftSession.deck.leader.instance.instanceId,
+      emptyMessage: 'No current LEADER.',
+      onSelect: () => {
+        this.selectedDeckCardInstanceId = null;
+        this.setStatus('Current LEADER is fixed until replaced.');
+        this.renderLists();
+        this.renderHud();
+      },
+      onPageChange: () => {},
+    });
+
+    this.renderCardPanel({
+      container,
+      x: 628,
+      title: 'Collection LEADER',
+      subtitle: `${this.getCollectionLeaderEntries().length} cards`,
+      entries: this.getCollectionLeaderEntries(),
+      page: this.collectionPage,
+      selectedInstanceId: this.selectedCollectionCardInstanceId,
+      emptyMessage: 'No collection LEADER cards yet.',
+      onSelect: (instanceId) => {
+        this.selectedDeckCardInstanceId = null;
+        this.selectedCollectionCardInstanceId = instanceId;
+        this.setStatus('Collection LEADER selected. Set Leader is ready.');
+        this.renderLists();
+        this.renderHud();
+      },
+      onPageChange: (page) => {
+        this.collectionPage = page;
+        this.renderLists();
+      },
+    });
+  }
+
+  private renderModeTabs(container: Phaser.GameObjects.Container): void {
+    this.createModeButton(container, 'UNIT', 472);
+    this.createModeButton(container, 'LEADER', 728);
+  }
+
+  private createModeButton(
+    container: Phaser.GameObjects.Container,
+    mode: DeckBuildMode,
+    x: number,
+  ): void {
+    const selected = this.mode === mode;
+    const background = this.add.rectangle(x, 214, 220, 52, selected ? 0x31543d : 0x12211c, 0.96);
+    background.setStrokeStyle(2, selected ? 0xffe4a8 : 0x78a98d, selected ? 0.95 : 0.56);
+    background.setInteractive({ useHandCursor: true });
+    container.add(background);
+    container.add(
+      this.add
+        .text(x, 214, mode, {
+          fontFamily: DEFAULT_FONT_FAMILY,
+          fontSize: '22px',
+          color: selected ? '#fff3c2' : '#d7ead4',
+          align: 'center',
+        })
+        .setOrigin(0.5),
+    );
+    background.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
+      this.changeMode(mode);
     });
   }
 
@@ -390,8 +480,9 @@ export class DeckBuildScene extends Phaser.Scene {
     this.hudContainer?.destroy();
     const container = this.add.container(0, 0);
     this.hudContainer = container;
-    const canAddToDeck = !this.isSaving && this.selectedCollectionCardInstanceId !== null;
-    const canRemoveFromDeck = !this.isSaving && this.selectedDeckCardInstanceId !== null;
+    const canUseCollectionAction = !this.isSaving && this.selectedCollectionCardInstanceId !== null;
+    const canRemoveFromDeck =
+      this.mode === 'UNIT' && !this.isSaving && this.selectedDeckCardInstanceId !== null;
 
     createMenuButton(this, {
       x: 164,
@@ -410,27 +501,34 @@ export class DeckBuildScene extends Phaser.Scene {
       y: 1760,
       width: 240,
       height: 64,
-      label: 'Add to Deck',
-      enabled: canAddToDeck,
+      label: this.mode === 'LEADER' ? 'Set Leader' : 'Add to Deck',
+      enabled: canUseCollectionAction,
       parent: container,
       onClick: () => {
+        if (this.mode === 'LEADER') {
+          this.handleSetLeader();
+          return;
+        }
+
         this.handleAddToDeck();
       },
     });
+    if (this.mode === 'UNIT') {
+      createMenuButton(this, {
+        x: 670,
+        y: 1760,
+        width: 190,
+        height: 64,
+        label: 'Remove',
+        enabled: canRemoveFromDeck,
+        parent: container,
+        onClick: () => {
+          this.handleRemoveFromDeck();
+        },
+      });
+    }
     createMenuButton(this, {
-      x: 670,
-      y: 1760,
-      width: 190,
-      height: 64,
-      label: 'Remove',
-      enabled: canRemoveFromDeck,
-      parent: container,
-      onClick: () => {
-        this.handleRemoveFromDeck();
-      },
-    });
-    createMenuButton(this, {
-      x: 900,
+      x: this.mode === 'LEADER' ? 670 : 900,
       y: 1760,
       width: 180,
       height: 64,
@@ -445,7 +543,7 @@ export class DeckBuildScene extends Phaser.Scene {
     const summaryText = this.isDirty ? 'Unsaved changes' : 'Saved deck';
     container.add(
       this.add
-        .text(1080, 1760, summaryText, {
+        .text(this.mode === 'LEADER' ? 940 : 1080, 1760, summaryText, {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSize: '22px',
           color: this.isDirty ? '#fff3c2' : '#bfeec5',
@@ -461,12 +559,12 @@ export class DeckBuildScene extends Phaser.Scene {
     }
 
     const collectionCard = this.findCardByInstanceId(
-      this.getCollectionCardEntries(),
+      this.getCollectionUnitEntries(),
       this.selectedCollectionCardInstanceId,
     );
 
     try {
-      this.draftSession = moveCollectionCardToDeck(this.draftSession, {
+      this.draftSession = moveCollectionUnitToDeck(this.draftSession, {
         collectionCardInstanceId: this.selectedCollectionCardInstanceId,
       });
       this.isDirty = true;
@@ -487,12 +585,12 @@ export class DeckBuildScene extends Phaser.Scene {
     }
 
     const deckCard = this.findCardByInstanceId(
-      this.getDeckCardEntries(),
+      this.getDeckUnitEntries(),
       this.selectedDeckCardInstanceId,
     );
 
     try {
-      this.draftSession = moveDeckCardToCollection(this.draftSession, {
+      this.draftSession = moveDeckUnitToCollection(this.draftSession, {
         deckCardInstanceId: this.selectedDeckCardInstanceId,
       });
       this.isDirty = true;
@@ -504,6 +602,32 @@ export class DeckBuildScene extends Phaser.Scene {
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       this.setStatus(`Remove failed: ${message}`);
+    }
+  }
+
+  private handleSetLeader(): void {
+    if (!this.selectedCollectionCardInstanceId) {
+      return;
+    }
+
+    const leaderCard = this.findCardByInstanceId(
+      this.getCollectionLeaderEntries(),
+      this.selectedCollectionCardInstanceId,
+    );
+
+    try {
+      this.draftSession = changeDeckLeaderWithCollectionLeader(this.draftSession, {
+        collectionLeaderInstanceId: this.selectedCollectionCardInstanceId,
+      });
+      this.isDirty = true;
+      this.selectedDeckCardInstanceId = null;
+      this.selectedCollectionCardInstanceId = null;
+      this.setStatus(`${leaderCard?.instance.name ?? 'Collection LEADER'} set as leader.`);
+      this.renderLists();
+      this.renderHud();
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.setStatus(`Set Leader failed: ${message}`);
     }
   }
 
@@ -535,19 +659,55 @@ export class DeckBuildScene extends Phaser.Scene {
     }
   }
 
-  private getDeckCardEntries(): DeckBuildListEntry[] {
+  private changeMode(mode: DeckBuildMode): void {
+    if (this.mode === mode || this.isSaving) {
+      return;
+    }
+
+    this.mode = mode;
+    this.selectedDeckCardInstanceId = null;
+    this.selectedCollectionCardInstanceId = null;
+    this.deckPage = 0;
+    this.collectionPage = 0;
+    this.setStatus(
+      mode === 'LEADER'
+        ? 'Select a collection LEADER to replace the current leader.'
+        : 'Select UNIT cards to add or remove.',
+    );
+    this.renderLists();
+    this.renderHud();
+  }
+
+  private getDeckLeaderEntries(): DeckBuildListEntry[] {
+    const leader = this.draftSession.deck.leader;
+    if (leader.definition.type !== 'LEADER' || leader.instance.type !== 'LEADER') {
+      return [];
+    }
+
+    return [{ card: leader, index: 0 }];
+  }
+
+  private getDeckUnitEntries(): DeckBuildListEntry[] {
     return this.draftSession.deck.cards
       .map((card, index) => ({ card, index }))
       .filter(
-        (entry) => entry.card.definition.type !== 'LEADER' && entry.card.instance.type !== 'LEADER',
+        (entry) => entry.card.definition.type === 'UNIT' && entry.card.instance.type === 'UNIT',
       );
   }
 
-  private getCollectionCardEntries(): DeckBuildListEntry[] {
+  private getCollectionLeaderEntries(): DeckBuildListEntry[] {
     return this.draftSession.collection.cards
       .map((card, index) => ({ card, index }))
       .filter(
-        (entry) => entry.card.definition.type !== 'LEADER' && entry.card.instance.type !== 'LEADER',
+        (entry) => entry.card.definition.type === 'LEADER' && entry.card.instance.type === 'LEADER',
+      );
+  }
+
+  private getCollectionUnitEntries(): DeckBuildListEntry[] {
+    return this.draftSession.collection.cards
+      .map((card, index) => ({ card, index }))
+      .filter(
+        (entry) => entry.card.definition.type === 'UNIT' && entry.card.instance.type === 'UNIT',
       );
   }
 

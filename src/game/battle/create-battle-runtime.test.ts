@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { requireCardDefinition } from '../save/card-catalog';
 import { createInitialSaveState } from '../save/create-initial-save';
 import { createCardInstanceFromDefinition } from '../save/deck-instancing';
-import { moveCollectionCardToDeck } from '../save/deck-building';
+import {
+  changeDeckLeaderWithCollectionLeader,
+  moveCollectionUnitToDeck,
+} from '../save/deck-building';
 import { createGameSession } from '../save/session';
 import { requireStageDefinition } from '../stage/stage-definitions';
 import { createInitialBattleRuntime } from './create-battle-runtime';
@@ -78,7 +81,7 @@ describe('createInitialBattleRuntime', () => {
     );
     const session = createGameSession(state);
     const collectionCard = session.collection.cards[0]!;
-    const nextSession = moveCollectionCardToDeck(session, {
+    const nextSession = moveCollectionUnitToDeck(session, {
       collectionCardInstanceId: collectionCard.instance.instanceId,
     });
 
@@ -94,6 +97,29 @@ describe('createInitialBattleRuntime', () => {
         (card) => card.card.instance.instanceId === collectionCard.instance.instanceId,
       )?.card.definition.id,
     ).toBe(collectionCard.definition.id);
+  });
+
+  it('places a changed collection leader on the battlefield for the next battle', async () => {
+    const state = await createInitialSaveState({ slotId: 1 });
+    state.collection.cards.push(
+      createCardInstanceFromDefinition({
+        definition: requireCardDefinition('leader_dark_empress'),
+        owner: 'PLAYER',
+        zone: 'COLLECTION',
+        createId: () => 'leader-reward-1',
+      }),
+    );
+    const session = createGameSession(state);
+    const nextSession = changeDeckLeaderWithCollectionLeader(session, {
+      collectionLeaderInstanceId: 'leader-reward-1',
+    });
+
+    const runtime = createInitialBattleRuntime(nextSession, TEST_STAGE_DEFINITION);
+
+    expect(runtime.player.leader.card.instance.instanceId).toBe('leader-reward-1');
+    expect(runtime.player.leader.card.definition.id).toBe('leader_dark_empress');
+    expect(runtime.player.leader.zone).toBe('BATTLEFIELD');
+    expect(runtime.player.leader.battlefieldSlot).toBe(PLAYER_INITIAL_LEADER_SLOT);
   });
 
   it('allows battle runtime creation with no non-leader deck cards', async () => {

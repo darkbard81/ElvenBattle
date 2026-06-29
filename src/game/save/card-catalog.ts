@@ -1,3 +1,4 @@
+import darkDeckDefinitionData from '../../../cards/deck_dark.json';
 import deckDefinitionData from '../../../cards/deck_test.json';
 
 export type CardDefinitionFile = {
@@ -68,25 +69,30 @@ export type CardDefinition = {
 };
 
 const deckDefinition = deckDefinitionData as unknown as CardDefinitionFile;
+const darkDeckDefinition = darkDeckDefinitionData as unknown as CardDefinitionFile;
 
 export const CARD_DEFINITIONS: CardDefinition[] = deckDefinition.cards;
+export const KNOWN_CARD_DEFINITIONS: CardDefinition[] = mergeCardDefinitions([
+  deckDefinition.cards,
+  darkDeckDefinition.cards,
+]);
 
 export function createCardDefinitionMap(
-  cardDefinitions: CardDefinition[] = CARD_DEFINITIONS,
+  cardDefinitions: CardDefinition[] = KNOWN_CARD_DEFINITIONS,
 ): Map<string, CardDefinition> {
   return new Map(cardDefinitions.map((definition) => [definition.id, definition]));
 }
 
 export function findCardDefinition(
   definitionId: string,
-  cardDefinitions: CardDefinition[] = CARD_DEFINITIONS,
+  cardDefinitions: CardDefinition[] = KNOWN_CARD_DEFINITIONS,
 ): CardDefinition | null {
   return createCardDefinitionMap(cardDefinitions).get(definitionId) ?? null;
 }
 
 export function requireCardDefinition(
   definitionId: string,
-  cardDefinitions: CardDefinition[] = CARD_DEFINITIONS,
+  cardDefinitions: CardDefinition[] = KNOWN_CARD_DEFINITIONS,
 ): CardDefinition {
   const definition = findCardDefinition(definitionId, cardDefinitions);
   if (!definition) {
@@ -94,4 +100,15 @@ export function requireCardDefinition(
   }
 
   return definition;
+}
+
+function mergeCardDefinitions(definitionGroups: CardDefinition[][]): CardDefinition[] {
+  const definitions = new Map<string, CardDefinition>();
+  for (const group of definitionGroups) {
+    for (const definition of group) {
+      definitions.set(definition.id, definition);
+    }
+  }
+
+  return Array.from(definitions.values());
 }
