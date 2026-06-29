@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { consumeDeckMaterialsForCollectionGrowth } from '../../game/save/card-growth';
+import { consumeCollectionMaterialsForDeckGrowth } from '../../game/save/card-growth';
 import { saveSlotState } from '../../game/save/client-api';
 import {
   createGameSession,
@@ -25,7 +25,7 @@ type GrowthListEntry = {
 };
 
 /**
- * 컬렉션 카드 1장을 대상으로 현재 덱 UNIT 카드를 재료 소모해 성장시키는 화면이다.
+ * 현재 덱 UNIT 카드 1장을 대상으로 컬렉션 UNIT 카드를 재료 소모해 성장시키는 화면이다.
  * 성장 EXP 계산과 저장 가능한 세션 변경은 save 도메인 모듈에 위임하고, 이 씬은 선택과 저장 흐름만 담당한다.
  */
 export class GrowthScene extends Phaser.Scene {
@@ -88,7 +88,7 @@ export class GrowthScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     this.add
-      .text(GAME_WIDTH / 2, 154, 'Use Current Deck cards as materials for Collection cards', {
+      .text(GAME_WIDTH / 2, 154, 'Use Collection UNIT cards as materials for Current Deck UNITs', {
         fontFamily: DEFAULT_FONT_FAMILY,
         fontSize: '24px',
         color: '#d9ebd1',
@@ -100,7 +100,7 @@ export class GrowthScene extends Phaser.Scene {
 
   private addStatusText(): void {
     this.statusText = this.add
-      .text(GAME_WIDTH / 2, 1642, 'Select a Collection card and deck materials.', {
+      .text(GAME_WIDTH / 2, 1642, 'Select a deck UNIT and collection materials.', {
         fontFamily: DEFAULT_FONT_FAMILY,
         fontSize: '22px',
         color: '#e6f4df',
@@ -118,14 +118,14 @@ export class GrowthScene extends Phaser.Scene {
     this.renderCardPanel({
       container,
       x: 72,
-      title: 'Collection Target',
+      title: 'Current Deck Target',
       subtitle: `${this.getTargetEntries().length} cards`,
       entries: this.getTargetEntries(),
       page: this.targetPage,
       selectedInstanceIds: new Set(
         this.selectedTargetCardInstanceId ? [this.selectedTargetCardInstanceId] : [],
       ),
-      emptyMessage: 'No growable collection cards.',
+      emptyMessage: 'No growable deck UNIT cards.',
       onSelect: (instanceId) => {
         this.selectedTargetCardInstanceId = instanceId;
         this.setStatus('Growth target selected.');
@@ -141,14 +141,14 @@ export class GrowthScene extends Phaser.Scene {
     this.renderCardPanel({
       container,
       x: 628,
-      title: 'Current Deck Materials',
+      title: 'Collection Materials',
       subtitle: `${this.selectedMaterialCardInstanceIds.size} / ${
         this.getMaterialEntries().length
       } selected`,
       entries: this.getMaterialEntries(),
       page: this.materialPage,
       selectedInstanceIds: this.selectedMaterialCardInstanceIds,
-      emptyMessage: 'No UNIT cards in deck.',
+      emptyMessage: 'No collection UNIT materials.',
       onSelect: (instanceId) => {
         this.toggleMaterialSelection(instanceId);
       },
@@ -461,9 +461,9 @@ export class GrowthScene extends Phaser.Scene {
     }
 
     try {
-      const result = consumeDeckMaterialsForCollectionGrowth(this.draftSession, {
-        targetCollectionCardInstanceId: this.selectedTargetCardInstanceId,
-        materialDeckCardInstanceIds: Array.from(this.selectedMaterialCardInstanceIds),
+      const result = consumeCollectionMaterialsForDeckGrowth(this.draftSession, {
+        targetDeckCardInstanceId: this.selectedTargetCardInstanceId,
+        materialCollectionCardInstanceIds: Array.from(this.selectedMaterialCardInstanceIds),
       });
       this.draftSession = result.session;
       this.isDirty = true;
@@ -506,17 +506,15 @@ export class GrowthScene extends Phaser.Scene {
   }
 
   private getTargetEntries(): GrowthListEntry[] {
-    return this.draftSession.collection.cards
+    return this.draftSession.deck.cards
       .map((card, index) => ({ card, index }))
       .filter(
-        (entry) =>
-          (entry.card.definition.type === 'UNIT' || entry.card.definition.type === 'LEADER') &&
-          (entry.card.instance.type === 'UNIT' || entry.card.instance.type === 'LEADER'),
+        (entry) => entry.card.definition.type === 'UNIT' && entry.card.instance.type === 'UNIT',
       );
   }
 
   private getMaterialEntries(): GrowthListEntry[] {
-    return this.draftSession.deck.cards
+    return this.draftSession.collection.cards
       .map((card, index) => ({ card, index }))
       .filter(
         (entry) => entry.card.definition.type === 'UNIT' && entry.card.instance.type === 'UNIT',

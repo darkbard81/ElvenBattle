@@ -32,9 +32,9 @@ export type BattleParticipationGrowthResult = {
   entries: BattleParticipationGrowthEntry[];
 };
 
-export type ConsumeDeckMaterialsForCollectionGrowthOptions = {
-  targetCollectionCardInstanceId: string;
-  materialDeckCardInstanceIds: readonly string[];
+export type ConsumeCollectionMaterialsForDeckGrowthOptions = {
+  targetDeckCardInstanceId: string;
+  materialCollectionCardInstanceIds: readonly string[];
 };
 
 export type MaterialGrowthResult = CardGrowthResult & {
@@ -138,39 +138,41 @@ export function applyBattleParticipationExpToSession(
 }
 
 /**
- * 컬렉션의 대상 카드 1장에 현재 덱 카드들을 재료로 소모해 EXP와 성장 수치를 반영한다.
- * 대상은 컬렉션에 남고, 재료로 지정한 덱 카드는 저장 덱에서 제거된다.
+ * 현재 덱의 UNIT 카드 1장에 컬렉션 UNIT 카드들을 재료로 소모해 EXP와 성장 수치를 반영한다.
+ * 대상은 덱에 남고, 재료로 지정한 컬렉션 카드는 보유 목록에서 제거된다.
  */
-export function consumeDeckMaterialsForCollectionGrowth(
+export function consumeCollectionMaterialsForDeckGrowth(
   session: GameSession,
-  options: ConsumeDeckMaterialsForCollectionGrowthOptions,
+  options: ConsumeCollectionMaterialsForDeckGrowthOptions,
 ): MaterialGrowthResult {
-  if (options.materialDeckCardInstanceIds.length === 0) {
+  if (options.materialCollectionCardInstanceIds.length === 0) {
     throw new Error('At least one material card is required');
   }
 
-  const uniqueMaterialIds = new Set(options.materialDeckCardInstanceIds);
-  if (uniqueMaterialIds.size !== options.materialDeckCardInstanceIds.length) {
+  const uniqueMaterialIds = new Set(options.materialCollectionCardInstanceIds);
+  if (uniqueMaterialIds.size !== options.materialCollectionCardInstanceIds.length) {
     throw new Error('Material cards must be unique');
   }
 
-  const targetIndex = session.collection.cards.findIndex(
-    (card) => card.instance.instanceId === options.targetCollectionCardInstanceId,
+  const targetIndex = session.deck.cards.findIndex(
+    (card) => card.instance.instanceId === options.targetDeckCardInstanceId,
   );
   if (targetIndex < 0) {
-    throw new Error(`Collection card not found: ${options.targetCollectionCardInstanceId}`);
+    throw new Error(`Deck growth target not found: ${options.targetDeckCardInstanceId}`);
   }
 
-  const targetCard = session.collection.cards[targetIndex]!;
-  assertCollectionGrowthTarget(targetCard);
+  const targetCard = session.deck.cards[targetIndex]!;
+  assertDeckGrowthTarget(targetCard);
 
-  const materialCards = options.materialDeckCardInstanceIds.map((instanceId) => {
-    const material = session.deck.cards.find((card) => card.instance.instanceId === instanceId);
+  const materialCards = options.materialCollectionCardInstanceIds.map((instanceId) => {
+    const material = session.collection.cards.find(
+      (card) => card.instance.instanceId === instanceId,
+    );
     if (!material) {
-      throw new Error(`Deck material card not found: ${instanceId}`);
+      throw new Error(`Collection material card not found: ${instanceId}`);
     }
 
-    assertDeckMaterialCard(material);
+    assertCollectionMaterialCard(material);
     return material;
   });
   const totalMaterialExp = materialCards.reduce(
@@ -186,21 +188,21 @@ export function consumeDeckMaterialsForCollectionGrowth(
       deck: {
         id: session.deck.id,
         leader: cloneRuntimeCard(session.deck.leader, 'LEADER'),
-        cards: session.deck.cards
-          .filter((card) => !uniqueMaterialIds.has(card.instance.instanceId))
-          .map((card) => cloneRuntimeCard(card, 'DECK')),
+        cards: session.deck.cards.map((card, index) =>
+          index === targetIndex ? grown.card : cloneRuntimeCard(card, 'DECK'),
+        ),
       },
       collection: {
-        cards: session.collection.cards.map((card, index) =>
-          index === targetIndex ? grown.card : cloneRuntimeCard(card, 'COLLECTION'),
-        ),
+        cards: session.collection.cards
+          .filter((card) => !uniqueMaterialIds.has(card.instance.instanceId))
+          .map((card) => cloneRuntimeCard(card, 'COLLECTION')),
       },
       stageProgress: structuredClone(session.stageProgress),
     },
     targetCardInstanceId: targetCard.instance.instanceId,
     targetCardName: targetCard.instance.name,
     totalMaterialExp,
-    consumedMaterialInstanceIds: [...options.materialDeckCardInstanceIds],
+    consumedMaterialInstanceIds: [...options.materialCollectionCardInstanceIds],
   };
 }
 
@@ -264,18 +266,18 @@ function applyGrowthValue(
   instance[growthValue.stat] = currentValue + growthValue.value;
 }
 
-function assertCollectionGrowthTarget(card: RuntimeCardInstance): void {
-  if (card.instance.zone !== 'COLLECTION') {
-    throw new Error(`Growth target must be in COLLECTION zone: ${card.instance.instanceId}`);
+function assertDeckGrowthTarget(card: RuntimeCardInstance): void {
+  if (card.instance.zone !== 'DECK') {
+    throw new Error(`Growth target must be in DECK zone: ${card.instance.instanceId}`);
   }
-  if (card.definition.type !== 'UNIT' && card.definition.type !== 'LEADER') {
-    throw new Error(`Growth target must be a UNIT or LEADER card: ${card.instance.instanceId}`);
+  if (card.definition.type !== 'UNIT') {
+    throw new Error(`Growth target must be a UNIT card: ${card.instance.instanceId}`);
   }
 }
 
-function assertDeckMaterialCard(card: RuntimeCardInstance): void {
-  if (card.instance.zone !== 'DECK') {
-    throw new Error(`Material card must be in DECK zone: ${card.instance.instanceId}`);
+function assertCollectionMaterialCard(card: RuntimeCardInstance): void {
+  if (card.instance.zone !== 'COLLECTION') {
+    throw new Error(`Material card must be in COLLECTION zone: ${card.instance.instanceId}`);
   }
   if (card.definition.type !== 'UNIT') {
     throw new Error(`Material card must be a UNIT card: ${card.instance.instanceId}`);

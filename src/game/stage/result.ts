@@ -36,7 +36,7 @@ export function createStageBattleResult(
     outcome === 'WIN'
       ? calculateStageRewards(runtime, stageDefinition, options)
       : { rewardCards: [], rewardCardInstanceIds: [], rewardCardNames: [] };
-  const growthResult = calculateStageGrowth(runtime);
+  const growthResult = outcome === 'WIN' ? calculateStageGrowth(runtime) : createEmptyStageGrowth();
 
   return {
     stageId: stageDefinition.id,
@@ -181,6 +181,14 @@ export function calculateStageGrowth(runtime: BattleRuntimeState): StageGrowthRe
     expPerCard: BATTLE_PARTICIPATION_EXP,
     cardInstanceIds: cards.map((card) => card.card.instance.instanceId),
     cardNames: cards.map((card) => card.card.instance.name),
+  };
+}
+
+function createEmptyStageGrowth(): StageGrowthResult {
+  return {
+    expPerCard: 0,
+    cardInstanceIds: [],
+    cardNames: [],
   };
 }
 

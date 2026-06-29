@@ -67,11 +67,9 @@ describe('stage battle result', () => {
       rewardCardInstanceIds: [],
       rewardCardNames: [],
       growth: {
-        expPerCard: 100,
-        cardInstanceIds: expect.arrayContaining([
-          runtime.player.leader.card.instance.instanceId,
-          runtime.player.hand[0]!.card.instance.instanceId,
-        ]),
+        expPerCard: 0,
+        cardInstanceIds: [],
+        cardNames: [],
       },
     });
   });
@@ -234,6 +232,31 @@ describe('stage battle result', () => {
       lastSelectedStageId: 'test-stage-dark',
     });
     expect(nextSession.collection.cards).toEqual([]);
+  });
+
+  it('does not apply battle participation exp after a defeat', async () => {
+    const state = await createInitialSaveState({ slotId: 1 });
+    const session = createGameSession(state);
+    const runtime = createInitialBattleRuntime(session, TEST_STAGE_DEFINITION);
+    runtime.phase = 'GAME_OVER';
+    runtime.outcome = {
+      winner: 'enemy',
+      loser: 'player',
+      reason: 'LEADER_DEFEATED',
+    };
+
+    const result = createStageBattleResult(runtime, TEST_STAGE_DEFINITION);
+    const nextSession = applyStageBattleResultToSession(session, result);
+
+    expect(result.growth).toEqual({
+      expPerCard: 0,
+      cardInstanceIds: [],
+      cardNames: [],
+    });
+    expect(nextSession.deck.leader.instance.exp).toBe(session.deck.leader.instance.exp);
+    expect(nextSession.deck.cards.map((card) => card.instance.exp)).toEqual(
+      session.deck.cards.map((card) => card.instance.exp),
+    );
   });
 
   it('does not persist battle-time player stat changes after applying a stage result', async () => {

@@ -6,7 +6,7 @@ import {
   applyExpToRuntimeCard,
   calculateCardLevelFromExp,
   calculateMaterialExp,
-  consumeDeckMaterialsForCollectionGrowth,
+  consumeCollectionMaterialsForDeckGrowth,
 } from './card-growth';
 import { createCardInstanceFromDefinition } from './deck-instancing';
 import { createInitialSaveState } from './create-initial-save';
@@ -69,15 +69,17 @@ describe('card growth', () => {
   });
 
   it('calculates material exp with same-card bonus', async () => {
-    const session = await createSessionWithCollectionCard(
-      'unit_elf_guardian_001',
-      'collection-target',
-    );
-    const target = session.collection.cards[0]!;
-    const sameMaterial = session.deck.cards.find(
+    const session = await createSessionWithCollectionCards([
+      ['unit_elf_guardian_001', 'collection-material-same'],
+      ['unit_elf_archer_001', 'collection-material-other'],
+    ]);
+    const target = session.deck.cards.find(
+      (card) => card.definition.id === 'unit_elf_guardian_001',
+    )!;
+    const sameMaterial = session.collection.cards.find(
       (card) => card.definition.id === target.definition.id,
     )!;
-    const otherMaterial = session.deck.cards.find(
+    const otherMaterial = session.collection.cards.find(
       (card) => card.definition.id !== target.definition.id,
     )!;
 
@@ -85,22 +87,24 @@ describe('card growth', () => {
     expect(calculateMaterialExp(target, otherMaterial)).toBe(10);
   });
 
-  it('grows a collection target by consuming current deck materials and persists it', async () => {
-    const session = await createSessionWithCollectionCard(
-      'unit_elf_guardian_001',
-      'collection-target',
-    );
-    const target = session.collection.cards[0]!;
-    const sameMaterial = session.deck.cards.find(
+  it('grows a current deck target by consuming collection materials and persists it', async () => {
+    const session = await createSessionWithCollectionCards([
+      ['unit_elf_guardian_001', 'collection-material-same'],
+      ['unit_elf_archer_001', 'collection-material-other'],
+    ]);
+    const target = session.deck.cards.find(
+      (card) => card.definition.id === 'unit_elf_guardian_001',
+    )!;
+    const sameMaterial = session.collection.cards.find(
       (card) => card.definition.id === target.definition.id,
     )!;
-    const otherMaterial = session.deck.cards.find(
+    const otherMaterial = session.collection.cards.find(
       (card) => card.definition.id !== target.definition.id,
     )!;
 
-    const result = consumeDeckMaterialsForCollectionGrowth(session, {
-      targetCollectionCardInstanceId: target.instance.instanceId,
-      materialDeckCardInstanceIds: [
+    const result = consumeCollectionMaterialsForDeckGrowth(session, {
+      targetDeckCardInstanceId: target.instance.instanceId,
+      materialCollectionCardInstanceIds: [
         sameMaterial.instance.instanceId,
         otherMaterial.instance.instanceId,
       ],
@@ -109,7 +113,7 @@ describe('card growth', () => {
       now: new Date('2024-01-02T00:00:00.000Z'),
     });
     const reloadedSession = createGameSession(savedState);
-    const reloadedTarget = reloadedSession.collection.cards.find(
+    const reloadedTarget = reloadedSession.deck.cards.find(
       (card) => card.instance.instanceId === target.instance.instanceId,
     );
 
@@ -117,10 +121,13 @@ describe('card growth', () => {
     expect(result.nextExp).toBe(110);
     expect(result.nextLevel).toBe(2);
     expect(result.appliedGrowth).toEqual([{ level: 2, stat: 'hp', value: 1 }]);
-    expect(result.session.deck.cards.map((card) => card.instance.instanceId)).not.toContain(
+    expect(result.session.deck.cards.map((card) => card.instance.instanceId)).toContain(
+      target.instance.instanceId,
+    );
+    expect(result.session.collection.cards.map((card) => card.instance.instanceId)).not.toContain(
       sameMaterial.instance.instanceId,
     );
-    expect(result.session.deck.cards.map((card) => card.instance.instanceId)).not.toContain(
+    expect(result.session.collection.cards.map((card) => card.instance.instanceId)).not.toContain(
       otherMaterial.instance.instanceId,
     );
     expect(reloadedTarget?.instance.exp).toBe(110);
@@ -129,36 +136,39 @@ describe('card growth', () => {
   });
 
   it('rejects invalid material growth requests', async () => {
-    const session = await createSessionWithCollectionCard(
-      'unit_elf_guardian_001',
-      'collection-target',
-    );
-    const material = session.deck.cards[0]!;
+    const session = await createSessionWithCollectionCards([
+      ['unit_elf_guardian_001', 'collection-material'],
+    ]);
+    const target = session.deck.cards[0]!;
+    const material = session.collection.cards[0]!;
 
     expect(() =>
-      consumeDeckMaterialsForCollectionGrowth(session, {
-        targetCollectionCardInstanceId: 'collection-target',
-        materialDeckCardInstanceIds: [],
+      consumeCollectionMaterialsForDeckGrowth(session, {
+        targetDeckCardInstanceId: target.instance.instanceId,
+        materialCollectionCardInstanceIds: [],
       }),
     ).toThrow('At least one material card is required');
     expect(() =>
-      consumeDeckMaterialsForCollectionGrowth(session, {
-        targetCollectionCardInstanceId: 'collection-target',
-        materialDeckCardInstanceIds: [material.instance.instanceId, material.instance.instanceId],
+      consumeCollectionMaterialsForDeckGrowth(session, {
+        targetDeckCardInstanceId: target.instance.instanceId,
+        materialCollectionCardInstanceIds: [
+          material.instance.instanceId,
+          material.instance.instanceId,
+        ],
       }),
     ).toThrow('Material cards must be unique');
     expect(() =>
-      consumeDeckMaterialsForCollectionGrowth(session, {
-        targetCollectionCardInstanceId: 'missing-target',
-        materialDeckCardInstanceIds: [material.instance.instanceId],
+      consumeCollectionMaterialsForDeckGrowth(session, {
+        targetDeckCardInstanceId: 'missing-target',
+        materialCollectionCardInstanceIds: [material.instance.instanceId],
       }),
-    ).toThrow('Collection card not found: missing-target');
+    ).toThrow('Deck growth target not found: missing-target');
     expect(() =>
-      consumeDeckMaterialsForCollectionGrowth(session, {
-        targetCollectionCardInstanceId: 'collection-target',
-        materialDeckCardInstanceIds: ['missing-material'],
+      consumeCollectionMaterialsForDeckGrowth(session, {
+        targetDeckCardInstanceId: target.instance.instanceId,
+        materialCollectionCardInstanceIds: ['missing-material'],
       }),
-    ).toThrow('Deck material card not found: missing-material');
+    ).toThrow('Collection material card not found: missing-material');
   });
 });
 
@@ -166,18 +176,19 @@ async function createSession(): Promise<GameSession> {
   return createGameSession(await createInitialSaveState({ slotId: 1 }));
 }
 
-async function createSessionWithCollectionCard(
-  definitionId: string,
-  instanceId: string,
+async function createSessionWithCollectionCards(
+  cards: Array<[definitionId: string, instanceId: string]>,
 ): Promise<GameSession> {
   const state = await createInitialSaveState({ slotId: 1 });
   state.collection.cards.push(
-    createCardInstanceFromDefinition({
-      definition: requireCardDefinition(definitionId),
-      owner: 'PLAYER',
-      zone: 'COLLECTION',
-      createId: () => instanceId,
-    }),
+    ...cards.map(([definitionId, instanceId]) =>
+      createCardInstanceFromDefinition({
+        definition: requireCardDefinition(definitionId),
+        owner: 'PLAYER',
+        zone: 'COLLECTION',
+        createId: () => instanceId,
+      }),
+    ),
   );
 
   return createGameSession(state);
