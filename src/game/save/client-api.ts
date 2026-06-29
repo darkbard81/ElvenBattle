@@ -49,7 +49,7 @@ function isSaveSlotsResponse(value: unknown): value is { slots: SaveSlotSummary[
 function isSaveSlotState(value: unknown): value is SaveSlotState {
   return (
     isRecord(value) &&
-    value.schemaVersion === 2 &&
+    value.schemaVersion === 3 &&
     (value.slotId === 1 || value.slotId === 2 || value.slotId === 3) &&
     typeof value.createdAt === 'string' &&
     typeof value.updatedAt === 'string' &&
@@ -62,7 +62,21 @@ function isSaveSlotState(value: unknown): value is SaveSlotState {
     isRecord(value.collection) &&
     Array.isArray(value.collection.cards) &&
     value.collection.cards.every((entry) => isCardInstance(entry, 'COLLECTION')) &&
+    isEquipmentState(value.equipment) &&
     isStageProgressState(value.stageProgress)
+  );
+}
+
+function isEquipmentState(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.equipped) &&
+    value.equipped.every(
+      (entry) =>
+        isRecord(entry) &&
+        typeof entry.targetCardInstanceId === 'string' &&
+        typeof entry.equipmentCardInstanceId === 'string',
+    )
   );
 }
 

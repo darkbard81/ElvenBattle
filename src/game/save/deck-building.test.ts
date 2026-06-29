@@ -184,14 +184,15 @@ async function createSessionWithCollectionCard(
 ): Promise<GameSession> {
   const state = await createInitialSaveState({ slotId: 1 });
   const definition = requireCardDefinition(definitionId);
-  state.collection.cards.push(
+  state.collection.cards = [
     createCardInstanceFromDefinition({
       definition,
       owner: 'PLAYER',
       zone: 'COLLECTION',
       createId: () => instanceId,
     }),
-  );
+  ];
+  state.equipment = { equipped: [] };
 
   return createGameSession(state);
 }
@@ -199,6 +200,8 @@ async function createSessionWithCollectionCard(
 async function createSingleCardDeckSession(): Promise<GameSession> {
   const state = await createInitialSaveState({ slotId: 1 });
   state.deck.cards = [state.deck.cards[0]!];
+  state.collection.cards = [];
+  state.equipment = { equipped: [] };
 
   return createGameSession(state);
 }

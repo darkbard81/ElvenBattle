@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createInitialBattleRuntime } from '../battle/create-battle-runtime';
 import type { BattleCardRuntimeState, BattleRuntimeState } from '../battle/types';
+import { CARD_DEFINITIONS } from '../save/card-catalog';
 import { createInitialSaveState } from '../save/create-initial-save';
 import { createGameSession, createSaveSlotStateFromGameSession } from '../save/session';
 import type { CardInstance } from '../save/types';
@@ -194,16 +195,18 @@ describe('stage battle result', () => {
     const reloadedSession = createGameSession(savedState);
 
     expect(nextSession.deck.cards).toHaveLength(session.deck.cards.length);
-    expect(savedState.collection.cards).toEqual([
-      expect.objectContaining({
-        instanceId: 'reward-card-1',
-        owner: 'PLAYER',
-        zone: 'COLLECTION',
-      }),
-    ]);
-    expect(reloadedSession.collection.cards.map((card) => card.instance.instanceId)).toEqual([
+    expect(savedState.collection.cards).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          instanceId: 'reward-card-1',
+          owner: 'PLAYER',
+          zone: 'COLLECTION',
+        }),
+      ]),
+    );
+    expect(reloadedSession.collection.cards.map((card) => card.instance.instanceId)).toContain(
       'reward-card-1',
-    ]);
+    );
   });
 
   it('preserves cleared stage ids for losses', async () => {
@@ -231,7 +234,11 @@ describe('stage battle result', () => {
       clearedStageIds: [],
       lastSelectedStageId: 'test-stage-dark',
     });
-    expect(nextSession.collection.cards).toEqual([]);
+    expect(nextSession.collection.cards.map((card) => card.definition.id)).toEqual(
+      CARD_DEFINITIONS.filter((definition) => definition.type === 'EQUIPMENT').map(
+        (definition) => definition.id,
+      ),
+    );
   });
 
   it('does not apply battle participation exp after a defeat', async () => {

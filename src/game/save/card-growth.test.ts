@@ -180,16 +180,17 @@ async function createSessionWithCollectionCards(
   cards: Array<[definitionId: string, instanceId: string]>,
 ): Promise<GameSession> {
   const state = await createInitialSaveState({ slotId: 1 });
-  state.collection.cards.push(
-    ...cards.map(([definitionId, instanceId]) =>
-      createCardInstanceFromDefinition({
-        definition: requireCardDefinition(definitionId),
-        owner: 'PLAYER',
-        zone: 'COLLECTION',
-        createId: () => instanceId,
-      }),
-    ),
+  state.collection.cards = cards.map(([definitionId, instanceId]) =>
+    createCardInstanceFromDefinition({
+      definition: requireCardDefinition(definitionId),
+      owner: 'PLAYER',
+      zone: 'COLLECTION',
+      createId: () => instanceId,
+    }),
   );
+  state.equipment = {
+    equipped: [],
+  };
 
   return createGameSession(state);
 }

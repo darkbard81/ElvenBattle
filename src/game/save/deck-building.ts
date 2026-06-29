@@ -1,5 +1,6 @@
 import type { GameSession, RuntimeCardInstance } from './session';
 import type { CardInstance, CardInstanceZone } from './types';
+import { removeEquipmentAttachmentsForTargets } from './equipment';
 
 export type MoveDeckUnitToCollectionOptions = {
   deckCardInstanceId: string;
@@ -47,6 +48,9 @@ export function moveCollectionUnitToDeck(
         .filter((_, index) => index !== collectionCardIndex)
         .map((card) => cloneRuntimeCard(card, 'COLLECTION')),
     },
+    equipment: {
+      equipped: session.equipment.equipped.map((attachment) => ({ ...attachment })),
+    },
     stageProgress: structuredClone(session.stageProgress),
   };
 }
@@ -85,6 +89,7 @@ export function moveDeckUnitToCollection(
         cloneRuntimeCard(deckCard, 'COLLECTION'),
       ],
     },
+    equipment: removeEquipmentAttachmentsForTargets(session, [deckCard.instance.instanceId]),
     stageProgress: structuredClone(session.stageProgress),
   };
 }
@@ -123,6 +128,9 @@ export function changeDeckLeaderWithCollectionLeader(
           ? cloneRuntimeCard(currentLeader, 'COLLECTION')
           : cloneRuntimeCard(card, 'COLLECTION'),
       ),
+    },
+    equipment: {
+      equipped: session.equipment.equipped.map((attachment) => ({ ...attachment })),
     },
     stageProgress: structuredClone(session.stageProgress),
   };

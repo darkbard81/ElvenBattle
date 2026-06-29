@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createInitialSaveState } from '../save/create-initial-save';
+import { equipCollectionEquipmentToDeckUnit } from '../save/equipment';
 import { createGameSession } from '../save/session';
 import { requireStageDefinition } from '../stage/stage-definitions';
 import {
@@ -349,6 +350,38 @@ describe('battle engine', () => {
 
     expect(action.attack).toBe((archer.card.instance.attack ?? 0) + 1);
     expect(runtime.enemy.leader.card.instance.hp).toBe(targetHpBefore - action.attack);
+  });
+
+  it('uses equipped ATTACK abilities when resolving attack damage', async () => {
+    const state = await createInitialSaveState({ slotId: 1 });
+    const session = createGameSession(state);
+    const target = session.deck.cards.find(
+      (card) => card.definition.id === 'unit_elf_guardian_001',
+    )!;
+    const equipment = session.collection.cards.find(
+      (card) => card.definition.id === 'equipment_rapier_001',
+    )!;
+    const runtime = createInitialBattleRuntime(
+      equipCollectionEquipmentToDeckUnit(session, {
+        targetDeckCardInstanceId: target.instance.instanceId,
+        equipmentCardInstanceId: equipment.instance.instanceId,
+      }),
+      TEST_STAGE_DEFINITION,
+    );
+    const guardian = moveCardToBattlefield(runtime, 'player', 'unit_elf_guardian_001', 'player:FC');
+    const action = listAttackActions(runtime).find(
+      (candidate) =>
+        candidate.attackerInstanceId === guardian.card.instance.instanceId &&
+        candidate.targetInstanceId === runtime.enemy.leader.card.instance.instanceId,
+    );
+    if (!action) {
+      throw new Error('Expected a legal equipped guardian attack action');
+    }
+
+    applyAttackAction(runtime, action);
+
+    expect(getEffectiveAttack(runtime, guardian)).toBe((target.instance.attack ?? 0) + 1);
+    expect(action.attack).toBe((target.instance.attack ?? 0) + 3);
   });
 
   it('lists guardian_block cards adjacent to the original attack target as block candidates', async () => {

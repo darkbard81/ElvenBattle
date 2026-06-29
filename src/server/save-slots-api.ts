@@ -14,6 +14,7 @@ import {
   type CardCollection,
   type CardInstance,
   type DeckInstance,
+  type EquipmentState,
   type SaveSlotId,
   type SaveSlotState,
   type SaveSlotsResponse,
@@ -204,10 +205,15 @@ function validateSaveSlotState(value: unknown, slotId: SaveSlotId): SaveSlotStat
     throw new Error('Save slot body must be an object');
   }
 
-  if (value.schemaVersion !== SAVE_SLOT_SCHEMA_VERSION && value.schemaVersion !== 1) {
+  if (
+    value.schemaVersion !== SAVE_SLOT_SCHEMA_VERSION &&
+    value.schemaVersion !== 1 &&
+    value.schemaVersion !== 2
+  ) {
     throw new Error(`Invalid schemaVersion: ${String(value.schemaVersion)}`);
   }
   const isLegacySchema = value.schemaVersion === 1;
+  const isPreEquipmentSchema = value.schemaVersion === 1 || value.schemaVersion === 2;
 
   if (value.slotId !== slotId) {
     throw new Error(`slotId mismatch: expected ${slotId}, got ${String(value.slotId)}`);
@@ -226,6 +232,12 @@ function validateSaveSlotState(value: unknown, slotId: SaveSlotId): SaveSlotStat
   }
   const deck = normalizeDeckInstance(value.deck);
   const collection = normalizeCardCollection(value.collection, isLegacySchema);
+  const equipment = normalizeEquipmentState(
+    value.equipment,
+    isPreEquipmentSchema,
+    deck,
+    collection,
+  );
   const stageProgress = normalizeStageProgressState(value.stageProgress);
 
   return {
@@ -236,6 +248,7 @@ function validateSaveSlotState(value: unknown, slotId: SaveSlotId): SaveSlotStat
     saveName: value.saveName,
     deck,
     collection,
+    equipment,
     stageProgress,
   };
 }
@@ -283,6 +296,116 @@ function isCardCollection(value: unknown): value is CardCollection {
   return (
     Array.isArray(value.cards) && value.cards.every((entry) => isCardInstance(entry, 'COLLECTION'))
   );
+}
+
+function normalizeEquipmentState(
+  value: unknown,
+  allowMissing: boolean,
+  deck: DeckInstance,
+  collection: CardCollection,
+): EquipmentState {
+  if (value === undefined && allowMissing) {
+    return { equipped: [] };
+  }
+
+  if (!isEquipmentState(value)) {
+    throw new Error('equipment must be an equipment state');
+  }
+
+  const equipment = {
+    equipped: value.equipped.map((attachment) => ({
+      targetCardInstanceId: attachment.targetCardInstanceId,
+      equipmentCardInstanceId: attachment.equipmentCardInstanceId,
+    })),
+  };
+  validateEquipmentState(equipment, deck, collection);
+
+  return equipment;
+}
+
+function isEquipmentState(value: unknown): value is EquipmentState {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    Array.isArray(value.equipped) &&
+    value.equipped.every(
+      (entry) =>
+        isRecord(entry) &&
+        typeof entry.targetCardInstanceId === 'string' &&
+        typeof entry.equipmentCardInstanceId === 'string',
+    )
+  );
+}
+
+function validateEquipmentState(
+  equipment: EquipmentState,
+  deck: DeckInstance,
+  collection: CardCollection,
+): void {
+  const usedEquipmentIds = new Set<string>();
+  const attachmentsByTarget = new Map<string, CardInstance[]>();
+  for (const attachment of equipment.equipped) {
+    if (usedEquipmentIds.has(attachment.equipmentCardInstanceId)) {
+      throw new Error(`Equipment already equipped: ${attachment.equipmentCardInstanceId}`);
+    }
+    usedEquipmentIds.add(attachment.equipmentCardInstanceId);
+
+    const target = deck.cards.find(
+      (card) => card.instanceId === attachment.targetCardInstanceId && card.type === 'UNIT',
+    );
+    if (!target) {
+      throw new Error(`Equipment target must be a deck UNIT: ${attachment.targetCardInstanceId}`);
+    }
+
+    const equipmentCard = collection.cards.find(
+      (card) => card.instanceId === attachment.equipmentCardInstanceId && card.type === 'EQUIPMENT',
+    );
+    if (!equipmentCard) {
+      throw new Error(
+        `Equipment card must be a collection EQUIPMENT: ${attachment.equipmentCardInstanceId}`,
+      );
+    }
+
+    const group = attachmentsByTarget.get(target.instanceId);
+    if (group) {
+      group.push(equipmentCard);
+    } else {
+      attachmentsByTarget.set(target.instanceId, [equipmentCard]);
+    }
+  }
+
+  attachmentsByTarget.forEach((equipmentCards, targetCardInstanceId) => {
+    const target = deck.cards.find((card) => card.instanceId === targetCardInstanceId)!;
+    validateEquipmentCardsForTarget(target, equipmentCards);
+  });
+}
+
+function validateEquipmentCardsForTarget(
+  target: CardInstance,
+  equipmentCards: CardInstance[],
+): void {
+  const slotCapacity = Math.max(0, target.slot ?? 0);
+  const usedSlot = equipmentCards.reduce(
+    (total, equipment) => total + Math.max(0, equipment.slot ?? 0),
+    0,
+  );
+  if (usedSlot > slotCapacity) {
+    throw new Error(
+      `Equipment slot limit exceeded for ${target.instanceId}: ${usedSlot}/${slotCapacity}`,
+    );
+  }
+
+  const abilityIds = new Set(target.abilities.map((ability) => ability.id));
+  for (const equipment of equipmentCards) {
+    for (const ability of equipment.abilities) {
+      if (abilityIds.has(ability.id)) {
+        throw new Error(`Duplicate equipment ability: ${ability.id}`);
+      }
+      abilityIds.add(ability.id);
+    }
+  }
 }
 
 function normalizeCardInstance(instance: CardInstance, zone: CardInstance['zone']): CardInstance {
@@ -384,6 +507,9 @@ function getErrorStatusCode(error: unknown): number {
       error.message.startsWith('saveName must be a non-empty string') ||
       error.message.startsWith('deck must be a deck instance') ||
       error.message.startsWith('collection must be a card collection') ||
+      error.message.startsWith('equipment must be an equipment state') ||
+      error.message.startsWith('Equipment ') ||
+      error.message.startsWith('Duplicate equipment ability:') ||
       error.message.startsWith('stageProgress') ||
       error.message.startsWith('Expected exactly one LEADER card') ||
       error.message.startsWith('Expected at least one UNIT card') ||

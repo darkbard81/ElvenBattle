@@ -6,6 +6,7 @@ import {
   changeDeckLeaderWithCollectionLeader,
   moveCollectionUnitToDeck,
 } from '../save/deck-building';
+import { equipCollectionEquipmentToDeckUnit } from '../save/equipment';
 import { createGameSession } from '../save/session';
 import { requireStageDefinition } from '../stage/stage-definitions';
 import { createInitialBattleRuntime } from './create-battle-runtime';
@@ -80,7 +81,9 @@ describe('createInitialBattleRuntime', () => {
       }),
     );
     const session = createGameSession(state);
-    const collectionCard = session.collection.cards[0]!;
+    const collectionCard = session.collection.cards.find(
+      (card) => card.definition.id === 'unit_elf_assassin_001',
+    )!;
     const nextSession = moveCollectionUnitToDeck(session, {
       collectionCardInstanceId: collectionCard.instance.instanceId,
     });
@@ -184,6 +187,33 @@ describe('createInitialBattleRuntime', () => {
       cost: session.deck.cards[0]!.instance.cost,
       dominance: session.deck.cards[0]!.instance.dominance,
     }).toEqual(originalHandCardStats);
+  });
+
+  it('applies equipped equipment bonuses to player battle runtime cards', async () => {
+    const state = await createInitialSaveState({ slotId: 1 });
+    const session = createGameSession(state);
+    const target = session.deck.cards.find(
+      (card) => card.definition.id === 'unit_elf_guardian_001',
+    )!;
+    const equipment = session.collection.cards.find(
+      (card) => card.definition.id === 'equipment_rapier_001',
+    )!;
+    const equippedSession = equipCollectionEquipmentToDeckUnit(session, {
+      targetDeckCardInstanceId: target.instance.instanceId,
+      equipmentCardInstanceId: equipment.instance.instanceId,
+    });
+
+    const runtime = createInitialBattleRuntime(equippedSession, TEST_STAGE_DEFINITION);
+    const runtimeTarget = [...runtime.player.hand, ...runtime.player.deck].find(
+      (card) => card.card.instance.instanceId === target.instance.instanceId,
+    );
+
+    expect(runtimeTarget?.card.instance.attack).toBe((target.instance.attack ?? 0) + 1);
+    expect(runtimeTarget?.card.instance.abilities.map((ability) => ability.id)).toContain(
+      'rapier_thrust',
+    );
+    expect(runtimeTarget?.card.definition.attack).toBe(target.definition.attack);
+    expect(target.instance.attack).toBe(state.deck.cards[0]!.attack);
   });
 
   it('creates enemy hand and deck from deck_dark.json as runtime card instances', async () => {

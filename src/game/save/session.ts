@@ -3,6 +3,7 @@ import {
   type CardCollection,
   type CardInstance,
   type DeckInstance,
+  type EquipmentState,
   type SaveSlotState,
   type SaveSlotId,
 } from './types';
@@ -36,6 +37,7 @@ export type GameSession = {
   saveName: string;
   deck: RuntimeDeckInstance;
   collection: RuntimeCardCollection;
+  equipment: EquipmentState;
   stageProgress: StageProgressState;
 };
 
@@ -63,13 +65,14 @@ export function createGameSession(
         createRuntimeCollectionCardInstance(instance, cardDefinitionMap),
       ),
     },
+    equipment: structuredClone(state.equipment),
     stageProgress: structuredClone(state.stageProgress),
   };
 }
 
 /**
  * 전투 런타임이 들고 있는 카드 definition을 제거하고 저장 슬롯 스키마로 되돌린다.
- * 현재 저장 스키마는 전투 덱과 보유 컬렉션만 보존하므로 손패, 전장 배치, 드롭존 같은 전투 Zone은 포함하지 않는다.
+ * 현재 저장 스키마는 전투 덱, 보유 컬렉션, 장착표만 보존하므로 손패, 전장 배치, 드롭존 같은 전투 Zone은 포함하지 않는다.
  */
 export function createSaveSlotStateFromGameSession(
   session: GameSession,
@@ -91,6 +94,7 @@ export function createSaveSlotStateFromGameSession(
         createSavedCardInstance(card.instance, 'COLLECTION'),
       ),
     },
+    equipment: structuredClone(session.equipment),
     stageProgress: structuredClone(session.stageProgress),
   };
 }
@@ -207,4 +211,4 @@ function createCardDefinitionFromInstance(instance: CardInstance): CardDefinitio
   return definition;
 }
 
-export type { CardDefinition, SaveSlotState, DeckInstance, CardCollection };
+export type { CardDefinition, SaveSlotState, DeckInstance, CardCollection, EquipmentState };

@@ -20,6 +20,7 @@ import { createMenuButton } from '../ui/menu-button';
 import type {
   BattlefieldSceneData,
   DeckBuildSceneData,
+  EquipmentSceneData,
   GrowthSceneData,
   StageSceneData,
 } from './scene-data';
@@ -392,8 +393,13 @@ export class StageScene extends Phaser.Scene {
       width: 128,
       height: 64,
       label: '장비',
-      enabled: false,
+      enabled: !this.isStartingBattle,
       parent: container,
+      onClick: () => {
+        this.scene.start('EquipmentScene', {
+          session: this.session,
+        } satisfies EquipmentSceneData);
+      },
     });
     createMenuButton(this, {
       x: 900,

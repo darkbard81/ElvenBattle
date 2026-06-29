@@ -23,6 +23,10 @@ export type GrowthSceneData = {
   session: GameSession;
 };
 
+export type EquipmentSceneData = {
+  session: GameSession;
+};
+
 export type BattlefieldSceneData = {
   session: GameSession;
   stageId: string;

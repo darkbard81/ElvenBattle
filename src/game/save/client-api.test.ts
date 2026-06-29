@@ -26,7 +26,7 @@ function createFakeResponse(init: FakeResponseInit): Response {
 
 function createValidSaveSlotState(): SaveSlotState {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     slotId: 1,
     createdAt: '2024-01-01T00:00:00.000Z',
     updatedAt: '2024-01-02T00:00:00.000Z',
@@ -38,6 +38,9 @@ function createValidSaveSlotState(): SaveSlotState {
     },
     collection: {
       cards: [createValidCardInstance({ instanceId: 'collection-1', zone: 'COLLECTION' })],
+    },
+    equipment: {
+      equipped: [],
     },
     stageProgress: {
       clearedStageIds: [],
@@ -185,7 +188,7 @@ describe('save slot client api', () => {
           statusText: 'OK',
           body: {
             state: {
-              schemaVersion: 2,
+              schemaVersion: 3,
               slotId: 1,
               createdAt: '2024-01-01T00:00:00.000Z',
               updatedAt: '2024-01-01T00:00:00.000Z',
@@ -197,6 +200,9 @@ describe('save slot client api', () => {
               },
               collection: {
                 cards: [],
+              },
+              equipment: {
+                equipped: [],
               },
               stageProgress: {
                 clearedStageIds: [],

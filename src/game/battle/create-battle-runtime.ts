@@ -3,6 +3,7 @@ import {
   createRuntimeDeckInstanceFromDefinitions,
   readCardDefinitionFile,
 } from '../save/deck-instancing';
+import { createRuntimeDeckWithEquipment } from '../save/equipment';
 import { resolveStageEnemyDeck } from '../stage/stage-definitions';
 import type { StageDefinition } from '../stage/types';
 import {
@@ -25,9 +26,10 @@ export function createInitialBattleRuntime(
   session: GameSession,
   stageDefinition: StageDefinition,
 ): BattleRuntimeState {
+  const playerDeck = createRuntimeDeckWithEquipment(session);
   const player = createBattleParticipantRuntimeState(
     'player',
-    session.deck,
+    playerDeck,
     PLAYER_INITIAL_LEADER_SLOT,
   );
   const enemyDeckDefinition = resolveStageEnemyDeck(stageDefinition);
