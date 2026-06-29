@@ -1,7 +1,7 @@
 import type { CardDefinition } from './card-catalog';
 import type { StageProgressState } from '../stage/types';
 
-export const SAVE_SLOT_SCHEMA_VERSION = 1 as const;
+export const SAVE_SLOT_SCHEMA_VERSION = 2 as const;
 
 export type SaveSlotId = 1 | 2 | 3;
 
@@ -9,7 +9,7 @@ export const SAVE_SLOT_IDS: SaveSlotId[] = [1, 2, 3];
 
 export type CardOwner = 'PLAYER' | 'ENEMY';
 
-export type CardInstanceZone = 'LEADER' | 'DECK';
+export type CardInstanceZone = 'LEADER' | 'DECK' | 'COLLECTION';
 
 export type CardInstance = CardDefinition & {
   instanceId: string;
@@ -23,6 +23,10 @@ export type DeckInstance = {
   cards: CardInstance[];
 };
 
+export type CardCollection = {
+  cards: CardInstance[];
+};
+
 export type SaveSlotState = {
   schemaVersion: typeof SAVE_SLOT_SCHEMA_VERSION;
   slotId: SaveSlotId;
@@ -30,6 +34,7 @@ export type SaveSlotState = {
   updatedAt: string;
   saveName: string;
   deck: DeckInstance;
+  collection: CardCollection;
   stageProgress: StageProgressState;
 };
 

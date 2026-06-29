@@ -12,6 +12,7 @@ describe('createGameSession', () => {
     expect(session.deck.leader.definition.name).toBe('미네르바');
     expect(session.deck.cards).toHaveLength(29);
     expect(session.deck.cards.every((card) => card.definition.id.startsWith('unit_'))).toBe(true);
+    expect(session.collection.cards).toEqual([]);
     expect(session.stageProgress).toEqual({
       clearedStageIds: [],
       lastSelectedStageId: null,
@@ -73,7 +74,7 @@ describe('createGameSession', () => {
     const savedState = createSaveSlotStateFromGameSession(session, { now: updatedAt });
 
     expect(savedState).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       slotId: 1,
       createdAt: createdAt.toISOString(),
       updatedAt: updatedAt.toISOString(),
@@ -85,6 +86,9 @@ describe('createGameSession', () => {
       deck: {
         id: state.deck.id,
       },
+      collection: {
+        cards: [],
+      },
     });
     expect(savedState.deck.leader.zone).toBe('LEADER');
     expect(savedState.deck.cards.every((card) => card.zone === 'DECK')).toBe(true);
@@ -94,8 +98,13 @@ describe('createGameSession', () => {
     expect(savedState.deck.cards[0]).not.toHaveProperty('handIndex');
   });
 
-  it('restores card instances and definitions from serialized session state', async () => {
+  it('restores card and collection instances from serialized session state', async () => {
     const state = await createInitialSaveState({ slotId: 1 });
+    state.collection.cards.push({
+      ...state.deck.cards[0]!,
+      instanceId: 'collection-card-1',
+      zone: 'COLLECTION',
+    });
     const session = createGameSession(state);
     const savedState = createSaveSlotStateFromGameSession(session, {
       now: new Date('2024-01-03T00:00:00.000Z'),
@@ -113,5 +122,11 @@ describe('createGameSession', () => {
     expect(restoredSession.deck.cards.map((card) => card.definition.id)).toEqual(
       session.deck.cards.map((card) => card.definition.id),
     );
+    expect(restoredSession.collection.cards.map((card) => card.instance.instanceId)).toEqual([
+      'collection-card-1',
+    ]);
+    expect(restoredSession.collection.cards[0]!.definition.id).toBe(state.deck.cards[0]!.id);
+    expect(savedState.collection.cards[0]).not.toHaveProperty('definition');
+    expect(savedState.collection.cards[0]!.zone).toBe('COLLECTION');
   });
 });

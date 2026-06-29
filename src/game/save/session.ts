@@ -1,5 +1,6 @@
 import {
   SAVE_SLOT_SCHEMA_VERSION,
+  type CardCollection,
   type CardInstance,
   type DeckInstance,
   type SaveSlotState,
@@ -19,6 +20,10 @@ export type RuntimeDeckInstance = {
   cards: RuntimeCardInstance[];
 };
 
+export type RuntimeCardCollection = {
+  cards: RuntimeCardInstance[];
+};
+
 export type GameSession = {
   schemaVersion: typeof SAVE_SLOT_SCHEMA_VERSION;
   slotId: SaveSlotId;
@@ -26,6 +31,7 @@ export type GameSession = {
   updatedAt: string;
   saveName: string;
   deck: RuntimeDeckInstance;
+  collection: RuntimeCardCollection;
   stageProgress: StageProgressState;
 };
 
@@ -48,13 +54,18 @@ export function createGameSession(
         createRuntimeCardInstance(instance, cardDefinitionMap),
       ),
     },
+    collection: {
+      cards: state.collection.cards.map((instance) =>
+        createRuntimeCollectionCardInstance(instance, cardDefinitionMap),
+      ),
+    },
     stageProgress: structuredClone(state.stageProgress),
   };
 }
 
 /**
  * 전투 런타임이 들고 있는 카드 definition을 제거하고 저장 슬롯 스키마로 되돌린다.
- * 현재 저장 스키마는 덱 구성과 카드 인스턴스만 보존하므로 손패, 전장 배치, 드롭존 같은 전투 Zone은 포함하지 않는다.
+ * 현재 저장 스키마는 전투 덱과 보유 컬렉션만 보존하므로 손패, 전장 배치, 드롭존 같은 전투 Zone은 포함하지 않는다.
  */
 export function createSaveSlotStateFromGameSession(
   session: GameSession,
@@ -70,6 +81,11 @@ export function createSaveSlotStateFromGameSession(
       id: session.deck.id,
       leader: createSavedCardInstance(session.deck.leader.instance, 'LEADER'),
       cards: session.deck.cards.map((card) => createSavedCardInstance(card.instance, 'DECK')),
+    },
+    collection: {
+      cards: session.collection.cards.map((card) =>
+        createSavedCardInstance(card.instance, 'COLLECTION'),
+      ),
     },
     stageProgress: structuredClone(session.stageProgress),
   };
@@ -89,6 +105,18 @@ function createRuntimeCardInstance(
   return {
     instance: runtimeInstance,
     definition,
+  };
+}
+
+function createRuntimeCollectionCardInstance(
+  instance: CardInstance,
+  cardDefinitions: Map<string, CardDefinition>,
+): RuntimeCardInstance {
+  const runtimeInstance = structuredClone(instance);
+
+  return {
+    instance: runtimeInstance,
+    definition: cardDefinitions.get(instance.id) ?? createCardDefinitionFromInstance(instance),
   };
 }
 
@@ -135,4 +163,44 @@ function createSavedCardInstance(instance: CardInstance, zone: CardInstance['zon
   return saved;
 }
 
-export type { CardDefinition, SaveSlotState, DeckInstance };
+function createCardDefinitionFromInstance(instance: CardInstance): CardDefinition {
+  const definition: CardDefinition = {
+    id: instance.id,
+    name: instance.name,
+    rarity: instance.rarity,
+    type: instance.type,
+    traits: structuredClone(instance.traits),
+    abilities: structuredClone(instance.abilities),
+    description: instance.description,
+    note: instance.note,
+  };
+
+  if (instance.slot !== undefined) {
+    definition.slot = instance.slot;
+  }
+  if (instance.cost !== undefined) {
+    definition.cost = instance.cost;
+  }
+  if (instance.dominance !== undefined) {
+    definition.dominance = instance.dominance;
+  }
+  if (instance.hp !== undefined) {
+    definition.hp = instance.hp;
+  }
+  if (instance.attack !== undefined) {
+    definition.attack = instance.attack;
+  }
+  if (instance.level !== undefined) {
+    definition.level = instance.level;
+  }
+  if (instance.exp !== undefined) {
+    definition.exp = instance.exp;
+  }
+  if (instance.growth !== undefined) {
+    definition.growth = structuredClone(instance.growth);
+  }
+
+  return definition;
+}
+
+export type { CardDefinition, SaveSlotState, DeckInstance, CardCollection };

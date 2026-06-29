@@ -91,6 +91,7 @@ describe('save slots api', () => {
     expect(initBody.state.deck.leader.name).toBe('미네르바');
     expect(initBody.state.deck.leader.description).toBeTypeOf('string');
     expect(initBody.state.deck.leader.abilities).toEqual([]);
+    expect(initBody.state.collection.cards).toEqual([]);
     expect(initBody.state.stageProgress).toEqual({
       clearedStageIds: [],
       lastSelectedStageId: null,
@@ -190,12 +191,44 @@ describe('save slots api', () => {
       hp: 17,
       attack: 2,
     });
+    expect(body.schemaVersion).toBe(2);
+    expect(body.collection.cards).toEqual([]);
     expect(body.deck.leader).not.toHaveProperty('definitionId');
     expect(body.deck.leader.abilities).toEqual([]);
     expect(body.stageProgress).toEqual({
       clearedStageIds: [],
       lastSelectedStageId: null,
     });
+  });
+
+  it('rejects collection cards outside the collection zone', async () => {
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'save-slots-'));
+    const slotsRoot = path.join(tempRoot, 'slots');
+    const handler = createSaveSlotsApiHandler({ saveSlotsRoot: slotsRoot });
+
+    const initReq = createRequest('POST', '/api/save-slots/1/initialize');
+    const initRes = createResponse();
+    await handler(initReq, initRes.response, () => undefined);
+    const initBody = initRes.json() as { state: SaveSlotState };
+    const invalidState: SaveSlotState = {
+      ...initBody.state,
+      collection: {
+        cards: [
+          {
+            ...initBody.state.deck.cards[0]!,
+            instanceId: 'bad-collection-zone',
+            zone: 'DECK',
+          },
+        ],
+      },
+    };
+
+    const putReq = createRequest('PUT', '/api/save-slots/1', JSON.stringify(invalidState));
+    const putRes = createResponse();
+    await handler(putReq, putRes.response, () => undefined);
+
+    expect(putRes.statusCode()).toBe(400);
+    expect(putRes.text()).toBe('collection must be a card collection');
   });
 
   it('rejects invalid slot numbers', async () => {

@@ -11,6 +11,7 @@ import {
 import {
   SAVE_SLOT_IDS,
   SAVE_SLOT_SCHEMA_VERSION,
+  type CardCollection,
   type CardInstance,
   type DeckInstance,
   type SaveSlotId,
@@ -203,9 +204,10 @@ function validateSaveSlotState(value: unknown, slotId: SaveSlotId): SaveSlotStat
     throw new Error('Save slot body must be an object');
   }
 
-  if (value.schemaVersion !== SAVE_SLOT_SCHEMA_VERSION) {
+  if (value.schemaVersion !== SAVE_SLOT_SCHEMA_VERSION && value.schemaVersion !== 1) {
     throw new Error(`Invalid schemaVersion: ${String(value.schemaVersion)}`);
   }
+  const isLegacySchema = value.schemaVersion === 1;
 
   if (value.slotId !== slotId) {
     throw new Error(`slotId mismatch: expected ${slotId}, got ${String(value.slotId)}`);
@@ -223,6 +225,7 @@ function validateSaveSlotState(value: unknown, slotId: SaveSlotId): SaveSlotStat
     throw new Error('deck must be a deck instance');
   }
   const deck = normalizeDeckInstance(value.deck);
+  const collection = normalizeCardCollection(value.collection, isLegacySchema);
   const stageProgress = normalizeStageProgressState(value.stageProgress);
 
   return {
@@ -232,6 +235,7 @@ function validateSaveSlotState(value: unknown, slotId: SaveSlotId): SaveSlotStat
     updatedAt: value.updatedAt,
     saveName: value.saveName,
     deck,
+    collection,
     stageProgress,
   };
 }
@@ -243,22 +247,46 @@ function isDeckInstance(value: unknown): value is DeckInstance {
 
   return (
     typeof value.id === 'string' &&
-    isCardInstance(value.leader) &&
+    isCardInstance(value.leader, 'LEADER') &&
     Array.isArray(value.cards) &&
-    value.cards.every((entry) => isCardInstance(entry))
+    value.cards.every((entry) => isCardInstance(entry, 'DECK'))
   );
 }
 
 function normalizeDeckInstance(deck: DeckInstance): DeckInstance {
   return {
     id: deck.id,
-    leader: normalizeCardInstance(deck.leader),
-    cards: deck.cards.map((card) => normalizeCardInstance(card)),
+    leader: normalizeCardInstance(deck.leader, 'LEADER'),
+    cards: deck.cards.map((card) => normalizeCardInstance(card, 'DECK')),
   };
 }
 
-function normalizeCardInstance(instance: CardInstance): CardInstance {
-  if (isSchemaCardInstance(instance)) {
+function normalizeCardCollection(value: unknown, allowMissing: boolean): CardCollection {
+  if (value === undefined && allowMissing) {
+    return { cards: [] };
+  }
+
+  if (!isCardCollection(value)) {
+    throw new Error('collection must be a card collection');
+  }
+
+  return {
+    cards: value.cards.map((card) => normalizeCardInstance(card, 'COLLECTION')),
+  };
+}
+
+function isCardCollection(value: unknown): value is CardCollection {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return (
+    Array.isArray(value.cards) && value.cards.every((entry) => isCardInstance(entry, 'COLLECTION'))
+  );
+}
+
+function normalizeCardInstance(instance: CardInstance, zone: CardInstance['zone']): CardInstance {
+  if (isSchemaCardInstance(instance, zone)) {
     return instance;
   }
 
@@ -272,15 +300,15 @@ function normalizeCardInstance(instance: CardInstance): CardInstance {
     attack: readIntegerOrDefault(legacy.currentAttack, definition.attack ?? 0),
     instanceId: String(legacy.instanceId),
     owner: legacy.owner as CardInstance['owner'],
-    zone: legacy.zone as CardInstance['zone'],
+    zone,
   };
 }
 
-function isCardInstance(value: unknown): value is CardInstance {
-  return isSchemaCardInstance(value) || isLegacyCardInstance(value);
+function isCardInstance(value: unknown, zone: CardInstance['zone']): value is CardInstance {
+  return isSchemaCardInstance(value, zone) || isLegacyCardInstance(value, zone);
 }
 
-function isSchemaCardInstance(value: unknown): value is CardInstance {
+function isSchemaCardInstance(value: unknown, zone: CardInstance['zone']): value is CardInstance {
   if (!isRecord(value)) {
     return false;
   }
@@ -288,7 +316,7 @@ function isSchemaCardInstance(value: unknown): value is CardInstance {
   return (
     typeof value.instanceId === 'string' &&
     value.owner === 'PLAYER' &&
-    (value.zone === 'LEADER' || value.zone === 'DECK') &&
+    value.zone === zone &&
     isCardDefinition(value) &&
     Number.isInteger(value.level ?? 1) &&
     Number.isInteger(value.exp ?? 0) &&
@@ -297,16 +325,17 @@ function isSchemaCardInstance(value: unknown): value is CardInstance {
   );
 }
 
-function isLegacyCardInstance(value: unknown): value is CardInstance {
+function isLegacyCardInstance(value: unknown, zone: CardInstance['zone']): value is CardInstance {
   if (!isRecord(value)) {
     return false;
   }
 
   return (
+    zone !== 'COLLECTION' &&
     typeof value.instanceId === 'string' &&
     typeof value.definitionId === 'string' &&
     value.owner === 'PLAYER' &&
-    (value.zone === 'LEADER' || value.zone === 'DECK') &&
+    value.zone === zone &&
     Number.isInteger(value.level) &&
     Number.isInteger(value.exp) &&
     Number.isInteger(value.currentHp) &&
@@ -354,6 +383,7 @@ function getErrorStatusCode(error: unknown): number {
       error.message.startsWith('createdAt and updatedAt must be strings') ||
       error.message.startsWith('saveName must be a non-empty string') ||
       error.message.startsWith('deck must be a deck instance') ||
+      error.message.startsWith('collection must be a card collection') ||
       error.message.startsWith('stageProgress') ||
       error.message.startsWith('Expected exactly one LEADER card') ||
       error.message.startsWith('Expected at least one UNIT card') ||

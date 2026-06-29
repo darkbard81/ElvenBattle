@@ -1,9 +1,12 @@
 import type { BattleCardRuntimeState, BattleRuntimeState } from '../battle/types';
+import { createCardInstanceFromDefinition } from '../save/deck-instancing';
 import type { GameSession } from '../save/session';
+import type { CardInstance } from '../save/types';
 import type { StageBattleResult, StageDefinition, StageRewardResult } from './types';
 
 type StageRewardOptions = {
   random?: () => number;
+  createRewardCardId?: () => string;
 };
 
 /**
@@ -23,12 +26,13 @@ export function createStageBattleResult(
   const rewardResult =
     outcome === 'WIN'
       ? calculateStageRewards(runtime, stageDefinition, options)
-      : { rewardCardInstanceIds: [], rewardCardNames: [] };
+      : { rewardCards: [], rewardCardInstanceIds: [], rewardCardNames: [] };
 
   return {
     stageId: stageDefinition.id,
     outcome,
     reason: runtime.outcome.loser === 'enemy' ? 'ENEMY_LEADER_DEFEATED' : 'PLAYER_LEADER_DEFEATED',
+    rewardCards: rewardResult.rewardCards,
     rewardCardInstanceIds: rewardResult.rewardCardInstanceIds,
     rewardCardNames: rewardResult.rewardCardNames,
     turnNumber: runtime.turnNumber,
@@ -36,8 +40,8 @@ export function createStageBattleResult(
 }
 
 /**
- * Stage 보상 정의와 전투 중 격파된 적 카드 상태를 바탕으로 표시용 보상 결과를 만든다.
- * 현재 MVP는 적 DROP에 들어간 UNIT 카드 중 설정된 확률과 최대 수량만큼만 선택한다.
+ * Stage 보상 정의와 전투 중 격파된 적 카드 상태를 바탕으로 저장 가능한 보상 카드를 만든다.
+ * 현재 MVP는 적 DROP에 들어간 UNIT 카드를 새 PLAYER 보유 카드 인스턴스로 복제한다.
  */
 export function calculateStageRewards(
   runtime: BattleRuntimeState,
@@ -47,6 +51,7 @@ export function calculateStageRewards(
   const dropDefinition = stageDefinition.rewards.enemyCardDrop;
   if (!dropDefinition || dropDefinition.maxCards <= 0 || dropDefinition.chancePercent <= 0) {
     return {
+      rewardCards: [],
       rewardCardInstanceIds: [],
       rewardCardNames: [],
     };
@@ -68,15 +73,31 @@ export function calculateStageRewards(
     rewardCards.push(card);
   }
 
+  const rewardCardInstances = rewardCards.map((card) => {
+    const createOptions = {
+      definition: card.card.definition,
+      owner: 'PLAYER',
+      zone: 'COLLECTION',
+    } as const;
+
+    return options.createRewardCardId
+      ? createCardInstanceFromDefinition({
+          ...createOptions,
+          createId: options.createRewardCardId,
+        })
+      : createCardInstanceFromDefinition(createOptions);
+  });
+
   return {
-    rewardCardInstanceIds: rewardCards.map((card) => card.card.instance.instanceId),
-    rewardCardNames: rewardCards.map((card) => card.card.instance.name),
+    rewardCards: rewardCardInstances,
+    rewardCardInstanceIds: rewardCardInstances.map((card) => card.instanceId),
+    rewardCardNames: rewardCardInstances.map((card) => card.name),
   };
 }
 
 /**
  * Stage 전투 결과를 세션 진행도에 반영한다.
- * 승리한 Stage는 중복 없이 클리어 목록에 넣고, 승패와 관계없이 마지막 선택 Stage를 갱신한다.
+ * 승리한 Stage는 중복 없이 클리어 목록에 넣고, 지급 보상은 보유 카드 컬렉션에 추가한다.
  */
 export function applyStageBattleResultToSession(
   session: GameSession,
@@ -87,8 +108,32 @@ export function applyStageBattleResultToSession(
       ? [...session.stageProgress.clearedStageIds, result.stageId]
       : [...session.stageProgress.clearedStageIds];
 
+  const knownCollectionCardIds = new Set(
+    session.collection.cards.map((card) => card.instance.instanceId),
+  );
+  const rewardCards: CardInstance[] = [];
+  if (result.outcome === 'WIN') {
+    for (const card of result.rewardCards) {
+      if (knownCollectionCardIds.has(card.instanceId)) {
+        continue;
+      }
+
+      knownCollectionCardIds.add(card.instanceId);
+      rewardCards.push(card);
+    }
+  }
+
   return {
     ...session,
+    collection: {
+      cards: [
+        ...session.collection.cards,
+        ...rewardCards.map((card) => ({
+          instance: structuredClone(card),
+          definition: structuredClone(card),
+        })),
+      ],
+    },
     stageProgress: {
       clearedStageIds,
       lastSelectedStageId: result.stageId,

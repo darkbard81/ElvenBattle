@@ -26,15 +26,18 @@ function createFakeResponse(init: FakeResponseInit): Response {
 
 function createValidSaveSlotState(): SaveSlotState {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     slotId: 1,
     createdAt: '2024-01-01T00:00:00.000Z',
     updatedAt: '2024-01-02T00:00:00.000Z',
     saveName: 'Slot 1',
     deck: {
       id: 'deck-1',
-      leader: createValidCardInstance(),
+      leader: createValidCardInstance({ zone: 'LEADER' }),
       cards: [],
+    },
+    collection: {
+      cards: [createValidCardInstance({ instanceId: 'collection-1', zone: 'COLLECTION' })],
     },
     stageProgress: {
       clearedStageIds: [],
@@ -43,12 +46,12 @@ function createValidSaveSlotState(): SaveSlotState {
   };
 }
 
-function createValidCardInstance(): CardInstance {
+function createValidCardInstance(overrides: Partial<CardInstance> = {}): CardInstance {
   return {
-    id: 'leader_minerva',
-    name: '미네르바',
+    id: overrides.zone === 'COLLECTION' ? 'unit_collection_test' : 'leader_minerva',
+    name: overrides.zone === 'COLLECTION' ? '컬렉션 테스트 카드' : '미네르바',
     rarity: 'R',
-    type: 'LEADER',
+    type: overrides.zone === 'COLLECTION' ? 'UNIT' : 'LEADER',
     traits: [{ key: 'race', text: '엘프' }],
     slot: 0,
     cost: 1,
@@ -73,6 +76,7 @@ function createValidCardInstance(): CardInstance {
     instanceId: 'leader-1',
     owner: 'PLAYER',
     zone: 'LEADER',
+    ...overrides,
   };
 }
 
@@ -181,14 +185,17 @@ describe('save slot client api', () => {
           statusText: 'OK',
           body: {
             state: {
-              schemaVersion: 1,
+              schemaVersion: 2,
               slotId: 1,
               createdAt: '2024-01-01T00:00:00.000Z',
               updatedAt: '2024-01-01T00:00:00.000Z',
               saveName: 'Slot 1',
               deck: {
                 id: 'deck-1',
-                leader: createValidCardInstance(),
+                leader: createValidCardInstance({ zone: 'LEADER' }),
+                cards: [],
+              },
+              collection: {
                 cards: [],
               },
               stageProgress: {

@@ -12,7 +12,7 @@ type CreateInitialSaveStateOptions = {
 
 /**
  * `deck_test.json`을 바탕으로 초기 저장 슬롯 상태를 생성한다.
- * 리더 1장과 전투 카드 29장을 JSON으로 직렬화 가능한 형태로 만든다.
+ * 리더 1장, 전투 카드 29장, 빈 보유 카드 컬렉션을 JSON으로 직렬화 가능한 형태로 만든다.
  */
 export async function createInitialSaveState(
   options: CreateInitialSaveStateOptions,
@@ -32,6 +32,9 @@ export async function createInitialSaveState(
       owner: 'PLAYER',
       unitCount: 29,
     }),
+    collection: {
+      cards: [],
+    },
     stageProgress: createDefaultStageProgressState(),
   };
 }
