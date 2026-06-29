@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { BootScene } from '../scenes/BootScene';
 import { BattlefieldScene } from '../scenes/BattlefieldScene';
+import { DeckBuildScene } from '../scenes/DeckBuildScene';
 import { LoaderScene } from '../scenes/LoaderScene';
 import { MainMenuScene } from '../scenes/MainMenuScene';
 import { SaveSlotScene } from '../scenes/SaveSlotScene';
@@ -26,6 +27,7 @@ export function createGameConfig(parent: HTMLElement): Phaser.Types.Core.GameCon
       MainMenuScene,
       SaveSlotScene,
       StageScene,
+      DeckBuildScene,
       BattlefieldScene,
     ],
     scale: {

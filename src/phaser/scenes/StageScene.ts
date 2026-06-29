@@ -17,7 +17,7 @@ import type {
 import { DEFAULT_FONT_FAMILY } from '../../theme';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
 import { createMenuButton } from '../ui/menu-button';
-import type { BattlefieldSceneData, StageSceneData } from './scene-data';
+import type { BattlefieldSceneData, DeckBuildSceneData, StageSceneData } from './scene-data';
 
 /**
  * 저장 슬롯 선택 이후 전투 시작 전 Stage 목록과 상세 정보를 보여주는 허브 씬이다.
@@ -359,8 +359,22 @@ export class StageScene extends Phaser.Scene {
       },
     });
 
+    createMenuButton(this, {
+      x: 604,
+      y: 1760,
+      width: 128,
+      height: 64,
+      label: '구성',
+      enabled: !this.isStartingBattle,
+      parent: container,
+      onClick: () => {
+        this.scene.start('DeckBuildScene', {
+          session: this.session,
+        } satisfies DeckBuildSceneData);
+      },
+    });
+
     const disabledButtons = [
-      ['구성', 604],
       ['장비', 752],
       ['성장', 900],
       ['연성', 1048],

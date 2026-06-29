@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { requireCardDefinition } from '../save/card-catalog';
 import { createInitialSaveState } from '../save/create-initial-save';
+import { createCardInstanceFromDefinition } from '../save/deck-instancing';
+import { moveCollectionCardToDeck } from '../save/deck-building';
 import { createGameSession } from '../save/session';
 import { requireStageDefinition } from '../stage/stage-definitions';
 import { createInitialBattleRuntime } from './create-battle-runtime';
@@ -60,6 +63,55 @@ describe('createInitialBattleRuntime', () => {
     );
     expect(runtime.player.deck.map((card) => card.card.instance.instanceId)).toEqual(
       session.deck.cards.slice(INITIAL_HAND_SIZE).map((card) => card.instance.instanceId),
+    );
+  });
+
+  it('draws a collection card moved into the saved deck for the next battle', async () => {
+    const state = await createInitialSaveState({ slotId: 1 });
+    state.collection.cards.push(
+      createCardInstanceFromDefinition({
+        definition: requireCardDefinition('unit_elf_assassin_001'),
+        owner: 'PLAYER',
+        zone: 'COLLECTION',
+        createId: () => 'collection-card-1',
+      }),
+    );
+    const session = createGameSession(state);
+    const collectionCard = session.collection.cards[0]!;
+    const nextSession = moveCollectionCardToDeck(session, {
+      collectionCardInstanceId: collectionCard.instance.instanceId,
+    });
+
+    const runtime = createInitialBattleRuntime(nextSession, TEST_STAGE_DEFINITION);
+
+    const playerRuntimeCards = [...runtime.player.hand, ...runtime.player.deck];
+
+    expect(playerRuntimeCards.map((card) => card.card.instance.instanceId)).toContain(
+      collectionCard.instance.instanceId,
+    );
+    expect(
+      playerRuntimeCards.find(
+        (card) => card.card.instance.instanceId === collectionCard.instance.instanceId,
+      )?.card.definition.id,
+    ).toBe(collectionCard.definition.id);
+  });
+
+  it('allows battle runtime creation with no non-leader deck cards', async () => {
+    const state = await createInitialSaveState({ slotId: 1 });
+    const session = createGameSession({
+      ...state,
+      deck: {
+        ...state.deck,
+        cards: [],
+      },
+    });
+
+    const runtime = createInitialBattleRuntime(session, TEST_STAGE_DEFINITION);
+
+    expect(runtime.player.hand).toHaveLength(0);
+    expect(runtime.player.deck).toHaveLength(0);
+    expect(runtime.player.leader.card.instance.instanceId).toBe(
+      session.deck.leader.instance.instanceId,
     );
   });
 
