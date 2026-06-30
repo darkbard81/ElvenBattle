@@ -103,6 +103,53 @@ type ChildFrame = {
   height: number;
 };
 
+type RexSlotFrame = Phaser.GameObjects.GameObject & {
+  x: number;
+  y: number;
+  width?: number;
+  height?: number;
+  displayWidth?: number;
+  displayHeight?: number;
+  originX?: number;
+  originY?: number;
+  setOrigin?: (x: number, y?: number) => unknown;
+  setVisible?: (visible: boolean) => unknown;
+  setDisplaySize?: (width: number, height: number) => unknown;
+  destroy?: (fromScene?: boolean) => void;
+};
+
+type RexSizerObject = RexSlotFrame & {
+  add: (gameObject: Phaser.GameObjects.GameObject, config?: Record<string, unknown>) => unknown;
+  addSpace?: (proportion?: number) => unknown;
+  layout: () => unknown;
+  setDirty?: (dirty?: boolean) => unknown;
+};
+
+type RexGridSizerObject = RexSlotFrame & {
+  add: (gameObject: Phaser.GameObjects.GameObject, config?: Record<string, unknown>) => unknown;
+  layout: () => unknown;
+  setDirty?: (dirty?: boolean) => unknown;
+};
+
+type RexOverlapSizerObject = RexSlotFrame & {
+  add: (gameObject: Phaser.GameObjects.GameObject, config?: Record<string, unknown>) => unknown;
+  layout: () => unknown;
+  setDirty?: (dirty?: boolean) => unknown;
+};
+
+type RexUIAdapter = {
+  add: {
+    sizer: (...args: unknown[]) => RexSizerObject;
+    gridSizer: (...args: unknown[]) => RexGridSizerObject;
+    overlapSizer: (...args: unknown[]) => RexOverlapSizerObject;
+  };
+};
+
+type RexLayoutFrame = {
+  child: LayoutChild;
+  frame: RexSlotFrame;
+};
+
 const ZERO_PADDING: Padding = {
   top: 0,
   right: 0,
@@ -174,6 +221,28 @@ function normalizeDebugDrawOptions(value?: DebugDrawOptions): DebugDrawConfig | 
 
 function isLayoutBox(value: LayoutBox | LayoutGameObject): value is LayoutBox {
   return value instanceof LayoutBox;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function readRexUIAdapter(scene: Phaser.Scene): RexUIAdapter | null {
+  const maybeScene = scene as Phaser.Scene & { rexUI?: unknown };
+  const rexUI = maybeScene.rexUI;
+  if (!isRecord(rexUI) || !isRecord(rexUI.add)) {
+    return null;
+  }
+
+  return typeof rexUI.add.sizer === 'function' &&
+    typeof rexUI.add.gridSizer === 'function' &&
+    typeof rexUI.add.overlapSizer === 'function'
+    ? (rexUI as unknown as RexUIAdapter)
+    : null;
+}
+
+function hasZoneFactory(scene: Phaser.Scene): boolean {
+  return typeof scene.add.zone === 'function';
 }
 
 function getObjectWidth(target: LayoutBox | LayoutGameObject): number {
@@ -284,6 +353,39 @@ function applyTargetBounds(
   setObjectSize(target, width, height, fit);
 }
 
+function toRexLinearAlign(type: 'hbox' | 'vbox', align: Align): string {
+  if (align === 'stretch' || align === 'center') {
+    return 'center';
+  }
+
+  if (type === 'hbox') {
+    return align === 'end' ? 'bottom' : 'top';
+  }
+
+  return align === 'end' ? 'right' : 'left';
+}
+
+function toRexGridAlign(align: Align, justify: Justify): string {
+  const horizontal = justify === 'end' ? 'right' : justify === 'center' ? 'center' : 'left';
+  const vertical = align === 'end' ? 'bottom' : align === 'center' ? 'center' : 'top';
+
+  return `${horizontal}-${vertical}`;
+}
+
+function readFrameBounds(frame: RexSlotFrame): ChildFrame {
+  const width = Math.max(0, frame.displayWidth ?? frame.width ?? 0);
+  const height = Math.max(0, frame.displayHeight ?? frame.height ?? 0);
+  const originX = frame.originX ?? 0;
+  const originY = frame.originY ?? 0;
+
+  return {
+    x: frame.x - width * originX,
+    y: frame.y - height * originY,
+    width,
+    height,
+  };
+}
+
 /**
  * Phaser 컨테이너 안에서 간단한 hbox, vbox, grid 배치를 수행하는 렌더링 전용 유틸이다.
  *
@@ -323,10 +425,15 @@ export class LayoutBox {
   private readonly overlayChildren: LayoutChild[] = [];
   private readonly debugFrames: ChildFrame[] = [];
 
+  private readonly scene: Phaser.Scene;
+  private readonly rexUI: RexUIAdapter | null;
+  private readonly rexLayoutObjects: RexSlotFrame[] = [];
   private readonly debugGraphics: Phaser.GameObjects.Graphics | null;
   private dirty = true;
 
   constructor(scene: Phaser.Scene, type: LayoutType, options: LayoutBoxOptions = {}) {
+    this.scene = scene;
+    this.rexUI = readRexUIAdapter(scene);
     this.type = type;
     this.gap = options.gap ?? 0;
     this.padding = normalizePadding(options.padding);
@@ -349,6 +456,15 @@ export class LayoutBox {
     this.debugGraphics = this.debugDraw ? scene.add.graphics() : null;
     if (this.debugGraphics) {
       this.overlayLayer.add(this.debugGraphics);
+    }
+
+    const maybeContainer = this.container as Phaser.GameObjects.Container & {
+      once?: (event: string, callback: () => void) => unknown;
+    };
+    if (typeof maybeContainer.once === 'function') {
+      maybeContainer.once('destroy', () => {
+        this.clearRexLayoutObjects();
+      });
     }
   }
 
@@ -441,7 +557,9 @@ export class LayoutBox {
 
     this.debugFrames.length = 0;
 
-    if (this.type === 'hbox') {
+    if (this.canUseRexLayout()) {
+      this.layoutWithRex(width, height);
+    } else if (this.type === 'hbox') {
       this.layoutHBox(width, height);
     } else if (this.type === 'vbox') {
       this.layoutVBox(width, height);
@@ -452,6 +570,29 @@ export class LayoutBox {
     this.layoutOverlay(width, height);
     this.drawDebug();
     this.dirty = false;
+  }
+
+  private canUseRexLayout(): boolean {
+    return this.rexUI !== null && hasZoneFactory(this.scene);
+  }
+
+  private layoutWithRex(width: number, height: number): void {
+    this.clearRexLayoutObjects();
+
+    if (this.type === 'grid') {
+      this.layoutGridWithRex(width, height);
+    } else {
+      this.layoutLinearWithRex(width, height, this.type);
+    }
+
+    this.layoutOverlayWithRex(width, height);
+  }
+
+  private clearRexLayoutObjects(): void {
+    while (this.rexLayoutObjects.length > 0) {
+      const object = this.rexLayoutObjects.pop();
+      object?.destroy?.();
+    }
   }
 
   private addTargetToLayer(
@@ -465,6 +606,196 @@ export class LayoutBox {
     return [...this.children, ...this.overlayChildren].some(
       (child) => isLayoutBox(child.target) && child.target.isDirty,
     );
+  }
+
+  private layoutLinearWithRex(width: number, height: number, type: 'hbox' | 'vbox'): void {
+    const rexUI = this.rexUI;
+    if (!rexUI) {
+      return;
+    }
+
+    const sizer = rexUI.add.sizer(0, 0, width, height, type === 'hbox' ? 'x' : 'y', {
+      origin: 0,
+      space: {
+        left: this.padding.left,
+        right: this.padding.right,
+        top: this.padding.top,
+        bottom: this.padding.bottom,
+        item: this.gap,
+      },
+    });
+    this.trackRexObject(sizer);
+    const frames: RexLayoutFrame[] = [];
+
+    if (this.justify === 'center') {
+      this.addRexSpace(sizer);
+    } else if (this.justify === 'end') {
+      this.addRexSpace(sizer);
+    }
+
+    this.children.forEach((child, index) => {
+      const frame = this.createRexSlotFrame(
+        this.resolveChildWidth(child, width, getObjectWidth(child.target)),
+        this.resolveChildHeight(child, height, getObjectHeight(child.target)),
+      );
+      const align = child.options.alignSelf ?? this.align;
+      const expand =
+        align === 'stretch' &&
+        ((type === 'hbox' && child.options.height === null) ||
+          (type === 'vbox' && child.options.width === null));
+      const proportion = type === 'hbox' || type === 'vbox' ? child.options.grow : 0;
+
+      sizer.add(frame, {
+        proportion,
+        align: toRexLinearAlign(type, align),
+        padding: child.options.margin,
+        expand,
+        minWidth: frame.displayWidth ?? frame.width ?? 0,
+        minHeight: frame.displayHeight ?? frame.height ?? 0,
+      });
+      frames.push({ child, frame });
+
+      if (this.justify === 'space-between' && index < this.children.length - 1) {
+        this.addRexSpace(sizer);
+      }
+    });
+
+    if (this.justify === 'center') {
+      this.addRexSpace(sizer);
+    }
+
+    sizer.setDirty?.(true);
+    sizer.layout();
+    this.applyRexFrames(frames);
+  }
+
+  private layoutGridWithRex(width: number, height: number): void {
+    const rexUI = this.rexUI;
+    if (!rexUI || this.children.length === 0) {
+      return;
+    }
+
+    const columns = Math.max(1, Math.floor(this.columns));
+    const rows = Math.max(1, Math.ceil(this.children.length / columns));
+    const gridSizer = rexUI.add.gridSizer(0, 0, width, height, columns, rows, 1, 1, {
+      origin: 0,
+      space: {
+        left: this.padding.left,
+        right: this.padding.right,
+        top: this.padding.top,
+        bottom: this.padding.bottom,
+        column: this.gap,
+        row: this.gap,
+      },
+    });
+    this.trackRexObject(gridSizer);
+    const frames: RexLayoutFrame[] = [];
+
+    this.children.forEach((child, index) => {
+      const column = index % columns;
+      const row = Math.floor(index / columns);
+      const frame = this.createRexSlotFrame(
+        this.resolveChildWidth(child, width, getObjectWidth(child.target)),
+        this.resolveChildHeight(child, height, getObjectHeight(child.target)),
+      );
+      const align = child.options.alignSelf ?? this.align;
+
+      gridSizer.add(frame, {
+        column,
+        row,
+        align: toRexGridAlign(align, this.justify),
+        padding: child.options.margin,
+        expand: align === 'stretch',
+      });
+      frames.push({ child, frame });
+    });
+
+    gridSizer.setDirty?.(true);
+    gridSizer.layout();
+    this.applyRexFrames(frames);
+  }
+
+  private layoutOverlayWithRex(width: number, height: number): void {
+    const rexUI = this.rexUI;
+    if (!rexUI || this.overlayChildren.length === 0) {
+      return;
+    }
+
+    const overlapSizer = rexUI.add.overlapSizer(0, 0, width, height, {
+      origin: 0,
+    });
+    this.trackRexObject(overlapSizer);
+    const innerWidth = Math.max(0, width - this.padding.left - this.padding.right);
+    const innerHeight = Math.max(0, height - this.padding.top - this.padding.bottom);
+    const frames: RexLayoutFrame[] = [];
+
+    this.overlayChildren.forEach((child) => {
+      const baseWidth = getObjectWidth(child.target);
+      const baseHeight = getObjectHeight(child.target);
+      const childWidth = this.resolveChildWidth(child, innerWidth, baseWidth);
+      const childHeight = this.resolveChildHeight(child, innerHeight, baseHeight);
+      const anchorX = this.padding.left + resolveLength(child.options.x, innerWidth, 0);
+      const anchorY = this.padding.top + resolveLength(child.options.y, innerHeight, 0);
+      const topLeft = getAnchoredTopLeft(
+        anchorX,
+        anchorY,
+        childWidth,
+        childHeight,
+        child.options.anchor,
+      );
+      const frame = this.createRexSlotFrame(childWidth, childHeight);
+
+      overlapSizer.add(frame, {
+        align: 'left-top',
+        offsetX: topLeft.x,
+        offsetY: topLeft.y,
+        expand: false,
+        minWidth: childWidth,
+        minHeight: childHeight,
+      });
+      frames.push({ child, frame });
+    });
+
+    overlapSizer.setDirty?.(true);
+    overlapSizer.layout();
+    this.applyRexFrames(frames);
+  }
+
+  private addRexSpace(sizer: RexSizerObject): void {
+    if (sizer.addSpace) {
+      sizer.addSpace(1);
+      return;
+    }
+
+    const frame = this.createRexSlotFrame(0, 0);
+    sizer.add(frame, {
+      proportion: 1,
+      minWidth: 0,
+      minHeight: 0,
+    });
+  }
+
+  private createRexSlotFrame(width: number, height: number): RexSlotFrame {
+    const frame = this.scene.add.zone(0, 0, width, height) as RexSlotFrame;
+    frame.setOrigin?.(0, 0);
+    frame.setVisible?.(false);
+    frame.setDisplaySize?.(width, height);
+    this.trackRexObject(frame);
+
+    return frame;
+  }
+
+  private trackRexObject<T extends RexSlotFrame>(object: T): T {
+    object.setVisible?.(false);
+    this.rexLayoutObjects.push(object);
+    return object;
+  }
+
+  private applyRexFrames(frames: RexLayoutFrame[]): void {
+    frames.forEach(({ child, frame }) => {
+      const bounds = readFrameBounds(frame);
+      this.applyChildBounds(child, bounds.x, bounds.y, bounds.width, bounds.height);
+    });
   }
 
   private layoutHBox(width: number, height: number): void {

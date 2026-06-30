@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import RexUIPlugin from 'phaser4-rex-plugins/templates/ui/ui-plugin.js';
 import { BootScene } from '../scenes/BootScene';
 import { BattlefieldScene } from '../scenes/BattlefieldScene';
 import { DeckBuildScene } from '../scenes/DeckBuildScene';
@@ -44,6 +45,15 @@ export function createGameConfig(parent: HTMLElement): Phaser.Types.Core.GameCon
       antialias: true,
       pixelArt: false,
       roundPixels: true,
+    },
+    plugins: {
+      scene: [
+        {
+          key: 'rexUI',
+          plugin: RexUIPlugin,
+          mapping: 'rexUI',
+        },
+      ],
     },
   };
 }

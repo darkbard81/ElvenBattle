@@ -76,6 +76,35 @@ class FakeGraphics extends FakeGameObject {
   }
 }
 
+class FakeRexSizer extends FakeGameObject {
+  public readonly children: FakeGameObject[] = [];
+
+  constructor() {
+    super(0, 0);
+  }
+
+  add(child: unknown): this {
+    this.children.push(child as FakeGameObject);
+    return this;
+  }
+
+  addSpace(): this {
+    return this;
+  }
+
+  setDirty(): this {
+    return this;
+  }
+
+  layout(): this {
+    this.children.forEach((child) => {
+      child.setPosition(12, 14);
+      child.setDisplaySize(30, 20);
+    });
+    return this;
+  }
+}
+
 class FakeScene {
   public readonly containers: FakeContainer[] = [];
   public readonly graphics: FakeGraphics[] = [];
@@ -90,6 +119,39 @@ class FakeScene {
       const graphics = new FakeGraphics();
       this.graphics.push(graphics);
       return graphics as unknown as Phaser.GameObjects.Graphics;
+    },
+  };
+}
+
+class FakeRexScene extends FakeScene {
+  public rexSizerCalls = 0;
+
+  public override readonly add = {
+    container: (x = 0, y = 0) => {
+      const container = new FakeContainer(x, y);
+      this.containers.push(container);
+      return container as unknown as Phaser.GameObjects.Container;
+    },
+    graphics: () => {
+      const graphics = new FakeGraphics();
+      this.graphics.push(graphics);
+      return graphics as unknown as Phaser.GameObjects.Graphics;
+    },
+    zone: (x = 0, y = 0, width = 0, height = 0) => {
+      const zone = new FakeGameObject(width, height);
+      zone.setPosition(x, y);
+      return zone as unknown as Phaser.GameObjects.Zone;
+    },
+  };
+
+  public readonly rexUI = {
+    add: {
+      sizer: () => {
+        this.rexSizerCalls += 1;
+        return new FakeRexSizer();
+      },
+      gridSizer: () => new FakeRexSizer(),
+      overlapSizer: () => new FakeRexSizer(),
     },
   };
 }
@@ -208,6 +270,21 @@ describe('LayoutBox', () => {
     expect(image.scaleX).toBe(0.5);
     expect(image.displayWidth).toBe(50);
     expect(image.displayHeight).toBe(25);
+  });
+
+  it('applies rexUI slot frames when the scene plugin is available', () => {
+    const scene = new FakeRexScene();
+    const box = new LayoutBox(scene as unknown as Phaser.Scene, 'hbox');
+    const child = createObject(10, 10);
+
+    box.add(asLayoutObject(child), { width: 10, height: 10, fit: 'stretch' });
+    box.layout(0, 0, 100, 50);
+
+    expect(scene.rexSizerCalls).toBe(1);
+    expect(child.x).toBe(12);
+    expect(child.y).toBe(14);
+    expect(child.displayWidth).toBe(30);
+    expect(child.displayHeight).toBe(20);
   });
 
   it('skips unchanged clean layouts and propagates child dirtiness', () => {
