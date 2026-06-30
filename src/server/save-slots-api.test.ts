@@ -4,6 +4,7 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { describe, expect, it } from 'vitest';
+import { CARD_DEFINITIONS } from '../game/save/card-catalog';
 import type { SaveSlotState } from '../game/save/types';
 import { createSaveSlotsApiHandler, listSaveSlotSummaries } from './save-slots-api';
 
@@ -91,6 +92,14 @@ describe('save slots api', () => {
     expect(initBody.state.deck.leader.name).toBe('미네르바');
     expect(initBody.state.deck.leader.description).toBeTypeOf('string');
     expect(initBody.state.deck.leader.abilities).toEqual([]);
+    expect(initBody.state.collection.cards.map((card) => card.id)).toEqual(
+      CARD_DEFINITIONS.filter((definition) => definition.type === 'EQUIPMENT').map(
+        (definition) => definition.id,
+      ),
+    );
+    expect(initBody.state.collection.cards.every((card) => card.type === 'EQUIPMENT')).toBe(true);
+    expect(initBody.state.collection.cards.every((card) => card.zone === 'COLLECTION')).toBe(true);
+    expect(initBody.state.equipment).toEqual({ equipped: [] });
     expect(initBody.state.stageProgress).toEqual({
       clearedStageIds: [],
       lastSelectedStageId: null,
@@ -190,12 +199,100 @@ describe('save slots api', () => {
       hp: 17,
       attack: 2,
     });
+    expect(body.schemaVersion).toBe(3);
+    expect(body.collection.cards).toEqual([]);
+    expect(body.equipment).toEqual({ equipped: [] });
     expect(body.deck.leader).not.toHaveProperty('definitionId');
     expect(body.deck.leader.abilities).toEqual([]);
     expect(body.stageProgress).toEqual({
       clearedStageIds: [],
       lastSelectedStageId: null,
     });
+  });
+
+  it('rejects collection cards outside the collection zone', async () => {
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'save-slots-'));
+    const slotsRoot = path.join(tempRoot, 'slots');
+    const handler = createSaveSlotsApiHandler({ saveSlotsRoot: slotsRoot });
+
+    const initReq = createRequest('POST', '/api/save-slots/1/initialize');
+    const initRes = createResponse();
+    await handler(initReq, initRes.response, () => undefined);
+    const initBody = initRes.json() as { state: SaveSlotState };
+    const invalidState: SaveSlotState = {
+      ...initBody.state,
+      collection: {
+        cards: [
+          {
+            ...initBody.state.deck.cards[0]!,
+            instanceId: 'bad-collection-zone',
+            zone: 'DECK',
+          },
+        ],
+      },
+    };
+
+    const putReq = createRequest('PUT', '/api/save-slots/1', JSON.stringify(invalidState));
+    const putRes = createResponse();
+    await handler(putReq, putRes.response, () => undefined);
+
+    expect(putRes.statusCode()).toBe(400);
+    expect(putRes.text()).toBe('collection must be a card collection');
+  });
+
+  it('persists valid equipment attachments and rejects invalid equipment references', async () => {
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'save-slots-'));
+    const slotsRoot = path.join(tempRoot, 'slots');
+    const handler = createSaveSlotsApiHandler({ saveSlotsRoot: slotsRoot });
+
+    const initReq = createRequest('POST', '/api/save-slots/1/initialize');
+    const initRes = createResponse();
+    await handler(initReq, initRes.response, () => undefined);
+    const initBody = initRes.json() as { state: SaveSlotState };
+    const target = initBody.state.deck.cards.find((card) => card.id === 'unit_elf_guardian_001')!;
+    const equipment = initBody.state.collection.cards.find(
+      (card) => card.id === 'equipment_rapier_001',
+    )!;
+    const validState: SaveSlotState = {
+      ...initBody.state,
+      equipment: {
+        equipped: [
+          {
+            targetCardInstanceId: target.instanceId,
+            equipmentCardInstanceId: equipment.instanceId,
+          },
+        ],
+      },
+    };
+
+    const putReq = createRequest('PUT', '/api/save-slots/1', JSON.stringify(validState));
+    const putRes = createResponse();
+    await handler(putReq, putRes.response, () => undefined);
+
+    expect(putRes.statusCode()).toBe(200);
+    expect((putRes.json() as SaveSlotState).equipment.equipped).toEqual(
+      validState.equipment.equipped,
+    );
+
+    const invalidState: SaveSlotState = {
+      ...validState,
+      equipment: {
+        equipped: [
+          {
+            targetCardInstanceId: initBody.state.deck.cards.find(
+              (card) => card.id === 'unit_elf_scout_001',
+            )!.instanceId,
+            equipmentCardInstanceId: equipment.instanceId,
+          },
+        ],
+      },
+    };
+    const invalidReq = createRequest('PUT', '/api/save-slots/1', JSON.stringify(invalidState));
+    const invalidRes = createResponse();
+    await handler(invalidReq, invalidRes.response, () => undefined);
+
+    expect(invalidRes.statusCode()).toBe(400);
+    expect(invalidRes.text()).toContain('Equipment slot limit exceeded');
   });
 
   it('rejects invalid slot numbers', async () => {

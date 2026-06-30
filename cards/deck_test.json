@@ -596,6 +596,35 @@
       },
       "description": "낮은 체력의 대상을 마무리하는 고공격 저코스트 유닛.",
       "note": "어두운 녹색 후드와 짧은 쌍단검을 지닌 엘프 여성 암살자."
+    },
+    {
+      "id": "equipment_rapier_001",
+      "name": "레이피어",
+      "rarity": "C",
+      "type": "EQUIPMENT",
+      "traits": [
+        {
+          "key": "role",
+          "text": "무기"
+        }
+      ],
+      "slot": 1,
+      "cost": 0,
+      "dominance": 0,
+      "hp": 0,
+      "attack": 1,
+      "level": 1,
+      "exp": 0,
+      "abilities": [
+        {
+          "id": "rapier_thrust",
+          "category": "ATTACK",
+          "name": "찌르기",
+          "text": "장착한 카드가 공격할 때 공격력을 +2로 취급한다."
+        }
+      ],
+      "description": "가벼운 찌르기 공격에 특화된 기본 무기 장비.",
+      "note": "가느다란 은빛 검신과 잎사귀 문양 손잡이를 가진 엘프식 레이피어."
     }
   ]
 }

@@ -73,6 +73,7 @@ export const ATTACK_DAMAGE_BONUS_ABILITY_HANDLERS: Partial<
     getEffectiveHp(runtime, target) <= 3 ? 1 : 0,
   night_prey: ({ runtime, target, getEffectiveHp }) =>
     getEffectiveHp(runtime, target) <= 3 ? 1 : 0,
+  rapier_thrust: () => 2,
 };
 
 export const ACTIVE_SKILL_DEFINITIONS: Partial<Record<string, ActiveSkillDefinition>> = {

@@ -15,6 +15,18 @@ export type StageSceneData = {
   lastBattleResult?: StageBattleResult;
 };
 
+export type DeckBuildSceneData = {
+  session: GameSession;
+};
+
+export type GrowthSceneData = {
+  session: GameSession;
+};
+
+export type EquipmentSceneData = {
+  session: GameSession;
+};
+
 export type BattlefieldSceneData = {
   session: GameSession;
   stageId: string;

@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { createInitialBattleRuntime } from '../battle/create-battle-runtime';
 import type { BattleCardRuntimeState, BattleRuntimeState } from '../battle/types';
+import { CARD_DEFINITIONS } from '../save/card-catalog';
 import { createInitialSaveState } from '../save/create-initial-save';
 import { createGameSession, createSaveSlotStateFromGameSession } from '../save/session';
+import type { CardInstance } from '../save/types';
+import type { StageGrowthResult } from './types';
 import { requireStageDefinition } from './stage-definitions';
 import {
   applyStageBattleResultToSession,
@@ -31,8 +34,16 @@ describe('stage battle result', () => {
       outcome: 'WIN',
       reason: 'ENEMY_LEADER_DEFEATED',
       turnNumber: 1,
+      rewardCards: [],
       rewardCardInstanceIds: [],
       rewardCardNames: [],
+      growth: {
+        expPerCard: 100,
+        cardInstanceIds: expect.arrayContaining([
+          runtime.player.leader.card.instance.instanceId,
+          runtime.player.hand[0]!.card.instance.instanceId,
+        ]),
+      },
     });
   });
 
@@ -53,8 +64,14 @@ describe('stage battle result', () => {
     expect(result).toMatchObject({
       outcome: 'LOSE',
       reason: 'PLAYER_LEADER_DEFEATED',
+      rewardCards: [],
       rewardCardInstanceIds: [],
       rewardCardNames: [],
+      growth: {
+        expPerCard: 0,
+        cardInstanceIds: [],
+        cardNames: [],
+      },
     });
   });
 
@@ -78,11 +95,19 @@ describe('stage battle result', () => {
           },
         },
       },
-      { random: () => 0 },
+      { random: () => 0, createRewardCardId: () => 'reward-card-1' },
     );
 
     expect(rewards).toEqual({
-      rewardCardInstanceIds: [enemyUnit.card.instance.instanceId],
+      rewardCards: [
+        expect.objectContaining({
+          id: enemyUnit.card.definition.id,
+          instanceId: 'reward-card-1',
+          owner: 'PLAYER',
+          zone: 'COLLECTION',
+        }),
+      ],
+      rewardCardInstanceIds: ['reward-card-1'],
       rewardCardNames: [enemyUnit.card.instance.name],
     });
   });
@@ -90,6 +115,8 @@ describe('stage battle result', () => {
   it('honors reward chance and maximum count', async () => {
     const runtime = await createRuntime();
     const firstUnit = moveEnemyDeckCardToDrop(runtime, 'unit_dark_guardian_001');
+    const firstUnitOriginalHp = firstUnit.card.definition.hp ?? 0;
+    firstUnit.card.instance.hp = 1;
     moveEnemyDeckCardToDrop(runtime, 'unit_dark_archer_001');
 
     const rewards = calculateStageRewards(
@@ -106,11 +133,18 @@ describe('stage battle result', () => {
           },
         },
       },
-      { random: () => 0.49 },
+      { random: () => 0.49, createRewardCardId: () => 'reward-first' },
     );
 
-    expect(rewards.rewardCardInstanceIds).toEqual([firstUnit.card.instance.instanceId]);
+    expect(rewards.rewardCardInstanceIds).toEqual(['reward-first']);
     expect(rewards.rewardCardNames).toEqual([firstUnit.card.instance.name]);
+    expect(rewards.rewardCards[0]).toMatchObject({
+      id: firstUnit.card.definition.id,
+      instanceId: 'reward-first',
+      hp: firstUnitOriginalHp,
+      owner: 'PLAYER',
+      zone: 'COLLECTION',
+    });
   });
 
   it('updates stage progress for wins without duplicating cleared stage ids', async () => {
@@ -127,8 +161,10 @@ describe('stage battle result', () => {
       stageId: 'test-stage-dark',
       outcome: 'WIN',
       reason: 'ENEMY_LEADER_DEFEATED',
+      rewardCards: [],
       rewardCardInstanceIds: [],
       rewardCardNames: [],
+      growth: createStageGrowthResult(),
       turnNumber: 1,
     });
 
@@ -136,6 +172,41 @@ describe('stage battle result', () => {
       clearedStageIds: ['test-stage-dark'],
       lastSelectedStageId: 'test-stage-dark',
     });
+  });
+
+  it('adds win rewards to the session collection without changing the battle deck', async () => {
+    const state = await createInitialSaveState({ slotId: 1 });
+    const session = createGameSession(state);
+    const rewardCard = createRewardCard(state.deck.cards[0]!, 'reward-card-1');
+
+    const nextSession = applyStageBattleResultToSession(session, {
+      stageId: 'test-stage-dark',
+      outcome: 'WIN',
+      reason: 'ENEMY_LEADER_DEFEATED',
+      rewardCards: [rewardCard],
+      rewardCardInstanceIds: [rewardCard.instanceId],
+      rewardCardNames: [rewardCard.name],
+      growth: createStageGrowthResult(),
+      turnNumber: 1,
+    });
+    const savedState = createSaveSlotStateFromGameSession(nextSession, {
+      now: new Date('2024-01-02T00:00:00.000Z'),
+    });
+    const reloadedSession = createGameSession(savedState);
+
+    expect(nextSession.deck.cards).toHaveLength(session.deck.cards.length);
+    expect(savedState.collection.cards).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          instanceId: 'reward-card-1',
+          owner: 'PLAYER',
+          zone: 'COLLECTION',
+        }),
+      ]),
+    );
+    expect(reloadedSession.collection.cards.map((card) => card.instance.instanceId)).toContain(
+      'reward-card-1',
+    );
   });
 
   it('preserves cleared stage ids for losses', async () => {
@@ -152,8 +223,10 @@ describe('stage battle result', () => {
       stageId: 'test-stage-dark',
       outcome: 'LOSE',
       reason: 'PLAYER_LEADER_DEFEATED',
+      rewardCards: [createRewardCard(state.deck.cards[0]!, 'ignored-reward')],
       rewardCardInstanceIds: [],
       rewardCardNames: [],
+      growth: createStageGrowthResult(),
       turnNumber: 1,
     });
 
@@ -161,6 +234,36 @@ describe('stage battle result', () => {
       clearedStageIds: [],
       lastSelectedStageId: 'test-stage-dark',
     });
+    expect(nextSession.collection.cards.map((card) => card.definition.id)).toEqual(
+      CARD_DEFINITIONS.filter((definition) => definition.type === 'EQUIPMENT').map(
+        (definition) => definition.id,
+      ),
+    );
+  });
+
+  it('does not apply battle participation exp after a defeat', async () => {
+    const state = await createInitialSaveState({ slotId: 1 });
+    const session = createGameSession(state);
+    const runtime = createInitialBattleRuntime(session, TEST_STAGE_DEFINITION);
+    runtime.phase = 'GAME_OVER';
+    runtime.outcome = {
+      winner: 'enemy',
+      loser: 'player',
+      reason: 'LEADER_DEFEATED',
+    };
+
+    const result = createStageBattleResult(runtime, TEST_STAGE_DEFINITION);
+    const nextSession = applyStageBattleResultToSession(session, result);
+
+    expect(result.growth).toEqual({
+      expPerCard: 0,
+      cardInstanceIds: [],
+      cardNames: [],
+    });
+    expect(nextSession.deck.leader.instance.exp).toBe(session.deck.leader.instance.exp);
+    expect(nextSession.deck.cards.map((card) => card.instance.exp)).toEqual(
+      session.deck.cards.map((card) => card.instance.exp),
+    );
   });
 
   it('does not persist battle-time player stat changes after applying a stage result', async () => {
@@ -214,13 +317,65 @@ describe('stage battle result', () => {
       attack: savedState.deck.cards[0]!.attack,
       cost: savedState.deck.cards[0]!.cost,
       dominance: savedState.deck.cards[0]!.dominance,
-    }).toEqual(originalFirstCardStats);
+    }).toEqual({
+      ...originalFirstCardStats,
+      hp: (originalFirstCardStats.hp ?? 0) + 1,
+    });
+  });
+
+  it('applies battle participation exp and level growth to the saved deck', async () => {
+    const state = await createInitialSaveState({ slotId: 1 });
+    const session = createGameSession(state);
+    const targetCard = session.deck.cards[0]!;
+
+    const nextSession = applyStageBattleResultToSession(session, {
+      stageId: 'test-stage-dark',
+      outcome: 'WIN',
+      reason: 'ENEMY_LEADER_DEFEATED',
+      rewardCards: [],
+      rewardCardInstanceIds: [],
+      rewardCardNames: [],
+      growth: createStageGrowthResult({
+        expPerCard: 500,
+        cardInstanceIds: [targetCard.instance.instanceId],
+        cardNames: [targetCard.instance.name],
+      }),
+      turnNumber: 1,
+    });
+    const savedState = createSaveSlotStateFromGameSession(nextSession, {
+      now: new Date('2024-01-02T00:00:00.000Z'),
+    });
+    const reloadedSession = createGameSession(savedState);
+    const reloadedTarget = reloadedSession.deck.cards[0]!;
+
+    expect(reloadedTarget.instance.exp).toBe(500);
+    expect(reloadedTarget.instance.level).toBe(4);
+    expect(reloadedTarget.instance.hp).toBe((targetCard.instance.hp ?? 0) + 1);
+    expect(reloadedTarget.instance.attack).toBe((targetCard.instance.attack ?? 0) + 1);
   });
 });
 
 async function createRuntime(): Promise<BattleRuntimeState> {
   const state = await createInitialSaveState({ slotId: 1 });
   return createInitialBattleRuntime(createGameSession(state), TEST_STAGE_DEFINITION);
+}
+
+function createRewardCard(card: CardInstance, instanceId: string): CardInstance {
+  return {
+    ...structuredClone(card),
+    instanceId,
+    owner: 'PLAYER',
+    zone: 'COLLECTION',
+  };
+}
+
+function createStageGrowthResult(overrides: Partial<StageGrowthResult> = {}): StageGrowthResult {
+  return {
+    expPerCard: 0,
+    cardInstanceIds: [],
+    cardNames: [],
+    ...overrides,
+  };
 }
 
 function moveEnemyDeckCardToDrop(

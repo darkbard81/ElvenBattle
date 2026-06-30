@@ -1,11 +1,11 @@
-import type { SaveSlotId, SaveSlotState, SaveSlotSummary } from './types';
+import type { CardInstance, SaveSlotId, SaveSlotState, SaveSlotSummary } from './types';
 import type { StageProgressState } from '../stage/types';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-function isCardInstance(value: unknown): boolean {
+function isCardInstance(value: unknown, zone: CardInstance['zone']): boolean {
   return (
     isRecord(value) &&
     typeof value.instanceId === 'string' &&
@@ -18,7 +18,7 @@ function isCardInstance(value: unknown): boolean {
     typeof value.description === 'string' &&
     typeof value.note === 'string' &&
     value.owner === 'PLAYER' &&
-    (value.zone === 'LEADER' || value.zone === 'DECK') &&
+    value.zone === zone &&
     Number.isInteger(value.level ?? 1) &&
     Number.isInteger(value.exp ?? 0) &&
     Number.isInteger(value.hp) &&
@@ -49,17 +49,34 @@ function isSaveSlotsResponse(value: unknown): value is { slots: SaveSlotSummary[
 function isSaveSlotState(value: unknown): value is SaveSlotState {
   return (
     isRecord(value) &&
-    value.schemaVersion === 1 &&
+    value.schemaVersion === 3 &&
     (value.slotId === 1 || value.slotId === 2 || value.slotId === 3) &&
     typeof value.createdAt === 'string' &&
     typeof value.updatedAt === 'string' &&
     typeof value.saveName === 'string' &&
     isRecord(value.deck) &&
     typeof value.deck.id === 'string' &&
-    isCardInstance(value.deck.leader) &&
+    isCardInstance(value.deck.leader, 'LEADER') &&
     Array.isArray(value.deck.cards) &&
-    value.deck.cards.every((entry) => isCardInstance(entry)) &&
+    value.deck.cards.every((entry) => isCardInstance(entry, 'DECK')) &&
+    isRecord(value.collection) &&
+    Array.isArray(value.collection.cards) &&
+    value.collection.cards.every((entry) => isCardInstance(entry, 'COLLECTION')) &&
+    isEquipmentState(value.equipment) &&
     isStageProgressState(value.stageProgress)
+  );
+}
+
+function isEquipmentState(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.equipped) &&
+    value.equipped.every(
+      (entry) =>
+        isRecord(entry) &&
+        typeof entry.targetCardInstanceId === 'string' &&
+        typeof entry.equipmentCardInstanceId === 'string',
+    )
   );
 }
 

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { requireCardDefinition } from '../save/card-catalog';
 import { createInitialSaveState } from '../save/create-initial-save';
+import { createCardInstanceFromDefinition } from '../save/deck-instancing';
+import {
+  changeDeckLeaderWithCollectionLeader,
+  moveCollectionUnitToDeck,
+} from '../save/deck-building';
+import { equipCollectionEquipmentToDeckUnit } from '../save/equipment';
 import { createGameSession } from '../save/session';
 import { requireStageDefinition } from '../stage/stage-definitions';
 import { createInitialBattleRuntime } from './create-battle-runtime';
@@ -63,6 +70,80 @@ describe('createInitialBattleRuntime', () => {
     );
   });
 
+  it('draws a collection card moved into the saved deck for the next battle', async () => {
+    const state = await createInitialSaveState({ slotId: 1 });
+    state.collection.cards.push(
+      createCardInstanceFromDefinition({
+        definition: requireCardDefinition('unit_elf_assassin_001'),
+        owner: 'PLAYER',
+        zone: 'COLLECTION',
+        createId: () => 'collection-card-1',
+      }),
+    );
+    const session = createGameSession(state);
+    const collectionCard = session.collection.cards.find(
+      (card) => card.definition.id === 'unit_elf_assassin_001',
+    )!;
+    const nextSession = moveCollectionUnitToDeck(session, {
+      collectionCardInstanceId: collectionCard.instance.instanceId,
+    });
+
+    const runtime = createInitialBattleRuntime(nextSession, TEST_STAGE_DEFINITION);
+
+    const playerRuntimeCards = [...runtime.player.hand, ...runtime.player.deck];
+
+    expect(playerRuntimeCards.map((card) => card.card.instance.instanceId)).toContain(
+      collectionCard.instance.instanceId,
+    );
+    expect(
+      playerRuntimeCards.find(
+        (card) => card.card.instance.instanceId === collectionCard.instance.instanceId,
+      )?.card.definition.id,
+    ).toBe(collectionCard.definition.id);
+  });
+
+  it('places a changed collection leader on the battlefield for the next battle', async () => {
+    const state = await createInitialSaveState({ slotId: 1 });
+    state.collection.cards.push(
+      createCardInstanceFromDefinition({
+        definition: requireCardDefinition('leader_dark_empress'),
+        owner: 'PLAYER',
+        zone: 'COLLECTION',
+        createId: () => 'leader-reward-1',
+      }),
+    );
+    const session = createGameSession(state);
+    const nextSession = changeDeckLeaderWithCollectionLeader(session, {
+      collectionLeaderInstanceId: 'leader-reward-1',
+    });
+
+    const runtime = createInitialBattleRuntime(nextSession, TEST_STAGE_DEFINITION);
+
+    expect(runtime.player.leader.card.instance.instanceId).toBe('leader-reward-1');
+    expect(runtime.player.leader.card.definition.id).toBe('leader_dark_empress');
+    expect(runtime.player.leader.zone).toBe('BATTLEFIELD');
+    expect(runtime.player.leader.battlefieldSlot).toBe(PLAYER_INITIAL_LEADER_SLOT);
+  });
+
+  it('allows battle runtime creation with no non-leader deck cards', async () => {
+    const state = await createInitialSaveState({ slotId: 1 });
+    const session = createGameSession({
+      ...state,
+      deck: {
+        ...state.deck,
+        cards: [],
+      },
+    });
+
+    const runtime = createInitialBattleRuntime(session, TEST_STAGE_DEFINITION);
+
+    expect(runtime.player.hand).toHaveLength(0);
+    expect(runtime.player.deck).toHaveLength(0);
+    expect(runtime.player.leader.card.instance.instanceId).toBe(
+      session.deck.leader.instance.instanceId,
+    );
+  });
+
   it('keeps battle stat changes isolated from the source game session', async () => {
     const state = await createInitialSaveState({ slotId: 1 });
     const session = createGameSession(state);
@@ -106,6 +187,33 @@ describe('createInitialBattleRuntime', () => {
       cost: session.deck.cards[0]!.instance.cost,
       dominance: session.deck.cards[0]!.instance.dominance,
     }).toEqual(originalHandCardStats);
+  });
+
+  it('applies equipped equipment bonuses to player battle runtime cards', async () => {
+    const state = await createInitialSaveState({ slotId: 1 });
+    const session = createGameSession(state);
+    const target = session.deck.cards.find(
+      (card) => card.definition.id === 'unit_elf_guardian_001',
+    )!;
+    const equipment = session.collection.cards.find(
+      (card) => card.definition.id === 'equipment_rapier_001',
+    )!;
+    const equippedSession = equipCollectionEquipmentToDeckUnit(session, {
+      targetDeckCardInstanceId: target.instance.instanceId,
+      equipmentCardInstanceId: equipment.instance.instanceId,
+    });
+
+    const runtime = createInitialBattleRuntime(equippedSession, TEST_STAGE_DEFINITION);
+    const runtimeTarget = [...runtime.player.hand, ...runtime.player.deck].find(
+      (card) => card.card.instance.instanceId === target.instance.instanceId,
+    );
+
+    expect(runtimeTarget?.card.instance.attack).toBe((target.instance.attack ?? 0) + 1);
+    expect(runtimeTarget?.card.instance.abilities.map((ability) => ability.id)).toContain(
+      'rapier_thrust',
+    );
+    expect(runtimeTarget?.card.definition.attack).toBe(target.definition.attack);
+    expect(target.instance.attack).toBe(state.deck.cards[0]!.attack);
   });
 
   it('creates enemy hand and deck from deck_dark.json as runtime card instances', async () => {

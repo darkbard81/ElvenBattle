@@ -15,6 +15,13 @@ type CreateDeckInstanceOptions = {
   createId?: () => string;
 };
 
+type CreateCardInstanceFromDefinitionOptions = {
+  definition: CardDefinition;
+  owner: CardOwner;
+  zone: CardInstance['zone'];
+  createId?: () => string;
+};
+
 /**
  * 카드 정의 목록을 저장 슬롯과 전투 런타임이 공유할 수 있는 카드 인스턴스 덱으로 만든다.
  * 리더는 정확히 1장이어야 하며, 유닛 카드는 필요한 장수만큼 정의 순서대로 반복 배치한다.
@@ -28,9 +35,19 @@ export function createDeckInstanceFromDefinitions(
 
   return {
     id: options.deckId,
-    leader: createCardInstance(leaderDefinition, options.owner, 'LEADER', createId),
+    leader: createCardInstanceFromDefinition({
+      definition: leaderDefinition,
+      owner: options.owner,
+      zone: 'LEADER',
+      createId,
+    }),
     cards: takeRepeated(unitDefinitions, options.unitCount).map((definition) =>
-      createCardInstance(definition, options.owner, 'DECK', createId),
+      createCardInstanceFromDefinition({
+        definition,
+        owner: options.owner,
+        zone: 'DECK',
+        createId,
+      }),
     ),
   };
 }
@@ -66,6 +83,32 @@ export function readCardDefinitionFile(value: unknown): CardDefinitionFile {
   return value as CardDefinitionFile;
 }
 
+/**
+ * 카드 정의 하나를 저장 가능한 카드 인스턴스로 복제한다.
+ * 전투 중 변경된 런타임 상태가 아닌 카드 정의의 기본 능력치를 기준으로 새 instanceId를 부여한다.
+ */
+export function createCardInstanceFromDefinition(
+  options: CreateCardInstanceFromDefinitionOptions,
+): CardInstance {
+  const createId = options.createId ?? createRuntimeId;
+  const instance = structuredClone(options.definition);
+  const level = readRequiredInteger(instance.level ?? 1, instance.id, 'level');
+  const exp = readRequiredInteger(instance.exp ?? 0, instance.id, 'exp');
+  const hp = readRequiredInteger(instance.hp ?? 0, instance.id, 'hp');
+  const attack = readRequiredInteger(instance.attack ?? 0, instance.id, 'attack');
+
+  return {
+    ...instance,
+    level,
+    exp,
+    hp,
+    attack,
+    instanceId: createId(),
+    owner: options.owner,
+    zone: options.zone,
+  };
+}
+
 function findSingleLeaderDefinition(cardDefinitions: CardDefinition[]): CardDefinition {
   const leaderDefinitions = cardDefinitions.filter((card) => card.type === 'LEADER');
 
@@ -83,30 +126,6 @@ function findUnitDefinitions(cardDefinitions: CardDefinition[]): CardDefinition[
   }
 
   return unitDefinitions;
-}
-
-function createCardInstance(
-  definition: CardDefinition,
-  owner: CardOwner,
-  zone: CardInstance['zone'],
-  createId: () => string,
-): CardInstance {
-  const instance = structuredClone(definition);
-  const level = readRequiredInteger(instance.level ?? 1, instance.id, 'level');
-  const exp = readRequiredInteger(instance.exp ?? 0, instance.id, 'exp');
-  const hp = readRequiredInteger(instance.hp ?? 0, instance.id, 'hp');
-  const attack = readRequiredInteger(instance.attack ?? 0, instance.id, 'attack');
-
-  return {
-    ...instance,
-    level,
-    exp,
-    hp,
-    attack,
-    instanceId: createId(),
-    owner,
-    zone,
-  };
 }
 
 function requireDeckDefinition(

@@ -1,3 +1,5 @@
+import type { CardInstance } from '../save/types';
+
 export type StageVictoryCondition =
   | { type: 'DEFEAT_ENEMY_LEADER' }
   | { type: 'SURVIVE_TURNS'; turns: number };
@@ -43,12 +45,21 @@ export type StageBattleResult = {
   stageId: string;
   outcome: 'WIN' | 'LOSE';
   reason: 'ENEMY_LEADER_DEFEATED' | 'PLAYER_LEADER_DEFEATED';
+  rewardCards: CardInstance[];
   rewardCardInstanceIds: string[];
   rewardCardNames: string[];
+  growth: StageGrowthResult;
   turnNumber: number;
 };
 
 export type StageRewardResult = {
+  rewardCards: CardInstance[];
   rewardCardInstanceIds: string[];
   rewardCardNames: string[];
+};
+
+export type StageGrowthResult = {
+  expPerCard: number;
+  cardInstanceIds: string[];
+  cardNames: string[];
 };

@@ -1,6 +1,9 @@
 import { SAVE_SLOT_SCHEMA_VERSION, type SaveSlotId, type SaveSlotState } from './types';
 import { CARD_DEFINITIONS } from './card-catalog';
-import { createDeckInstanceFromDefinitions } from './deck-instancing';
+import {
+  createCardInstanceFromDefinition,
+  createDeckInstanceFromDefinitions,
+} from './deck-instancing';
 import { createRuntimeId } from './runtime-id';
 import { createDefaultStageProgressState } from '../stage/progress';
 
@@ -12,7 +15,7 @@ type CreateInitialSaveStateOptions = {
 
 /**
  * `deck_test.json`을 바탕으로 초기 저장 슬롯 상태를 생성한다.
- * 리더 1장과 전투 카드 29장을 JSON으로 직렬화 가능한 형태로 만든다.
+ * 리더 1장, 전투 카드 29장, 정의된 EQUIPMENT 전체를 JSON으로 직렬화 가능한 형태로 만든다.
  */
 export async function createInitialSaveState(
   options: CreateInitialSaveStateOptions,
@@ -32,6 +35,19 @@ export async function createInitialSaveState(
       owner: 'PLAYER',
       unitCount: 29,
     }),
+    collection: {
+      cards: CARD_DEFINITIONS.filter((definition) => definition.type === 'EQUIPMENT').map(
+        (definition) =>
+          createCardInstanceFromDefinition({
+            definition,
+            owner: 'PLAYER',
+            zone: 'COLLECTION',
+          }),
+      ),
+    },
+    equipment: {
+      equipped: [],
+    },
     stageProgress: createDefaultStageProgressState(),
   };
 }
