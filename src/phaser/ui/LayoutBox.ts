@@ -290,6 +290,12 @@ function applyTargetBounds(
  * 게임 규칙이나 저장 상태를 소유하지 않고, Scene이 만든 표시 객체를 정해진 영역 안에
  * 배치하는 역할만 담당한다. `overlay` 레이어는 flow 배치 계산에서 제외되며 항상 위에
  * 그려지는 절대 배치용 레이어로 사용한다.
+ *
+ * Scene 전환 작업에서는 직접 자식을 가능하면 `Phaser.GameObjects.Container`로 감싼다.
+ * 컨테이너 내부 요소는 로컬 좌표를 기준으로 배치하고, 단일 `Text`, `Rectangle`, `Image`를
+ * 직접 넣는 경우에는 origin과 display 크기 기준이 원하는 배치 기준과 맞는지 확인한다.
+ * 텍스트 변경처럼 자식의 표시 크기가 달라지는 작업 뒤에는 `markDirty()` 후 같은 bounds로
+ * `layout()` 또는 `resize()`를 다시 호출하거나, 기존 Scene 패턴처럼 컨테이너를 재렌더링한다.
  */
 export class LayoutBox {
   public readonly container: Phaser.GameObjects.Container;

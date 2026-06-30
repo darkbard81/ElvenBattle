@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { DEFAULT_FONT_FAMILY } from '../../theme';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
+import { LayoutBox } from '../ui/LayoutBox';
 import { createMenuButton } from '../ui/menu-button';
 import type { MainMenuSceneData } from './scene-data';
 
@@ -57,29 +58,48 @@ export class MainMenuScene extends Phaser.Scene {
   }
 
   private addMenuButtons(): void {
-    createMenuButton(this, {
-      x: GAME_WIDTH / 2,
-      y: 394,
-      width: 360,
-      height: 72,
-      label: 'Start Game',
-      enabled: true,
-      onClick: () => {
-        this.scene.start('SaveSlotScene');
-      },
+    const buttonLayout = new LayoutBox(this, 'vbox', {
+      gap: 22,
+      align: 'center',
     });
 
-    createMenuButton(this, {
-      x: GAME_WIDTH / 2,
-      y: 488,
-      width: 360,
-      height: 72,
-      label: 'Card Text Tool',
-      enabled: true,
-      onClick: () => {
-        window.location.assign('/tools/card-text/');
+    buttonLayout.add(
+      createMenuButton(this, {
+        x: 0,
+        y: 0,
+        width: 360,
+        height: 72,
+        label: 'Start Game',
+        enabled: true,
+        onClick: () => {
+          this.scene.start('SaveSlotScene');
+        },
+      }),
+      {
+        width: 360,
+        height: 72,
       },
-    });
+    );
+
+    buttonLayout.add(
+      createMenuButton(this, {
+        x: 0,
+        y: 0,
+        width: 360,
+        height: 72,
+        label: 'Card Text Tool',
+        enabled: true,
+        onClick: () => {
+          window.location.assign('/tools/card-text/');
+        },
+      }),
+      {
+        width: 360,
+        height: 72,
+      },
+    );
+
+    buttonLayout.layout(GAME_WIDTH / 2 - 180, 358, 360, 166);
   }
 
   private addStatusLine(data: MainMenuSceneData): void {
