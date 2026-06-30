@@ -8,7 +8,6 @@ import {
   initializeSaveSlot,
 } from '../../game/save/client-api';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
-import { LayoutBox } from '../ui/LayoutBox';
 import { createMenuButton } from '../ui/menu-button';
 import type { MainMenuSceneData, StageSceneData } from './scene-data';
 
@@ -23,7 +22,7 @@ const SLOT_LIST_WIDTH = SLOT_CARD_WIDTH * 3 + SLOT_CARD_GAP * 2;
  */
 export class SaveSlotScene extends Phaser.Scene {
   private statusText!: Phaser.GameObjects.Text;
-  private slotContentContainer: Phaser.GameObjects.Container | null = null;
+  private slotContentContainer: Phaser.GameObjects.GameObject | null = null;
 
   constructor() {
     super({ key: 'SaveSlotScene' });
@@ -50,31 +49,37 @@ export class SaveSlotScene extends Phaser.Scene {
   }
 
   private addForegroundUi(): void {
-    const root = new LayoutBox(this, 'vbox');
+    const root = this.rexUI.add.overlapSizer(0, 0, GAME_WIDTH, GAME_HEIGHT, {
+      origin: 0,
+    });
 
-    root.addOverlay(this.createTitleGroup(), {
-      x: 0,
-      y: 0,
-      width: GAME_WIDTH,
-      height: 190,
+    root.add(this.createTitleGroup(), {
+      align: 'left-top',
+      minWidth: GAME_WIDTH,
+      minHeight: 190,
+      offsetX: -GAME_WIDTH / 2,
+      offsetY: -GAME_HEIGHT / 2,
     });
-    root.addOverlay(this.createBackButton(), {
-      x: 70,
-      y: 57,
-      width: 180,
-      height: 58,
+    root.add(this.createBackButton(), {
+      align: 'left-top',
+      minWidth: 180,
+      minHeight: 58,
+      offsetX: 70 - GAME_WIDTH / 2,
+      offsetY: 57 - GAME_HEIGHT / 2,
     });
-    root.addOverlay(this.createStatusGroup(), {
-      x: 0,
-      y: 232,
-      width: GAME_WIDTH,
-      height: 1,
+    root.add(this.createStatusGroup(), {
+      align: 'left-top',
+      minWidth: GAME_WIDTH,
+      minHeight: 1,
+      offsetX: -GAME_WIDTH / 2,
+      offsetY: 232 - GAME_HEIGHT / 2,
     });
-    root.layout(0, 0, GAME_WIDTH, GAME_HEIGHT);
+    root.layout();
   }
 
   private createTitleGroup(): Phaser.GameObjects.Container {
     const group = this.add.container(0, 0);
+    group.setSize(GAME_WIDTH, 190);
     const title = this.add
       .text(GAME_WIDTH / 2, 104, 'START GAME', {
         fontFamily: DEFAULT_FONT_FAMILY,
@@ -103,6 +108,7 @@ export class SaveSlotScene extends Phaser.Scene {
 
   private createBackButton(): Phaser.GameObjects.Container {
     const slot = this.add.container(0, 0);
+    slot.setSize(180, 58);
     const button = createMenuButton(this, {
       x: 90,
       y: 29,
@@ -124,6 +130,7 @@ export class SaveSlotScene extends Phaser.Scene {
 
   private createStatusGroup(): Phaser.GameObjects.Container {
     const group = this.add.container(0, 0);
+    group.setSize(GAME_WIDTH, 1);
     this.statusText = this.add
       .text(GAME_WIDTH / 2, 0, 'Loading save slots...', {
         fontFamily: DEFAULT_FONT_FAMILY,
@@ -153,32 +160,35 @@ export class SaveSlotScene extends Phaser.Scene {
 
   private renderSlotCards(slots: SaveSlotSummary[]): void {
     this.clearSlotCards();
-    const root = new LayoutBox(this, 'vbox');
-    const cardLayout = new LayoutBox(this, 'hbox', {
-      gap: SLOT_CARD_GAP,
-      align: 'center',
-    });
+    const cardLayout = this.rexUI.add.sizer(
+      GAME_WIDTH / 2,
+      392,
+      SLOT_LIST_WIDTH,
+      SLOT_CARD_HEIGHT,
+      'x',
+      {
+        origin: 0.5,
+        space: { item: SLOT_CARD_GAP },
+      },
+    );
 
     slots.forEach((slot) => {
       cardLayout.add(this.createSlotCard(slot), {
-        width: SLOT_CARD_WIDTH,
-        height: SLOT_CARD_HEIGHT,
+        align: 'left-top',
+        minWidth: SLOT_CARD_WIDTH,
+        minHeight: SLOT_CARD_HEIGHT,
+        offsetX: -SLOT_CARD_WIDTH / 2,
+        offsetY: -SLOT_CARD_HEIGHT / 2,
       });
     });
 
-    root.addOverlay(cardLayout, {
-      x: '50%',
-      y: 392,
-      width: SLOT_LIST_WIDTH,
-      height: SLOT_CARD_HEIGHT,
-      anchor: 'center',
-    });
-    root.layout(0, 0, GAME_WIDTH, GAME_HEIGHT);
-    this.slotContentContainer = root.container;
+    cardLayout.layout();
+    this.slotContentContainer = cardLayout;
   }
 
   private createSlotCard(slot: SaveSlotSummary): Phaser.GameObjects.Container {
     const group = this.add.container(0, 0);
+    group.setSize(SLOT_CARD_WIDTH, SLOT_CARD_HEIGHT);
     const fillColor = slot.isEmpty ? 0x12211c : 0x1a3a2d;
     const strokeColor = slot.isEmpty ? 0x4e5d57 : 0xbfeec5;
     const background = this.add.rectangle(
@@ -261,21 +271,24 @@ export class SaveSlotScene extends Phaser.Scene {
     this.clearSlotCards();
     const message = error instanceof Error ? error.message : String(error);
     this.setStatus(`Failed to load save slots: ${message}`);
-    const root = new LayoutBox(this, 'vbox');
-
-    root.addOverlay(this.createRetryButton(), {
-      x: '50%',
-      y: 478,
-      width: 280,
-      height: 64,
-      anchor: 'center',
+    const root = this.rexUI.add.overlapSizer(0, 0, GAME_WIDTH, GAME_HEIGHT, {
+      origin: 0,
     });
-    root.layout(0, 0, GAME_WIDTH, GAME_HEIGHT);
-    this.slotContentContainer = root.container;
+
+    root.add(this.createRetryButton(), {
+      align: 'left-top',
+      minWidth: 280,
+      minHeight: 64,
+      offsetX: GAME_WIDTH / 2 - 140 - GAME_WIDTH / 2,
+      offsetY: 478 - 32 - GAME_HEIGHT / 2,
+    });
+    root.layout();
+    this.slotContentContainer = root;
   }
 
   private createRetryButton(): Phaser.GameObjects.Container {
     const slot = this.add.container(0, 0);
+    slot.setSize(280, 64);
     const button = createMenuButton(this, {
       x: 140,
       y: 32,

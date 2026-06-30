@@ -13,7 +13,6 @@ import {
 } from '../../game/save/session';
 import { DEFAULT_FONT_FAMILY } from '../../theme';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
-import { LayoutBox } from '../ui/LayoutBox';
 import { createMenuButton } from '../ui/menu-button';
 import type { DeckBuildSceneData, StageSceneData } from './scene-data';
 
@@ -51,7 +50,7 @@ export class DeckBuildScene extends Phaser.Scene {
   private isSaving = false;
   private statusText!: Phaser.GameObjects.Text;
   private listContainer: Phaser.GameObjects.Container | null = null;
-  private hudContainer: Phaser.GameObjects.Container | null = null;
+  private hudContainer: Phaser.GameObjects.GameObject | null = null;
 
   constructor() {
     super({ key: 'DeckBuildScene' });
@@ -136,9 +135,17 @@ export class DeckBuildScene extends Phaser.Scene {
   }
 
   private renderUnitLists(container: Phaser.GameObjects.Container): void {
-    const bodyLayout = new LayoutBox(this, 'hbox', {
-      gap: PANEL_GAP,
-    });
+    const bodyLayout = this.rexUI.add.sizer(
+      PANEL_BODY_X,
+      PANEL_Y,
+      PANEL_BODY_WIDTH,
+      PANEL_HEIGHT,
+      'x',
+      {
+        origin: 0,
+        space: { item: PANEL_GAP },
+      },
+    );
 
     bodyLayout.add(
       this.createCardPanel({
@@ -157,8 +164,11 @@ export class DeckBuildScene extends Phaser.Scene {
         },
       }),
       {
-        width: PANEL_WIDTH,
-        height: PANEL_HEIGHT,
+        align: 'left-top',
+        minWidth: PANEL_WIDTH,
+        minHeight: PANEL_HEIGHT,
+        offsetX: -PANEL_WIDTH / 2,
+        offsetY: -PANEL_HEIGHT / 2,
       },
     );
 
@@ -179,19 +189,30 @@ export class DeckBuildScene extends Phaser.Scene {
         },
       }),
       {
-        width: PANEL_WIDTH,
-        height: PANEL_HEIGHT,
+        align: 'left-top',
+        minWidth: PANEL_WIDTH,
+        minHeight: PANEL_HEIGHT,
+        offsetX: -PANEL_WIDTH / 2,
+        offsetY: -PANEL_HEIGHT / 2,
       },
     );
 
-    bodyLayout.layout(PANEL_BODY_X, PANEL_Y, PANEL_BODY_WIDTH, PANEL_HEIGHT);
-    container.add(bodyLayout.container);
+    bodyLayout.layout();
+    container.add(bodyLayout);
   }
 
   private renderLeaderLists(container: Phaser.GameObjects.Container): void {
-    const bodyLayout = new LayoutBox(this, 'hbox', {
-      gap: PANEL_GAP,
-    });
+    const bodyLayout = this.rexUI.add.sizer(
+      PANEL_BODY_X,
+      PANEL_Y,
+      PANEL_BODY_WIDTH,
+      PANEL_HEIGHT,
+      'x',
+      {
+        origin: 0,
+        space: { item: PANEL_GAP },
+      },
+    );
 
     bodyLayout.add(
       this.createCardPanel({
@@ -207,8 +228,11 @@ export class DeckBuildScene extends Phaser.Scene {
         onPageChange: () => {},
       }),
       {
-        width: PANEL_WIDTH,
-        height: PANEL_HEIGHT,
+        align: 'left-top',
+        minWidth: PANEL_WIDTH,
+        minHeight: PANEL_HEIGHT,
+        offsetX: -PANEL_WIDTH / 2,
+        offsetY: -PANEL_HEIGHT / 2,
       },
     );
 
@@ -229,36 +253,47 @@ export class DeckBuildScene extends Phaser.Scene {
         },
       }),
       {
-        width: PANEL_WIDTH,
-        height: PANEL_HEIGHT,
+        align: 'left-top',
+        minWidth: PANEL_WIDTH,
+        minHeight: PANEL_HEIGHT,
+        offsetX: -PANEL_WIDTH / 2,
+        offsetY: -PANEL_HEIGHT / 2,
       },
     );
 
-    bodyLayout.layout(PANEL_BODY_X, PANEL_Y, PANEL_BODY_WIDTH, PANEL_HEIGHT);
-    container.add(bodyLayout.container);
+    bodyLayout.layout();
+    container.add(bodyLayout);
   }
 
   private createModeTabs(): Phaser.GameObjects.Container {
     const container = this.add.container(0, 0);
-    const layout = new LayoutBox(this, 'hbox', {
-      gap: 36,
+    const layout = this.rexUI.add.sizer(362, 188, 476, 52, 'x', {
+      origin: 0,
+      space: { item: 36 },
     });
 
     layout.add(this.createModeButton('UNIT'), {
-      width: 220,
-      height: 52,
+      align: 'left-top',
+      minWidth: 220,
+      minHeight: 52,
+      offsetX: -110,
+      offsetY: -26,
     });
     layout.add(this.createModeButton('LEADER'), {
-      width: 220,
-      height: 52,
+      align: 'left-top',
+      minWidth: 220,
+      minHeight: 52,
+      offsetX: -110,
+      offsetY: -26,
     });
-    layout.layout(362, 188, 476, 52);
-    container.add(layout.container);
+    layout.layout();
+    container.add(layout);
     return container;
   }
 
   private createModeButton(mode: DeckBuildMode): Phaser.GameObjects.Container {
     const container = this.add.container(0, 0);
+    container.setSize(220, 52);
     const selected = this.mode === mode;
     const background = this.add
       .rectangle(110, 26, 220, 52, selected ? 0x31543d : 0x12211c, 0.96)
@@ -293,6 +328,7 @@ export class DeckBuildScene extends Phaser.Scene {
     onPageChange: (page: number) => void;
   }): Phaser.GameObjects.Container {
     const container = this.add.container(0, 0);
+    container.setSize(PANEL_WIDTH, PANEL_HEIGHT);
     const panel = this.add.rectangle(0, 0, PANEL_WIDTH, PANEL_HEIGHT, 0x10261f, 0.94);
     panel.setOrigin(0, 0);
     panel.setStrokeStyle(2, 0xbfeec5, 0.64);
@@ -321,16 +357,18 @@ export class DeckBuildScene extends Phaser.Scene {
     );
 
     if (config.entries.length === 0) {
-      const emptyLayout = new LayoutBox(this, 'vbox', {
-        align: 'center',
-        justify: 'center',
+      const emptyLayout = this.rexUI.add.overlapSizer(28, 470, PANEL_INNER_WIDTH, 200, {
+        origin: 0,
       });
       emptyLayout.add(this.createEmptyPanelMessage(config.emptyMessage), {
-        width: PANEL_INNER_WIDTH,
-        height: 200,
+        align: 'left-top',
+        minWidth: PANEL_INNER_WIDTH,
+        minHeight: 200,
+        offsetX: -PANEL_INNER_WIDTH / 2,
+        offsetY: -100,
       });
-      emptyLayout.layout(28, 470, PANEL_INNER_WIDTH, 200);
-      container.add(emptyLayout.container);
+      emptyLayout.layout();
+      container.add(emptyLayout);
       container.add(this.createPagination(config));
       return container;
     }
@@ -338,8 +376,9 @@ export class DeckBuildScene extends Phaser.Scene {
     const maxPage = getMaxPage(config.entries.length);
     const page = Math.min(config.page, maxPage);
     const pageEntries = config.entries.slice(page * CARD_PAGE_SIZE, (page + 1) * CARD_PAGE_SIZE);
-    const rowLayout = new LayoutBox(this, 'vbox', {
-      gap: CARD_ROW_GAP,
+    const rowLayout = this.rexUI.add.sizer(28, 104, PANEL_INNER_WIDTH, 1150, 'y', {
+      origin: 0,
+      space: { item: CARD_ROW_GAP },
     });
 
     pageEntries.forEach((entry) => {
@@ -350,13 +389,16 @@ export class DeckBuildScene extends Phaser.Scene {
           onSelect: config.onSelect,
         }),
         {
-          width: PANEL_INNER_WIDTH,
-          height: CARD_ROW_HEIGHT,
+          align: 'left-top',
+          minWidth: PANEL_INNER_WIDTH,
+          minHeight: CARD_ROW_HEIGHT,
+          offsetX: -PANEL_INNER_WIDTH / 2,
+          offsetY: -CARD_ROW_HEIGHT / 2,
         },
       );
     });
-    rowLayout.layout(28, 104, PANEL_INNER_WIDTH, 1150);
-    container.add(rowLayout.container);
+    rowLayout.layout();
+    container.add(rowLayout);
 
     container.add(
       this.createPagination({
@@ -369,6 +411,7 @@ export class DeckBuildScene extends Phaser.Scene {
 
   private createEmptyPanelMessage(message: string): Phaser.GameObjects.Container {
     const container = this.add.container(0, 0);
+    container.setSize(PANEL_INNER_WIDTH, 200);
     container.add(
       this.add
         .text(PANEL_INNER_WIDTH / 2, 100, message, {
@@ -389,6 +432,7 @@ export class DeckBuildScene extends Phaser.Scene {
     onSelect: (instanceId: string) => void;
   }): Phaser.GameObjects.Container {
     const container = this.add.container(0, 0);
+    container.setSize(PANEL_INNER_WIDTH, CARD_ROW_HEIGHT);
     const card = config.entry.card;
     const fillColor = config.selected ? 0x31543d : 0x17352d;
     const strokeColor = config.selected ? 0xffe4a8 : 0x78a98d;
@@ -455,40 +499,58 @@ export class DeckBuildScene extends Phaser.Scene {
     const container = this.add.container(0, 0);
     const maxPage = getMaxPage(config.entries.length);
     const page = Math.min(config.page, maxPage);
-    const layout = new LayoutBox(this, 'hbox', {
-      align: 'center',
-      justify: 'space-between',
-    });
+    const layout = this.rexUI.add.sizer(
+      28,
+      PANEL_HEIGHT - 80,
+      PANEL_INNER_WIDTH,
+      PANEL_BUTTON_HEIGHT,
+      'x',
+      {
+        origin: 0,
+      },
+    );
 
     layout.add(
       this.createPanelButton('Prev', page > 0, () => {
         config.onPageChange(page - 1);
       }),
       {
-        width: 112,
-        height: PANEL_BUTTON_HEIGHT,
+        align: 'left-top',
+        minWidth: 112,
+        minHeight: PANEL_BUTTON_HEIGHT,
+        offsetX: -56,
+        offsetY: -PANEL_BUTTON_HEIGHT / 2,
       },
     );
+    layout.addSpace();
     layout.add(this.createPageIndicator(`${page + 1} / ${maxPage + 1}`), {
-      width: 120,
-      height: PANEL_BUTTON_HEIGHT,
+      align: 'left-top',
+      minWidth: 120,
+      minHeight: PANEL_BUTTON_HEIGHT,
+      offsetX: -60,
+      offsetY: -PANEL_BUTTON_HEIGHT / 2,
     });
+    layout.addSpace();
     layout.add(
       this.createPanelButton('Next', page < maxPage, () => {
         config.onPageChange(page + 1);
       }),
       {
-        width: 112,
-        height: PANEL_BUTTON_HEIGHT,
+        align: 'left-top',
+        minWidth: 112,
+        minHeight: PANEL_BUTTON_HEIGHT,
+        offsetX: -56,
+        offsetY: -PANEL_BUTTON_HEIGHT / 2,
       },
     );
-    layout.layout(28, PANEL_HEIGHT - 80, PANEL_INNER_WIDTH, PANEL_BUTTON_HEIGHT);
-    container.add(layout.container);
+    layout.layout();
+    container.add(layout);
     return container;
   }
 
   private createPageIndicator(label: string): Phaser.GameObjects.Container {
     const container = this.add.container(0, 0);
+    container.setSize(120, PANEL_BUTTON_HEIGHT);
     container.add(
       this.add
         .text(60, PANEL_BUTTON_HEIGHT / 2, label, {
@@ -508,6 +570,7 @@ export class DeckBuildScene extends Phaser.Scene {
     onClick: () => void,
   ): Phaser.GameObjects.Container {
     const container = this.add.container(0, 0);
+    container.setSize(112, PANEL_BUTTON_HEIGHT);
     const background = this.add.rectangle(
       56,
       PANEL_BUTTON_HEIGHT / 2,
@@ -539,9 +602,9 @@ export class DeckBuildScene extends Phaser.Scene {
 
   private renderHud(): void {
     this.hudContainer?.destroy();
-    const layout = new LayoutBox(this, 'hbox', {
-      gap: 81,
-      align: 'center',
+    const layout = this.rexUI.add.sizer(69, 1728, 892, HUD_BUTTON_HEIGHT, 'x', {
+      origin: 0,
+      space: { item: 81 },
     });
 
     layout.add(
@@ -549,8 +612,11 @@ export class DeckBuildScene extends Phaser.Scene {
         this.scene.start('StageScene', { session: this.savedSession } satisfies StageSceneData);
       }),
       {
-        width: 190,
-        height: HUD_BUTTON_HEIGHT,
+        align: 'left-top',
+        minWidth: 190,
+        minHeight: HUD_BUTTON_HEIGHT,
+        offsetX: -95,
+        offsetY: -HUD_BUTTON_HEIGHT / 2,
       },
     );
     layout.add(
@@ -558,18 +624,24 @@ export class DeckBuildScene extends Phaser.Scene {
         void this.handleSave();
       }),
       {
-        width: 180,
-        height: HUD_BUTTON_HEIGHT,
+        align: 'left-top',
+        minWidth: 180,
+        minHeight: HUD_BUTTON_HEIGHT,
+        offsetX: -90,
+        offsetY: -HUD_BUTTON_HEIGHT / 2,
       },
     );
 
     const summaryText = this.isDirty ? 'Unsaved changes' : 'Saved deck';
     layout.add(this.createHudSummary(summaryText, this.isDirty), {
-      width: 360,
-      height: HUD_BUTTON_HEIGHT,
+      align: 'left-top',
+      minWidth: 360,
+      minHeight: HUD_BUTTON_HEIGHT,
+      offsetX: -180,
+      offsetY: -HUD_BUTTON_HEIGHT / 2,
     });
-    layout.layout(69, 1728, 892, HUD_BUTTON_HEIGHT);
-    this.hudContainer = layout.container;
+    layout.layout();
+    this.hudContainer = layout;
   }
 
   private createHudButton(
@@ -579,6 +651,7 @@ export class DeckBuildScene extends Phaser.Scene {
     onClick: () => void,
   ): Phaser.GameObjects.Container {
     const slot = this.add.container(0, 0);
+    slot.setSize(width, HUD_BUTTON_HEIGHT);
     const button = enabled
       ? createMenuButton(this, {
           x: width / 2,
@@ -604,6 +677,7 @@ export class DeckBuildScene extends Phaser.Scene {
 
   private createHudSummary(text: string, isDirty: boolean): Phaser.GameObjects.Container {
     const slot = this.add.container(0, 0);
+    slot.setSize(360, HUD_BUTTON_HEIGHT);
     slot.add(
       this.add
         .text(180, HUD_BUTTON_HEIGHT / 2, text, {

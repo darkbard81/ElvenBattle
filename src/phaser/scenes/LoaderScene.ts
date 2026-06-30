@@ -2,7 +2,6 @@ import Phaser from 'phaser';
 import { DEFAULT_FONT_FAMILY } from '../../theme';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
 import { fetchAssetsManifest, joinAssetUrl } from '../../game/assets/manifest';
-import { LayoutBox } from '../ui/LayoutBox';
 import type { MainMenuSceneData, LoaderSceneData } from './scene-data';
 
 const PROGRESS_BAR_WIDTH = 560;
@@ -51,27 +50,32 @@ export class LoaderScene extends Phaser.Scene {
   }
 
   private addForegroundUi(): void {
-    const root = new LayoutBox(this, 'vbox');
+    const root = this.rexUI.add.overlapSizer(0, 0, GAME_WIDTH, GAME_HEIGHT, {
+      origin: 0,
+    });
     const titleGroup = this.createTitleGroup();
     const progressGroup = this.createProgressGroup();
 
-    root.addOverlay(titleGroup, {
-      x: 0,
-      y: 0,
-      width: GAME_WIDTH,
-      height: 220,
+    root.add(titleGroup, {
+      align: 'left-top',
+      minWidth: GAME_WIDTH,
+      minHeight: 220,
+      offsetX: -GAME_WIDTH / 2,
+      offsetY: -GAME_HEIGHT / 2,
     });
-    root.addOverlay(progressGroup, {
-      x: GAME_WIDTH / 2 - PROGRESS_BAR_WIDTH / 2,
-      y: 394,
-      width: PROGRESS_BAR_WIDTH,
-      height: 120,
+    root.add(progressGroup, {
+      align: 'left-top',
+      minWidth: PROGRESS_BAR_WIDTH,
+      minHeight: 120,
+      offsetX: -PROGRESS_BAR_WIDTH / 2,
+      offsetY: 394 - GAME_HEIGHT / 2,
     });
-    root.layout(0, 0, GAME_WIDTH, GAME_HEIGHT);
+    root.layout();
   }
 
   private createTitleGroup(): Phaser.GameObjects.Container {
     const group = this.add.container(0, 0);
+    group.setSize(GAME_WIDTH, 220);
     const title = this.add
       .text(GAME_WIDTH / 2, 146, 'Loading archive', {
         fontFamily: DEFAULT_FONT_FAMILY,
@@ -87,6 +91,7 @@ export class LoaderScene extends Phaser.Scene {
 
   private createProgressGroup(): Phaser.GameObjects.Container {
     const group = this.add.container(0, 0);
+    group.setSize(PROGRESS_BAR_WIDTH, 120);
     const progressTrack = this.add
       .rectangle(
         PROGRESS_BAR_WIDTH / 2,

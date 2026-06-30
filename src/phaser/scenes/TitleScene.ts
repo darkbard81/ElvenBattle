@@ -1,7 +1,6 @@
 import Phaser from 'phaser';
 import { DEFAULT_FONT_FAMILY } from '../../theme';
 import { DEFAULT_ASSET_BASE_URL, GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
-import { LayoutBox } from '../ui/LayoutBox';
 import type { LoaderSceneData } from './scene-data';
 
 /**
@@ -37,27 +36,32 @@ export class TitleScene extends Phaser.Scene {
   }
 
   private addForegroundUi(): void {
-    const root = new LayoutBox(this, 'vbox');
+    const root = this.rexUI.add.overlapSizer(0, 0, GAME_WIDTH, GAME_HEIGHT, {
+      origin: 0,
+    });
     const titleGroup = this.createTitleGroup();
     const promptGroup = this.createPromptGroup();
 
-    root.addOverlay(titleGroup, {
-      x: 0,
-      y: 0,
-      width: GAME_WIDTH,
-      height: 260,
+    root.add(titleGroup, {
+      align: 'left-top',
+      minWidth: GAME_WIDTH,
+      minHeight: 260,
+      offsetX: -GAME_WIDTH / 2,
+      offsetY: -GAME_HEIGHT / 2,
     });
-    root.addOverlay(promptGroup, {
-      x: 0,
-      y: GAME_HEIGHT - 120,
-      width: GAME_WIDTH,
-      height: 120,
+    root.add(promptGroup, {
+      align: 'left-top',
+      minWidth: GAME_WIDTH,
+      minHeight: 120,
+      offsetX: -GAME_WIDTH / 2,
+      offsetY: GAME_HEIGHT / 2 - 120,
     });
-    root.layout(0, 0, GAME_WIDTH, GAME_HEIGHT);
+    root.layout();
   }
 
   private createTitleGroup(): Phaser.GameObjects.Container {
     const group = this.add.container(0, 0);
+    group.setSize(GAME_WIDTH, 260);
     const title = this.add
       .text(GAME_WIDTH / 2, 140, 'ELVENBATTLE', {
         fontFamily: DEFAULT_FONT_FAMILY,
@@ -87,6 +91,7 @@ export class TitleScene extends Phaser.Scene {
 
   private createPromptGroup(): Phaser.GameObjects.Container {
     const group = this.add.container(0, 0);
+    group.setSize(GAME_WIDTH, 120);
     const prompt = this.add
       .text(GAME_WIDTH / 2, 28, 'click anywhere to begin', {
         fontFamily: DEFAULT_FONT_FAMILY,
@@ -98,17 +103,12 @@ export class TitleScene extends Phaser.Scene {
       .setAlpha(0.95);
 
     const helper = this.add
-      .text(
-        GAME_WIDTH / 2,
-        66,
-        'the archive will preload webp textures before the menu opens',
-        {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '16px',
-          color: '#b8cbb7',
-          align: 'center',
-        },
-      )
+      .text(GAME_WIDTH / 2, 66, 'the archive will preload webp textures before the menu opens', {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '16px',
+        color: '#b8cbb7',
+        align: 'center',
+      })
       .setOrigin(0.5)
       .setAlpha(0.9);
 

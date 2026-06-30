@@ -1,6 +1,5 @@
 import Phaser from 'phaser';
 import { describe, expect, it, vi } from 'vitest';
-import { LayoutBox } from './LayoutBox';
 import { createMenuButton } from './menu-button';
 
 vi.mock('phaser', () => ({
@@ -120,6 +119,14 @@ class FakeContainer extends FakeGameObject {
 
   constructor(x: number, y: number) {
     super(x, y, 0, 0);
+  }
+
+  setSize(width: number, height: number): this {
+    this.width = width;
+    this.height = height;
+    this.displayWidth = width;
+    this.displayHeight = height;
+    return this;
   }
 
   add(child: unknown | unknown[]): this {
@@ -258,30 +265,5 @@ describe('createMenuButton', () => {
         enabled: true,
       });
     }).toThrow('Enabled menu button "Broken" requires onClick');
-  });
-
-  it('can be used as a LayoutBox direct child', () => {
-    const scene = createScene();
-    const layout = new LayoutBox(scene, 'vbox');
-    const button = createMenuButton(scene, {
-      x: 0,
-      y: 0,
-      width: 180,
-      height: 64,
-      label: 'Start',
-      enabled: true,
-      onClick: () => undefined,
-    }) as unknown as FakeContainer;
-
-    layout.add(button as unknown as Phaser.GameObjects.Container, {
-      width: 180,
-      height: 64,
-    });
-    layout.layout(20, 40, 180, 64);
-
-    expect(button.x).toBe(0);
-    expect(button.y).toBe(0);
-    expect(layout.container.x).toBe(20);
-    expect(layout.container.y).toBe(40);
   });
 });

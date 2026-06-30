@@ -16,7 +16,6 @@ import type {
 } from '../../game/stage/types';
 import { DEFAULT_FONT_FAMILY } from '../../theme';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
-import { LayoutBox } from '../ui/LayoutBox';
 import { createMenuButton } from '../ui/menu-button';
 import type {
   BattlefieldSceneData,
@@ -46,9 +45,9 @@ export class StageScene extends Phaser.Scene {
   private session!: GameSession;
   private selectedStageId!: string;
   private stageDefinitions: StageDefinition[] = [];
-  private stageBodyContainer: Phaser.GameObjects.Container | null = null;
+  private stageBodyContainer: Phaser.GameObjects.GameObject | null = null;
   private resultSummaryContainer: Phaser.GameObjects.Container | null = null;
-  private hudContainer: Phaser.GameObjects.Container | null = null;
+  private hudContainer: Phaser.GameObjects.GameObject | null = null;
   private statusText!: Phaser.GameObjects.Text;
   private lastBattleResult: StageBattleResult | null = null;
   private isStartingBattle = false;
@@ -127,25 +126,39 @@ export class StageScene extends Phaser.Scene {
 
   private renderStageBody(): void {
     this.stageBodyContainer?.destroy();
-    const bodyLayout = new LayoutBox(this, 'hbox', {
-      gap: STAGE_BODY_GAP,
-      align: 'start',
-    });
+    const bodyLayout = this.rexUI.add.sizer(
+      STAGE_BODY_X,
+      STAGE_BODY_Y,
+      GAME_WIDTH - STAGE_BODY_X * 2,
+      STAGE_BODY_HEIGHT,
+      'x',
+      {
+        origin: 0,
+        space: { item: STAGE_BODY_GAP },
+      },
+    );
 
     bodyLayout.add(this.createStageListPanel(), {
-      width: STAGE_LIST_WIDTH,
-      height: STAGE_BODY_HEIGHT,
+      align: 'left-top',
+      minWidth: STAGE_LIST_WIDTH,
+      minHeight: STAGE_BODY_HEIGHT,
+      offsetX: -STAGE_LIST_WIDTH / 2,
+      offsetY: -STAGE_BODY_HEIGHT / 2,
     });
     bodyLayout.add(this.createStageDetailPanel(), {
-      width: STAGE_DETAIL_WIDTH,
-      height: STAGE_BODY_HEIGHT,
+      align: 'left-top',
+      minWidth: STAGE_DETAIL_WIDTH,
+      minHeight: STAGE_BODY_HEIGHT,
+      offsetX: -STAGE_DETAIL_WIDTH / 2,
+      offsetY: -STAGE_BODY_HEIGHT / 2,
     });
-    bodyLayout.layout(STAGE_BODY_X, STAGE_BODY_Y, GAME_WIDTH - STAGE_BODY_X * 2, STAGE_BODY_HEIGHT);
-    this.stageBodyContainer = bodyLayout.container;
+    bodyLayout.layout();
+    this.stageBodyContainer = bodyLayout;
   }
 
   private createStageListPanel(): Phaser.GameObjects.Container {
     const container = this.add.container(0, 0);
+    container.setSize(STAGE_LIST_WIDTH, STAGE_BODY_HEIGHT);
     const panel = this.add
       .rectangle(0, 0, STAGE_LIST_WIDTH, STAGE_BODY_HEIGHT, 0x10221d, 0.92)
       .setOrigin(0, 0);
@@ -163,23 +176,35 @@ export class StageScene extends Phaser.Scene {
         .setOrigin(0, 0.5),
     );
 
-    const cardLayout = new LayoutBox(this, 'vbox', {
-      gap: 26,
-    });
+    const cardLayout = this.rexUI.add.sizer(
+      24,
+      92,
+      STAGE_CARD_WIDTH,
+      STAGE_BODY_HEIGHT - 120,
+      'y',
+      {
+        origin: 0,
+        space: { item: 26 },
+      },
+    );
     this.stageDefinitions.forEach((stageDefinition) => {
       cardLayout.add(this.createStageCard(stageDefinition), {
-        width: STAGE_CARD_WIDTH,
-        height: STAGE_CARD_HEIGHT,
+        align: 'left-top',
+        minWidth: STAGE_CARD_WIDTH,
+        minHeight: STAGE_CARD_HEIGHT,
+        offsetX: -STAGE_CARD_WIDTH / 2,
+        offsetY: -STAGE_CARD_HEIGHT / 2,
       });
     });
 
-    cardLayout.layout(24, 92, STAGE_CARD_WIDTH, STAGE_BODY_HEIGHT - 120);
-    container.add(cardLayout.container);
+    cardLayout.layout();
+    container.add(cardLayout);
     return container;
   }
 
   private createStageCard(stageDefinition: StageDefinition): Phaser.GameObjects.Container {
     const container = this.add.container(0, 0);
+    container.setSize(STAGE_CARD_WIDTH, STAGE_CARD_HEIGHT);
     const unlocked = isStageUnlocked(stageDefinition, this.session.stageProgress);
     const cleared = this.session.stageProgress.clearedStageIds.includes(stageDefinition.id);
     const selected = stageDefinition.id === this.selectedStageId;
@@ -237,6 +262,7 @@ export class StageScene extends Phaser.Scene {
 
   private createStageDetailPanel(): Phaser.GameObjects.Container {
     const container = this.add.container(0, 0);
+    container.setSize(STAGE_DETAIL_WIDTH, STAGE_BODY_HEIGHT);
     const stageDefinition = this.getSelectedStageDefinition();
     const unlocked = isStageUnlocked(stageDefinition, this.session.stageProgress);
 
@@ -278,17 +304,21 @@ export class StageScene extends Phaser.Scene {
       ['Unlock', formatUnlockCondition(stageDefinition.unlock, unlocked)],
     ];
 
-    const rowLayout = new LayoutBox(this, 'vbox', {
-      gap: 30,
+    const rowLayout = this.rexUI.add.sizer(34, 244, DETAIL_ROW_WIDTH, 750, 'y', {
+      origin: 0,
+      space: { item: 30 },
     });
     rows.forEach(([label, value]) => {
       rowLayout.add(this.createDetailRow(label, value), {
-        width: DETAIL_ROW_WIDTH,
-        height: DETAIL_ROW_HEIGHT,
+        align: 'left-top',
+        minWidth: DETAIL_ROW_WIDTH,
+        minHeight: DETAIL_ROW_HEIGHT,
+        offsetX: -DETAIL_ROW_WIDTH / 2,
+        offsetY: -DETAIL_ROW_HEIGHT / 2,
       });
     });
-    rowLayout.layout(34, 244, DETAIL_ROW_WIDTH, 750);
-    container.add(rowLayout.container);
+    rowLayout.layout();
+    container.add(rowLayout);
     return container;
   }
 
@@ -355,6 +385,7 @@ export class StageScene extends Phaser.Scene {
 
   private createDetailRow(label: string, value: string): Phaser.GameObjects.Container {
     const container = this.add.container(0, 0);
+    container.setSize(DETAIL_ROW_WIDTH, DETAIL_ROW_HEIGHT);
     const background = this.add
       .rectangle(0, 0, DETAIL_ROW_WIDTH, DETAIL_ROW_HEIGHT, 0x17352d, 0.72)
       .setOrigin(0, 0);
@@ -386,9 +417,9 @@ export class StageScene extends Phaser.Scene {
 
   private renderHud(): void {
     this.hudContainer?.destroy();
-    const layout = new LayoutBox(this, 'hbox', {
-      gap: 20,
-      align: 'center',
+    const layout = this.rexUI.add.sizer(74, 1728, GAME_WIDTH - 148, HUD_BUTTON_HEIGHT, 'x', {
+      origin: 0,
+      space: { item: 20 },
     });
     const stageDefinition = this.getSelectedStageDefinition();
     const unlocked = isStageUnlocked(stageDefinition, this.session.stageProgress);
@@ -402,8 +433,11 @@ export class StageScene extends Phaser.Scene {
         this.scene.start('SaveSlotScene');
       }),
       {
-        width: 180,
-        height: HUD_BUTTON_HEIGHT,
+        align: 'left-top',
+        minWidth: 180,
+        minHeight: HUD_BUTTON_HEIGHT,
+        offsetX: -90,
+        offsetY: -HUD_BUTTON_HEIGHT / 2,
       },
     );
     layout.add(
@@ -411,8 +445,11 @@ export class StageScene extends Phaser.Scene {
         void this.handleStartBattle();
       }),
       {
-        width: 250,
-        height: HUD_BUTTON_HEIGHT,
+        align: 'left-top',
+        minWidth: 250,
+        minHeight: HUD_BUTTON_HEIGHT,
+        offsetX: -125,
+        offsetY: -HUD_BUTTON_HEIGHT / 2,
       },
     );
 
@@ -423,8 +460,11 @@ export class StageScene extends Phaser.Scene {
         } satisfies DeckBuildSceneData);
       }),
       {
-        width: 128,
-        height: HUD_BUTTON_HEIGHT,
+        align: 'left-top',
+        minWidth: 128,
+        minHeight: HUD_BUTTON_HEIGHT,
+        offsetX: -64,
+        offsetY: -HUD_BUTTON_HEIGHT / 2,
       },
     );
     layout.add(
@@ -434,8 +474,11 @@ export class StageScene extends Phaser.Scene {
         } satisfies EquipmentSceneData);
       }),
       {
-        width: 128,
-        height: HUD_BUTTON_HEIGHT,
+        align: 'left-top',
+        minWidth: 128,
+        minHeight: HUD_BUTTON_HEIGHT,
+        offsetX: -64,
+        offsetY: -HUD_BUTTON_HEIGHT / 2,
       },
     );
     layout.add(
@@ -445,17 +488,23 @@ export class StageScene extends Phaser.Scene {
         } satisfies GrowthSceneData);
       }),
       {
-        width: 128,
-        height: HUD_BUTTON_HEIGHT,
+        align: 'left-top',
+        minWidth: 128,
+        minHeight: HUD_BUTTON_HEIGHT,
+        offsetX: -64,
+        offsetY: -HUD_BUTTON_HEIGHT / 2,
       },
     );
     layout.add(this.createHudButton('연성', 128, false), {
-      width: 128,
-      height: HUD_BUTTON_HEIGHT,
+      align: 'left-top',
+      minWidth: 128,
+      minHeight: HUD_BUTTON_HEIGHT,
+      offsetX: -64,
+      offsetY: -HUD_BUTTON_HEIGHT / 2,
     });
 
-    layout.layout(74, 1728, GAME_WIDTH - 148, HUD_BUTTON_HEIGHT);
-    this.hudContainer = layout.container;
+    layout.layout();
+    this.hudContainer = layout;
   }
 
   private createHudButton(
@@ -465,6 +514,7 @@ export class StageScene extends Phaser.Scene {
     onClick?: () => void,
   ): Phaser.GameObjects.Container {
     const slot = this.add.container(0, 0);
+    slot.setSize(width, HUD_BUTTON_HEIGHT);
     const button = enabled
       ? createMenuButton(this, {
           x: width / 2,

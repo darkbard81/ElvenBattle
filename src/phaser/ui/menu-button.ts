@@ -28,6 +28,7 @@ export function createMenuButton(
   const fillAlpha = config.enabled ? 0.96 : 0.72;
   const labelColor = config.enabled ? '#f5fff0' : '#7e8b84';
   const container = scene.add.container(config.x, config.y);
+  container.setSize(config.width, config.height);
 
   const background = scene.add.rectangle(0, 0, config.width, config.height, fillColor, fillAlpha);
   background.setStrokeStyle(2, strokeColor, config.enabled ? 0.92 : 0.58);
