@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { DEFAULT_FONT_FAMILY } from '../../theme';
 import { DEFAULT_ASSET_BASE_URL, GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
+import { LayoutBox } from '../ui/LayoutBox';
 import type { LoaderSceneData } from './scene-data';
 
 /**
@@ -17,8 +18,7 @@ export class TitleScene extends Phaser.Scene {
    */
   create(): void {
     this.addBackground();
-    this.addTitleText();
-    this.addPromptText();
+    this.addForegroundUi();
 
     this.input.once(Phaser.Input.Events.POINTER_DOWN, () => {
       this.scene.start('LoaderScene', {
@@ -36,8 +36,29 @@ export class TitleScene extends Phaser.Scene {
     this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.08).setOrigin(0, 0);
   }
 
-  private addTitleText(): void {
-    this.add
+  private addForegroundUi(): void {
+    const root = new LayoutBox(this, 'vbox');
+    const titleGroup = this.createTitleGroup();
+    const promptGroup = this.createPromptGroup();
+
+    root.addOverlay(titleGroup, {
+      x: 0,
+      y: 0,
+      width: GAME_WIDTH,
+      height: 260,
+    });
+    root.addOverlay(promptGroup, {
+      x: 0,
+      y: GAME_HEIGHT - 120,
+      width: GAME_WIDTH,
+      height: 120,
+    });
+    root.layout(0, 0, GAME_WIDTH, GAME_HEIGHT);
+  }
+
+  private createTitleGroup(): Phaser.GameObjects.Container {
+    const group = this.add.container(0, 0);
+    const title = this.add
       .text(GAME_WIDTH / 2, 140, 'ELVENBATTLE', {
         fontFamily: DEFAULT_FONT_FAMILY,
         fontSize: '78px',
@@ -50,7 +71,7 @@ export class TitleScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setShadow(0, 4, '#000000', 12, false, true);
 
-    this.add
+    const subtitle = this.add
       .text(GAME_WIDTH / 2, 228, 'the elven card battler', {
         fontFamily: DEFAULT_FONT_FAMILY,
         fontSize: '28px',
@@ -59,11 +80,15 @@ export class TitleScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
       .setAlpha(0.92);
+
+    group.add([title, subtitle]);
+    return group;
   }
 
-  private addPromptText(): void {
-    this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT - 92, 'click anywhere to begin', {
+  private createPromptGroup(): Phaser.GameObjects.Container {
+    const group = this.add.container(0, 0);
+    const prompt = this.add
+      .text(GAME_WIDTH / 2, 28, 'click anywhere to begin', {
         fontFamily: DEFAULT_FONT_FAMILY,
         fontSize: '26px',
         color: '#ecf7e8',
@@ -72,10 +97,10 @@ export class TitleScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setAlpha(0.95);
 
-    this.add
+    const helper = this.add
       .text(
         GAME_WIDTH / 2,
-        GAME_HEIGHT - 54,
+        66,
         'the archive will preload webp textures before the menu opens',
         {
           fontFamily: DEFAULT_FONT_FAMILY,
@@ -86,5 +111,8 @@ export class TitleScene extends Phaser.Scene {
       )
       .setOrigin(0.5)
       .setAlpha(0.9);
+
+    group.add([prompt, helper]);
+    return group;
   }
 }
