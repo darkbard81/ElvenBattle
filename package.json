@@ -15,7 +15,7 @@
   "dependencies": {
     "dotenv": "^17.4.2",
     "phaser": "^4.1.0",
-    "phaser3-rex-plugins": "^1.80.20"
+    "phaser4-rex-plugins": "^4.0.7"
   },
   "devDependencies": {
     "@eslint/js": "^9.29.0",
