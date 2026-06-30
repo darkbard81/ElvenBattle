@@ -16,6 +16,7 @@ import type {
 } from '../../game/stage/types';
 import { DEFAULT_FONT_FAMILY } from '../../theme';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
+import { LayoutBox } from '../ui/LayoutBox';
 import { createMenuButton } from '../ui/menu-button';
 import type {
   BattlefieldSceneData,
@@ -25,6 +26,18 @@ import type {
   StageSceneData,
 } from './scene-data';
 
+const STAGE_BODY_X = 74;
+const STAGE_BODY_Y = 248;
+const STAGE_LIST_WIDTH = 398;
+const STAGE_DETAIL_WIDTH = 618;
+const STAGE_BODY_GAP = 36;
+const STAGE_BODY_HEIGHT = 1130;
+const STAGE_CARD_WIDTH = 350;
+const STAGE_CARD_HEIGHT = 132;
+const DETAIL_ROW_WIDTH = 550;
+const DETAIL_ROW_HEIGHT = 126;
+const HUD_BUTTON_HEIGHT = 64;
+
 /**
  * 저장 슬롯 선택 이후 전투 시작 전 Stage 목록과 상세 정보를 보여주는 허브 씬이다.
  * Stage 정의 배열을 기준으로 화면을 구성하고, 선택한 Stage ID를 전투 씬으로 전달한다.
@@ -33,8 +46,7 @@ export class StageScene extends Phaser.Scene {
   private session!: GameSession;
   private selectedStageId!: string;
   private stageDefinitions: StageDefinition[] = [];
-  private stageListContainer: Phaser.GameObjects.Container | null = null;
-  private detailContainer: Phaser.GameObjects.Container | null = null;
+  private stageBodyContainer: Phaser.GameObjects.Container | null = null;
   private resultSummaryContainer: Phaser.GameObjects.Container | null = null;
   private hudContainer: Phaser.GameObjects.Container | null = null;
   private statusText!: Phaser.GameObjects.Text;
@@ -58,8 +70,7 @@ export class StageScene extends Phaser.Scene {
     this.addBackground();
     this.addTitle();
     this.addStatusText();
-    this.renderStageList();
-    this.renderStageDetail();
+    this.renderStageBody();
     this.renderBattleResultSummary();
     this.renderHud();
   }
@@ -114,12 +125,30 @@ export class StageScene extends Phaser.Scene {
       .setOrigin(0.5);
   }
 
-  private renderStageList(): void {
-    this.stageListContainer?.destroy();
-    const container = this.add.container(74, 248);
-    this.stageListContainer = container;
+  private renderStageBody(): void {
+    this.stageBodyContainer?.destroy();
+    const bodyLayout = new LayoutBox(this, 'hbox', {
+      gap: STAGE_BODY_GAP,
+      align: 'start',
+    });
 
-    const panel = this.add.rectangle(0, 0, 398, 1130, 0x10221d, 0.92).setOrigin(0, 0);
+    bodyLayout.add(this.createStageListPanel(), {
+      width: STAGE_LIST_WIDTH,
+      height: STAGE_BODY_HEIGHT,
+    });
+    bodyLayout.add(this.createStageDetailPanel(), {
+      width: STAGE_DETAIL_WIDTH,
+      height: STAGE_BODY_HEIGHT,
+    });
+    bodyLayout.layout(STAGE_BODY_X, STAGE_BODY_Y, GAME_WIDTH - STAGE_BODY_X * 2, STAGE_BODY_HEIGHT);
+    this.stageBodyContainer = bodyLayout.container;
+  }
+
+  private createStageListPanel(): Phaser.GameObjects.Container {
+    const container = this.add.container(0, 0);
+    const panel = this.add
+      .rectangle(0, 0, STAGE_LIST_WIDTH, STAGE_BODY_HEIGHT, 0x10221d, 0.92)
+      .setOrigin(0, 0);
     panel.setStrokeStyle(2, 0x9ecfaa, 0.54);
     container.add(panel);
 
@@ -134,16 +163,23 @@ export class StageScene extends Phaser.Scene {
         .setOrigin(0, 0.5),
     );
 
-    this.stageDefinitions.forEach((stageDefinition, index) => {
-      this.addStageCard(container, stageDefinition, 92 + index * 158);
+    const cardLayout = new LayoutBox(this, 'vbox', {
+      gap: 26,
     });
+    this.stageDefinitions.forEach((stageDefinition) => {
+      cardLayout.add(this.createStageCard(stageDefinition), {
+        width: STAGE_CARD_WIDTH,
+        height: STAGE_CARD_HEIGHT,
+      });
+    });
+
+    cardLayout.layout(24, 92, STAGE_CARD_WIDTH, STAGE_BODY_HEIGHT - 120);
+    container.add(cardLayout.container);
+    return container;
   }
 
-  private addStageCard(
-    container: Phaser.GameObjects.Container,
-    stageDefinition: StageDefinition,
-    y: number,
-  ): void {
+  private createStageCard(stageDefinition: StageDefinition): Phaser.GameObjects.Container {
+    const container = this.add.container(0, 0);
     const unlocked = isStageUnlocked(stageDefinition, this.session.stageProgress);
     const cleared = this.session.stageProgress.clearedStageIds.includes(stageDefinition.id);
     const selected = stageDefinition.id === this.selectedStageId;
@@ -152,13 +188,15 @@ export class StageScene extends Phaser.Scene {
     const titleColor = unlocked ? '#f5fff0' : '#7e8b84';
     const detailColor = unlocked ? '#c8dfc7' : '#69756f';
 
-    const background = this.add.rectangle(24, y, 350, 132, fillColor, 0.95).setOrigin(0, 0.5);
+    const background = this.add
+      .rectangle(0, 0, STAGE_CARD_WIDTH, STAGE_CARD_HEIGHT, fillColor, 0.95)
+      .setOrigin(0, 0);
     background.setStrokeStyle(selected ? 4 : 2, strokeColor, selected ? 0.96 : 0.7);
     background.setInteractive({ useHandCursor: true });
     container.add(background);
 
     const orderText = this.add
-      .text(52, y - 38, `Stage ${stageDefinition.order}`, {
+      .text(28, 28, `Stage ${stageDefinition.order}`, {
         fontFamily: DEFAULT_FONT_FAMILY,
         fontSize: '16px',
         color: selected ? '#fff3c2' : detailColor,
@@ -166,7 +204,7 @@ export class StageScene extends Phaser.Scene {
       })
       .setOrigin(0, 0.5);
     const titleText = this.add
-      .text(52, y - 6, stageDefinition.name, {
+      .text(28, 60, stageDefinition.name, {
         fontFamily: DEFAULT_FONT_FAMILY,
         fontSize: '28px',
         color: titleColor,
@@ -175,7 +213,7 @@ export class StageScene extends Phaser.Scene {
       })
       .setOrigin(0, 0.5);
     const stateText = this.add
-      .text(52, y + 36, cleared ? 'CLEARED' : unlocked ? 'Unlocked' : 'Locked', {
+      .text(28, 102, cleared ? 'CLEARED' : unlocked ? 'Unlocked' : 'Locked', {
         fontFamily: DEFAULT_FONT_FAMILY,
         fontSize: '16px',
         color: cleared ? '#fff3c2' : detailColor,
@@ -193,16 +231,18 @@ export class StageScene extends Phaser.Scene {
     background.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
       this.selectStage(stageDefinition.id);
     });
+
+    return container;
   }
 
-  private renderStageDetail(): void {
-    this.detailContainer?.destroy();
-    const container = this.add.container(508, 248);
-    this.detailContainer = container;
+  private createStageDetailPanel(): Phaser.GameObjects.Container {
+    const container = this.add.container(0, 0);
     const stageDefinition = this.getSelectedStageDefinition();
     const unlocked = isStageUnlocked(stageDefinition, this.session.stageProgress);
 
-    const panel = this.add.rectangle(0, 0, 618, 1130, 0x10261f, 0.94).setOrigin(0, 0);
+    const panel = this.add
+      .rectangle(0, 0, STAGE_DETAIL_WIDTH, STAGE_BODY_HEIGHT, 0x10261f, 0.94)
+      .setOrigin(0, 0);
     panel.setStrokeStyle(2, 0xbfeec5, 0.64);
     container.add(panel);
 
@@ -238,9 +278,18 @@ export class StageScene extends Phaser.Scene {
       ['Unlock', formatUnlockCondition(stageDefinition.unlock, unlocked)],
     ];
 
-    rows.forEach(([label, value], index) => {
-      this.addDetailRow(container, label, value, 244 + index * 156);
+    const rowLayout = new LayoutBox(this, 'vbox', {
+      gap: 30,
     });
+    rows.forEach(([label, value]) => {
+      rowLayout.add(this.createDetailRow(label, value), {
+        width: DETAIL_ROW_WIDTH,
+        height: DETAIL_ROW_HEIGHT,
+      });
+    });
+    rowLayout.layout(34, 244, DETAIL_ROW_WIDTH, 750);
+    container.add(rowLayout.container);
+    return container;
   }
 
   private renderBattleResultSummary(): void {
@@ -304,18 +353,16 @@ export class StageScene extends Phaser.Scene {
     );
   }
 
-  private addDetailRow(
-    container: Phaser.GameObjects.Container,
-    label: string,
-    value: string,
-    y: number,
-  ): void {
-    const background = this.add.rectangle(34, y, 550, 126, 0x17352d, 0.72).setOrigin(0, 0);
+  private createDetailRow(label: string, value: string): Phaser.GameObjects.Container {
+    const container = this.add.container(0, 0);
+    const background = this.add
+      .rectangle(0, 0, DETAIL_ROW_WIDTH, DETAIL_ROW_HEIGHT, 0x17352d, 0.72)
+      .setOrigin(0, 0);
     background.setStrokeStyle(1, 0x78a98d, 0.42);
     container.add(background);
     container.add(
       this.add
-        .text(58, y + 22, label, {
+        .text(24, 22, label, {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSize: '18px',
           color: '#a8d2af',
@@ -325,7 +372,7 @@ export class StageScene extends Phaser.Scene {
     );
     container.add(
       this.add
-        .text(58, y + 54, value, {
+        .text(24, 54, value, {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSize: '20px',
           color: '#f1f8ec',
@@ -334,96 +381,111 @@ export class StageScene extends Phaser.Scene {
         })
         .setOrigin(0, 0),
     );
+    return container;
   }
 
   private renderHud(): void {
     this.hudContainer?.destroy();
-    const container = this.add.container(0, 0);
-    this.hudContainer = container;
+    const layout = new LayoutBox(this, 'hbox', {
+      gap: 20,
+      align: 'center',
+    });
     const stageDefinition = this.getSelectedStageDefinition();
     const unlocked = isStageUnlocked(stageDefinition, this.session.stageProgress);
 
-    createMenuButton(this, {
-      x: 150,
-      y: 1760,
-      width: 180,
-      height: 64,
-      label: 'Back',
-      enabled: true,
-      parent: container,
-      onClick: () => {
+    layout.add(
+      this.createHudButton('Back', 180, true, () => {
         if (this.isStartingBattle) {
           return;
         }
 
         this.scene.start('SaveSlotScene');
+      }),
+      {
+        width: 180,
+        height: HUD_BUTTON_HEIGHT,
       },
-    });
-    createMenuButton(this, {
-      x: 382,
-      y: 1760,
-      width: 250,
-      height: 64,
-      label: 'Start Battle',
-      enabled: unlocked,
-      parent: container,
-      onClick: () => {
+    );
+    layout.add(
+      this.createHudButton('Start Battle', 250, unlocked, () => {
         void this.handleStartBattle();
+      }),
+      {
+        width: 250,
+        height: HUD_BUTTON_HEIGHT,
       },
-    });
+    );
 
-    createMenuButton(this, {
-      x: 604,
-      y: 1760,
-      width: 128,
-      height: 64,
-      label: '구성',
-      enabled: !this.isStartingBattle,
-      parent: container,
-      onClick: () => {
+    layout.add(
+      this.createHudButton('구성', 128, !this.isStartingBattle, () => {
         this.scene.start('DeckBuildScene', {
           session: this.session,
         } satisfies DeckBuildSceneData);
+      }),
+      {
+        width: 128,
+        height: HUD_BUTTON_HEIGHT,
       },
-    });
-
-    createMenuButton(this, {
-      x: 752,
-      y: 1760,
-      width: 128,
-      height: 64,
-      label: '장비',
-      enabled: !this.isStartingBattle,
-      parent: container,
-      onClick: () => {
+    );
+    layout.add(
+      this.createHudButton('장비', 128, !this.isStartingBattle, () => {
         this.scene.start('EquipmentScene', {
           session: this.session,
         } satisfies EquipmentSceneData);
+      }),
+      {
+        width: 128,
+        height: HUD_BUTTON_HEIGHT,
       },
-    });
-    createMenuButton(this, {
-      x: 900,
-      y: 1760,
-      width: 128,
-      height: 64,
-      label: '성장',
-      enabled: !this.isStartingBattle,
-      parent: container,
-      onClick: () => {
+    );
+    layout.add(
+      this.createHudButton('성장', 128, !this.isStartingBattle, () => {
         this.scene.start('GrowthScene', {
           session: this.session,
         } satisfies GrowthSceneData);
+      }),
+      {
+        width: 128,
+        height: HUD_BUTTON_HEIGHT,
       },
-    });
-    createMenuButton(this, {
-      x: 1048,
-      y: 1760,
+    );
+    layout.add(this.createHudButton('연성', 128, false), {
       width: 128,
-      height: 64,
-      label: '연성',
-      enabled: false,
-      parent: container,
+      height: HUD_BUTTON_HEIGHT,
     });
+
+    layout.layout(74, 1728, GAME_WIDTH - 148, HUD_BUTTON_HEIGHT);
+    this.hudContainer = layout.container;
+  }
+
+  private createHudButton(
+    label: string,
+    width: number,
+    enabled: boolean,
+    onClick?: () => void,
+  ): Phaser.GameObjects.Container {
+    const slot = this.add.container(0, 0);
+    const button = enabled
+      ? createMenuButton(this, {
+          x: width / 2,
+          y: HUD_BUTTON_HEIGHT / 2,
+          width,
+          height: HUD_BUTTON_HEIGHT,
+          label,
+          enabled,
+          onClick: onClick ?? (() => undefined),
+        })
+      : createMenuButton(this, {
+          x: width / 2,
+          y: HUD_BUTTON_HEIGHT / 2,
+          width,
+          height: HUD_BUTTON_HEIGHT,
+          label,
+          enabled,
+        });
+
+    slot.add(button);
+    return slot;
   }
 
   private selectStage(stageId: string): void {
@@ -436,8 +498,7 @@ export class StageScene extends Phaser.Scene {
         lastSelectedStageId: stageId,
       },
     };
-    this.renderStageList();
-    this.renderStageDetail();
+    this.renderStageBody();
     this.renderBattleResultSummary();
     this.renderHud();
     this.setStatus(`Selected ${this.getSelectedStageDefinition().name}.`);

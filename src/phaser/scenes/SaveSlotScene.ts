@@ -8,8 +8,14 @@ import {
   initializeSaveSlot,
 } from '../../game/save/client-api';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
+import { LayoutBox } from '../ui/LayoutBox';
 import { createMenuButton } from '../ui/menu-button';
 import type { MainMenuSceneData, StageSceneData } from './scene-data';
+
+const SLOT_CARD_WIDTH = 330;
+const SLOT_CARD_HEIGHT = 260;
+const SLOT_CARD_GAP = 28;
+const SLOT_LIST_WIDTH = SLOT_CARD_WIDTH * 3 + SLOT_CARD_GAP * 2;
 
 /**
  * `Start Game` 진입 후 3개의 저장 슬롯을 보여주는 선택 화면이다.
@@ -17,8 +23,7 @@ import type { MainMenuSceneData, StageSceneData } from './scene-data';
  */
 export class SaveSlotScene extends Phaser.Scene {
   private statusText!: Phaser.GameObjects.Text;
-  private retryButton: Phaser.GameObjects.Rectangle | null = null;
-  private slotUiElements: Phaser.GameObjects.GameObject[] = [];
+  private slotContentContainer: Phaser.GameObjects.Container | null = null;
 
   constructor() {
     super({ key: 'SaveSlotScene' });
@@ -29,8 +34,7 @@ export class SaveSlotScene extends Phaser.Scene {
    */
   create(): void {
     this.addBackground();
-    this.addTitle();
-    this.addBackButton();
+    this.addForegroundUi();
     this.showLoadingState();
 
     void this.loadSaveSlots();
@@ -45,8 +49,33 @@ export class SaveSlotScene extends Phaser.Scene {
     this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.14).setOrigin(0, 0);
   }
 
-  private addTitle(): void {
-    this.add
+  private addForegroundUi(): void {
+    const root = new LayoutBox(this, 'vbox');
+
+    root.addOverlay(this.createTitleGroup(), {
+      x: 0,
+      y: 0,
+      width: GAME_WIDTH,
+      height: 190,
+    });
+    root.addOverlay(this.createBackButton(), {
+      x: 70,
+      y: 57,
+      width: 180,
+      height: 58,
+    });
+    root.addOverlay(this.createStatusGroup(), {
+      x: 0,
+      y: 232,
+      width: GAME_WIDTH,
+      height: 1,
+    });
+    root.layout(0, 0, GAME_WIDTH, GAME_HEIGHT);
+  }
+
+  private createTitleGroup(): Phaser.GameObjects.Container {
+    const group = this.add.container(0, 0);
+    const title = this.add
       .text(GAME_WIDTH / 2, 104, 'START GAME', {
         fontFamily: DEFAULT_FONT_FAMILY,
         fontSize: '56px',
@@ -58,7 +87,7 @@ export class SaveSlotScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
-    this.add
+    const subtitle = this.add
       .text(GAME_WIDTH / 2, 166, 'Choose a save slot', {
         fontFamily: DEFAULT_FONT_FAMILY,
         fontSize: '24px',
@@ -67,12 +96,16 @@ export class SaveSlotScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
       .setAlpha(0.9);
+
+    group.add([title, subtitle]);
+    return group;
   }
 
-  private addBackButton(): void {
-    createMenuButton(this, {
-      x: 160,
-      y: 86,
+  private createBackButton(): Phaser.GameObjects.Container {
+    const slot = this.add.container(0, 0);
+    const button = createMenuButton(this, {
+      x: 90,
+      y: 29,
       width: 180,
       height: 58,
       label: 'Back',
@@ -84,18 +117,28 @@ export class SaveSlotScene extends Phaser.Scene {
         } satisfies MainMenuSceneData);
       },
     });
+
+    slot.add(button);
+    return slot;
   }
 
-  private showLoadingState(): void {
-    this.clearSlotCards();
+  private createStatusGroup(): Phaser.GameObjects.Container {
+    const group = this.add.container(0, 0);
     this.statusText = this.add
-      .text(GAME_WIDTH / 2, 232, 'Loading save slots...', {
+      .text(GAME_WIDTH / 2, 0, 'Loading save slots...', {
         fontFamily: DEFAULT_FONT_FAMILY,
         fontSize: '24px',
         color: '#e6f4df',
         align: 'center',
       })
       .setOrigin(0.5);
+    group.add(this.statusText);
+    return group;
+  }
+
+  private showLoadingState(): void {
+    this.clearSlotCards();
+    this.setStatus('Loading save slots...');
   }
 
   private async loadSaveSlots(): Promise<void> {
@@ -110,33 +153,44 @@ export class SaveSlotScene extends Phaser.Scene {
 
   private renderSlotCards(slots: SaveSlotSummary[]): void {
     this.clearSlotCards();
-
-    const cardWidth = 330;
-    const cardHeight = 260;
-    const cardGap = 28;
-    const totalWidth = cardWidth * 3 + cardGap * 2;
-    const startX = (GAME_WIDTH - totalWidth) / 2 + cardWidth / 2;
-    const y = 392;
-
-    slots.forEach((slot, index) => {
-      const x = startX + index * (cardWidth + cardGap);
-      this.createSlotCard(x, y, cardWidth, cardHeight, slot);
+    const root = new LayoutBox(this, 'vbox');
+    const cardLayout = new LayoutBox(this, 'hbox', {
+      gap: SLOT_CARD_GAP,
+      align: 'center',
     });
+
+    slots.forEach((slot) => {
+      cardLayout.add(this.createSlotCard(slot), {
+        width: SLOT_CARD_WIDTH,
+        height: SLOT_CARD_HEIGHT,
+      });
+    });
+
+    root.addOverlay(cardLayout, {
+      x: '50%',
+      y: 392,
+      width: SLOT_LIST_WIDTH,
+      height: SLOT_CARD_HEIGHT,
+      anchor: 'center',
+    });
+    root.layout(0, 0, GAME_WIDTH, GAME_HEIGHT);
+    this.slotContentContainer = root.container;
   }
 
-  private createSlotCard(
-    x: number,
-    y: number,
-    width: number,
-    height: number,
-    slot: SaveSlotSummary,
-  ): void {
+  private createSlotCard(slot: SaveSlotSummary): Phaser.GameObjects.Container {
+    const group = this.add.container(0, 0);
     const fillColor = slot.isEmpty ? 0x12211c : 0x1a3a2d;
     const strokeColor = slot.isEmpty ? 0x4e5d57 : 0xbfeec5;
-    const background = this.add.rectangle(x, y, width, height, fillColor, 0.96);
+    const background = this.add.rectangle(
+      SLOT_CARD_WIDTH / 2,
+      SLOT_CARD_HEIGHT / 2,
+      SLOT_CARD_WIDTH,
+      SLOT_CARD_HEIGHT,
+      fillColor,
+      0.96,
+    );
     background.setStrokeStyle(2, strokeColor, slot.isEmpty ? 0.7 : 0.94);
     background.setInteractive({ useHandCursor: true });
-    this.slotUiElements.push(background);
 
     const titleColor = slot.isEmpty ? '#8e9a95' : '#f5fff0';
     const detailColor = slot.isEmpty ? '#7f8b85' : '#d7ead4';
@@ -146,47 +200,48 @@ export class SaveSlotScene extends Phaser.Scene {
     const subtitle = slot.isEmpty ? 'Create New Save' : formatSaveSlotSubtitle(slot);
 
     const slotLabelText = this.add
-      .text(x, y - 88, slotLabel, {
+      .text(SLOT_CARD_WIDTH / 2, SLOT_CARD_HEIGHT / 2 - 88, slotLabel, {
         fontFamily: DEFAULT_FONT_FAMILY,
         fontSize: '20px',
         color: accentColor,
         align: 'center',
       })
       .setOrigin(0.5);
-    this.slotUiElements.push(slotLabelText);
 
     const titleText = this.add
-      .text(x, y - 36, title, {
+      .text(SLOT_CARD_WIDTH / 2, SLOT_CARD_HEIGHT / 2 - 36, title, {
         fontFamily: DEFAULT_FONT_FAMILY,
         fontSize: slot.isEmpty ? '28px' : '26px',
         color: titleColor,
         align: 'center',
-        wordWrap: { width: width - 48 },
+        wordWrap: { width: SLOT_CARD_WIDTH - 48 },
       })
       .setOrigin(0.5);
-    this.slotUiElements.push(titleText);
 
     const subtitleText = this.add
-      .text(x, y + 6, subtitle, {
+      .text(SLOT_CARD_WIDTH / 2, SLOT_CARD_HEIGHT / 2 + 6, subtitle, {
         fontFamily: DEFAULT_FONT_FAMILY,
         fontSize: '16px',
         color: detailColor,
         align: 'center',
-        wordWrap: { width: width - 48 },
+        wordWrap: { width: SLOT_CARD_WIDTH - 48 },
       })
       .setOrigin(0.5);
-    this.slotUiElements.push(subtitleText);
 
     const footerText = this.add
-      .text(x, y + 74, slot.isEmpty ? 'Click to create' : 'Click to load', {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '15px',
-        color: slot.isEmpty ? '#b7c9ba' : '#dff3de',
-        align: 'center',
-      })
+      .text(
+        SLOT_CARD_WIDTH / 2,
+        SLOT_CARD_HEIGHT / 2 + 74,
+        slot.isEmpty ? 'Click to create' : 'Click to load',
+        {
+          fontFamily: DEFAULT_FONT_FAMILY,
+          fontSize: '15px',
+          color: slot.isEmpty ? '#b7c9ba' : '#dff3de',
+          align: 'center',
+        },
+      )
       .setOrigin(0.5)
       .setAlpha(0.92);
-    this.slotUiElements.push(footerText);
 
     background.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OVER, () => {
       background.setFillStyle(slot.isEmpty ? 0x173027 : 0x24513d, 0.99);
@@ -197,28 +252,44 @@ export class SaveSlotScene extends Phaser.Scene {
     background.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
       void this.handleSlotSelection(slot);
     });
+
+    group.add([background, slotLabelText, titleText, subtitleText, footerText]);
+    return group;
   }
 
   private showFailureState(error: unknown): void {
     this.clearSlotCards();
     const message = error instanceof Error ? error.message : String(error);
     this.setStatus(`Failed to load save slots: ${message}`);
-    this.retryButton = this.add.rectangle(GAME_WIDTH / 2, 478, 280, 64, 0x1d3f31, 0.96);
-    this.retryButton.setStrokeStyle(2, 0xdaf6d3, 0.9);
-    this.retryButton.setInteractive({ useHandCursor: true });
-    this.slotUiElements.push(this.retryButton);
-    const retryText = this.add
-      .text(GAME_WIDTH / 2, 478, 'Retry', {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '26px',
-        color: '#f5fff0',
-        align: 'center',
-      })
-      .setOrigin(0.5);
-    this.slotUiElements.push(retryText);
-    this.retryButton.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
-      this.scene.restart();
+    const root = new LayoutBox(this, 'vbox');
+
+    root.addOverlay(this.createRetryButton(), {
+      x: '50%',
+      y: 478,
+      width: 280,
+      height: 64,
+      anchor: 'center',
     });
+    root.layout(0, 0, GAME_WIDTH, GAME_HEIGHT);
+    this.slotContentContainer = root.container;
+  }
+
+  private createRetryButton(): Phaser.GameObjects.Container {
+    const slot = this.add.container(0, 0);
+    const button = createMenuButton(this, {
+      x: 140,
+      y: 32,
+      width: 280,
+      height: 64,
+      label: 'Retry',
+      enabled: true,
+      onClick: () => {
+        this.scene.restart();
+      },
+    });
+
+    slot.add(button);
+    return slot;
   }
 
   private setStatus(message: string): void {
@@ -226,11 +297,8 @@ export class SaveSlotScene extends Phaser.Scene {
   }
 
   private clearSlotCards(): void {
-    this.slotUiElements.forEach((child) => {
-      child.destroy();
-    });
-    this.slotUiElements = [];
-    this.retryButton = null;
+    this.slotContentContainer?.destroy();
+    this.slotContentContainer = null;
   }
 
   private async handleSlotSelection(slot: SaveSlotSummary): Promise<void> {

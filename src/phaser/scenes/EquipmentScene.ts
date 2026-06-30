@@ -12,6 +12,7 @@ import {
 } from '../../game/save/session';
 import { DEFAULT_FONT_FAMILY } from '../../theme';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
+import { LayoutBox } from '../ui/LayoutBox';
 import { createMenuButton } from '../ui/menu-button';
 import type { EquipmentSceneData, StageSceneData } from './scene-data';
 
@@ -21,6 +22,12 @@ const PANEL_WIDTH = 500;
 const PANEL_HEIGHT = 1320;
 const CARD_ROW_HEIGHT = 124;
 const CARD_ROW_GAP = 18;
+const PANEL_GAP = 56;
+const PANEL_BODY_X = 72;
+const PANEL_BODY_WIDTH = PANEL_WIDTH * 2 + PANEL_GAP;
+const PANEL_INNER_WIDTH = PANEL_WIDTH - 56;
+const PANEL_BUTTON_HEIGHT = 44;
+const HUD_BUTTON_HEIGHT = 64;
 
 type EquipmentUnitEntry = {
   card: RuntimeCardInstance;
@@ -126,123 +133,149 @@ export class EquipmentScene extends Phaser.Scene {
     this.listContainer?.destroy();
     const container = this.add.container(0, 0);
     this.listContainer = container;
+    const bodyLayout = new LayoutBox(this, 'hbox', {
+      gap: PANEL_GAP,
+    });
 
-    this.renderUnitPanel(container);
-    this.renderEquipmentPanel(container);
+    bodyLayout.add(this.createUnitPanel(), {
+      width: PANEL_WIDTH,
+      height: PANEL_HEIGHT,
+    });
+    bodyLayout.add(this.createEquipmentPanel(), {
+      width: PANEL_WIDTH,
+      height: PANEL_HEIGHT,
+    });
+    bodyLayout.layout(PANEL_BODY_X, PANEL_Y, PANEL_BODY_WIDTH, PANEL_HEIGHT);
+    container.add(bodyLayout.container);
   }
 
-  private renderUnitPanel(container: Phaser.GameObjects.Container): void {
+  private createUnitPanel(): Phaser.GameObjects.Container {
     const entries = this.getUnitEntries();
-    this.renderPanelHeader({
-      container,
-      x: 72,
+    const container = this.createPanelShell({
       title: 'Deck UNIT',
       subtitle: `${entries.length} cards`,
     });
 
     if (entries.length === 0) {
-      this.renderEmptyPanelMessage(container, 72, 'No deck UNIT cards.');
-      this.renderPagination({
-        container,
-        x: 72,
-        entries,
-        page: this.targetPage,
-        onPageChange: (page) => {
-          this.targetPage = page;
-          this.renderLists();
-        },
-      });
-      return;
+      container.add(this.createEmptyPanelMessage('No deck UNIT cards.'));
+      container.add(
+        this.createPagination({
+          entries,
+          page: this.targetPage,
+          onPageChange: (page) => {
+            this.targetPage = page;
+            this.renderLists();
+          },
+        }),
+      );
+      return container;
     }
 
     const maxPage = getMaxPage(entries.length);
     const page = Math.min(this.targetPage, maxPage);
     const pageEntries = entries.slice(page * CARD_PAGE_SIZE, (page + 1) * CARD_PAGE_SIZE);
-    pageEntries.forEach((entry, index) => {
-      this.renderUnitRow({
-        container,
-        x: 100,
-        y: PANEL_Y + 104 + index * (CARD_ROW_HEIGHT + CARD_ROW_GAP),
-        entry,
-        selected: entry.card.instance.instanceId === this.selectedTargetCardInstanceId,
-      });
+    const rowLayout = new LayoutBox(this, 'vbox', {
+      gap: CARD_ROW_GAP,
     });
 
-    this.renderPagination({
-      container,
-      x: 72,
-      entries,
-      page,
-      onPageChange: (nextPage) => {
-        this.targetPage = nextPage;
-        this.renderLists();
-      },
+    pageEntries.forEach((entry) => {
+      rowLayout.add(
+        this.createUnitRow({
+          entry,
+          selected: entry.card.instance.instanceId === this.selectedTargetCardInstanceId,
+        }),
+        {
+          width: PANEL_INNER_WIDTH,
+          height: CARD_ROW_HEIGHT,
+        },
+      );
     });
+    rowLayout.layout(28, 104, PANEL_INNER_WIDTH, 1150);
+    container.add(rowLayout.container);
+
+    container.add(
+      this.createPagination({
+        entries,
+        page,
+        onPageChange: (nextPage) => {
+          this.targetPage = nextPage;
+          this.renderLists();
+        },
+      }),
+    );
+    return container;
   }
 
-  private renderEquipmentPanel(container: Phaser.GameObjects.Container): void {
+  private createEquipmentPanel(): Phaser.GameObjects.Container {
     const entries = this.getEquipmentEntries();
     const selectedTarget = this.getSelectedTargetCard();
-    this.renderPanelHeader({
-      container,
-      x: 628,
+    const container = this.createPanelShell({
       title: 'Collection Equipment',
       subtitle: selectedTarget ? formatSelectedSlotSummary(this.getSelectedUnitEntry()) : 'No UNIT',
     });
 
     if (entries.length === 0) {
-      this.renderEmptyPanelMessage(container, 628, 'No collection EQUIPMENT cards.');
-      this.renderPagination({
-        container,
-        x: 628,
-        entries,
-        page: this.equipmentPage,
-        onPageChange: (page) => {
-          this.equipmentPage = page;
-          this.renderLists();
-        },
-      });
-      return;
+      container.add(this.createEmptyPanelMessage('No collection EQUIPMENT cards.'));
+      container.add(
+        this.createPagination({
+          entries,
+          page: this.equipmentPage,
+          onPageChange: (page) => {
+            this.equipmentPage = page;
+            this.renderLists();
+          },
+        }),
+      );
+      return container;
     }
 
     const maxPage = getMaxPage(entries.length);
     const page = Math.min(this.equipmentPage, maxPage);
     const pageEntries = entries.slice(page * CARD_PAGE_SIZE, (page + 1) * CARD_PAGE_SIZE);
-    pageEntries.forEach((entry, index) => {
-      this.renderEquipmentRow({
-        container,
-        x: 656,
-        y: PANEL_Y + 104 + index * (CARD_ROW_HEIGHT + CARD_ROW_GAP),
-        entry,
-      });
+    const rowLayout = new LayoutBox(this, 'vbox', {
+      gap: CARD_ROW_GAP,
     });
 
-    this.renderPagination({
-      container,
-      x: 628,
-      entries,
-      page,
-      onPageChange: (nextPage) => {
-        this.equipmentPage = nextPage;
-        this.renderLists();
-      },
+    pageEntries.forEach((entry) => {
+      rowLayout.add(
+        this.createEquipmentRow({
+          entry,
+        }),
+        {
+          width: PANEL_INNER_WIDTH,
+          height: CARD_ROW_HEIGHT,
+        },
+      );
     });
+    rowLayout.layout(28, 104, PANEL_INNER_WIDTH, 1150);
+    container.add(rowLayout.container);
+
+    container.add(
+      this.createPagination({
+        entries,
+        page,
+        onPageChange: (nextPage) => {
+          this.equipmentPage = nextPage;
+          this.renderLists();
+        },
+      }),
+    );
+    return container;
   }
 
-  private renderPanelHeader(config: {
-    container: Phaser.GameObjects.Container;
-    x: number;
+  private createPanelShell(config: {
     title: string;
     subtitle: string;
-  }): void {
-    const panel = this.add.rectangle(config.x, PANEL_Y, PANEL_WIDTH, PANEL_HEIGHT, 0x10261f, 0.94);
+  }): Phaser.GameObjects.Container {
+    const container = this.add.container(0, 0);
+    const panel = this.add.rectangle(0, 0, PANEL_WIDTH, PANEL_HEIGHT, 0x10261f, 0.94);
     panel.setOrigin(0, 0);
     panel.setStrokeStyle(2, 0xbfeec5, 0.64);
-    config.container.add(panel);
+    container.add(panel);
 
-    config.container.add(
+    container.add(
       this.add
-        .text(config.x + 28, PANEL_Y + 38, config.title, {
+        .text(28, 38, config.title, {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSize: '30px',
           fontStyle: '700',
@@ -251,9 +284,9 @@ export class EquipmentScene extends Phaser.Scene {
         })
         .setOrigin(0, 0.5),
     );
-    config.container.add(
+    container.add(
       this.add
-        .text(config.x + PANEL_WIDTH - 28, PANEL_Y + 38, config.subtitle, {
+        .text(PANEL_WIDTH - 28, 38, config.subtitle, {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSize: '18px',
           color: '#a8d2af',
@@ -261,16 +294,20 @@ export class EquipmentScene extends Phaser.Scene {
         })
         .setOrigin(1, 0.5),
     );
+    return container;
   }
 
-  private renderEmptyPanelMessage(
-    container: Phaser.GameObjects.Container,
-    x: number,
-    message: string,
-  ): void {
-    container.add(
+  private createEmptyPanelMessage(message: string): Phaser.GameObjects.Container {
+    const container = this.add.container(0, 0);
+    const layout = new LayoutBox(this, 'vbox', {
+      align: 'center',
+      justify: 'center',
+    });
+
+    const messageContainer = this.add.container(0, 0);
+    messageContainer.add(
       this.add
-        .text(x + PANEL_WIDTH / 2, PANEL_Y + 570, message, {
+        .text(PANEL_INNER_WIDTH / 2, 100, message, {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSize: '24px',
           color: '#b8c9c0',
@@ -279,28 +316,33 @@ export class EquipmentScene extends Phaser.Scene {
         })
         .setOrigin(0.5),
     );
+    layout.add(messageContainer, {
+      width: PANEL_INNER_WIDTH,
+      height: 200,
+    });
+    layout.layout(28, 470, PANEL_INNER_WIDTH, 200);
+    container.add(layout.container);
+    return container;
   }
 
-  private renderUnitRow(config: {
-    container: Phaser.GameObjects.Container;
-    x: number;
-    y: number;
+  private createUnitRow(config: {
     entry: EquipmentUnitEntry;
     selected: boolean;
-  }): void {
+  }): Phaser.GameObjects.Container {
+    const container = this.add.container(0, 0);
     const card = config.entry.card;
     const fillColor = config.selected ? 0x31543d : 0x17352d;
     const strokeColor = config.selected ? 0xffe4a8 : 0x78a98d;
     const background = this.add
-      .rectangle(config.x, config.y, PANEL_WIDTH - 56, CARD_ROW_HEIGHT, fillColor, 0.92)
+      .rectangle(0, 0, PANEL_INNER_WIDTH, CARD_ROW_HEIGHT, fillColor, 0.92)
       .setOrigin(0, 0);
     background.setStrokeStyle(config.selected ? 3 : 1, strokeColor, config.selected ? 0.95 : 0.5);
     background.setInteractive({ useHandCursor: true });
-    config.container.add(background);
+    container.add(background);
 
-    config.container.add(
+    container.add(
       this.add
-        .text(config.x + 18, config.y + 24, `${config.entry.index + 1}. ${card.instance.name}`, {
+        .text(18, 24, `${config.entry.index + 1}. ${card.instance.name}`, {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSize: '22px',
           color: '#f5fff0',
@@ -309,9 +351,9 @@ export class EquipmentScene extends Phaser.Scene {
         })
         .setOrigin(0, 0.5),
     );
-    config.container.add(
+    container.add(
       this.add
-        .text(config.x + 18, config.y + 64, formatUnitStats(config.entry), {
+        .text(18, 64, formatUnitStats(config.entry), {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSize: '17px',
           color: '#d7ead4',
@@ -320,9 +362,9 @@ export class EquipmentScene extends Phaser.Scene {
         })
         .setOrigin(0, 0.5),
     );
-    config.container.add(
+    container.add(
       this.add
-        .text(config.x + 18, config.y + 94, formatEquippedNames(config.entry), {
+        .text(18, 94, formatEquippedNames(config.entry), {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSize: '14px',
           color: '#92aa9e',
@@ -344,14 +386,11 @@ export class EquipmentScene extends Phaser.Scene {
       this.renderLists();
       this.renderHud();
     });
+    return container;
   }
 
-  private renderEquipmentRow(config: {
-    container: Phaser.GameObjects.Container;
-    x: number;
-    y: number;
-    entry: EquipmentListEntry;
-  }): void {
+  private createEquipmentRow(config: { entry: EquipmentListEntry }): Phaser.GameObjects.Container {
+    const container = this.add.container(0, 0);
     const card = config.entry.card;
     const fillColor = config.entry.equippedToSelected ? 0x31543d : 0x17352d;
     const strokeColor = config.entry.equippedToSelected
@@ -360,15 +399,15 @@ export class EquipmentScene extends Phaser.Scene {
         ? 0xa8a05f
         : 0x78a98d;
     const background = this.add
-      .rectangle(config.x, config.y, PANEL_WIDTH - 56, CARD_ROW_HEIGHT, fillColor, 0.92)
+      .rectangle(0, 0, PANEL_INNER_WIDTH, CARD_ROW_HEIGHT, fillColor, 0.92)
       .setOrigin(0, 0);
     background.setStrokeStyle(config.entry.equippedToSelected ? 3 : 1, strokeColor, 0.75);
     background.setInteractive({ useHandCursor: true });
-    config.container.add(background);
+    container.add(background);
 
-    config.container.add(
+    container.add(
       this.add
-        .text(config.x + 18, config.y + 24, `${config.entry.index + 1}. ${card.instance.name}`, {
+        .text(18, 24, `${config.entry.index + 1}. ${card.instance.name}`, {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSize: '22px',
           color: '#f5fff0',
@@ -377,9 +416,9 @@ export class EquipmentScene extends Phaser.Scene {
         })
         .setOrigin(0, 0.5),
     );
-    config.container.add(
+    container.add(
       this.add
-        .text(config.x + 18, config.y + 64, formatEquipmentStats(card), {
+        .text(18, 64, formatEquipmentStats(card), {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSize: '17px',
           color: '#d7ead4',
@@ -388,9 +427,9 @@ export class EquipmentScene extends Phaser.Scene {
         })
         .setOrigin(0, 0.5),
     );
-    config.container.add(
+    container.add(
       this.add
-        .text(config.x + 18, config.y + 94, formatEquipmentAssignment(config.entry), {
+        .text(18, 94, formatEquipmentAssignment(config.entry), {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSize: '14px',
           color: config.entry.equippedToSelected ? '#fff3c2' : '#92aa9e',
@@ -409,33 +448,54 @@ export class EquipmentScene extends Phaser.Scene {
     background.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
       this.handleToggleEquipment(card.instance.instanceId);
     });
+    return container;
   }
 
-  private renderPagination(config: {
-    container: Phaser.GameObjects.Container;
-    x: number;
+  private createPagination(config: {
     entries: unknown[];
     page: number;
     onPageChange: (page: number) => void;
-  }): void {
+  }): Phaser.GameObjects.Container {
+    const container = this.add.container(0, 0);
     const maxPage = getMaxPage(config.entries.length);
     const page = Math.min(config.page, maxPage);
-    const y = PANEL_Y + PANEL_HEIGHT - 58;
-    this.createPanelButton({
-      container: config.container,
-      x: config.x + 84,
-      y,
-      width: 112,
-      height: 44,
-      label: 'Prev',
-      enabled: page > 0,
-      onClick: () => {
-        config.onPageChange(page - 1);
-      },
+    const layout = new LayoutBox(this, 'hbox', {
+      align: 'center',
+      justify: 'space-between',
     });
-    config.container.add(
+
+    layout.add(
+      this.createPanelButton('Prev', page > 0, () => {
+        config.onPageChange(page - 1);
+      }),
+      {
+        width: 112,
+        height: PANEL_BUTTON_HEIGHT,
+      },
+    );
+    layout.add(this.createPageIndicator(`${page + 1} / ${maxPage + 1}`), {
+      width: 120,
+      height: PANEL_BUTTON_HEIGHT,
+    });
+    layout.add(
+      this.createPanelButton('Next', page < maxPage, () => {
+        config.onPageChange(page + 1);
+      }),
+      {
+        width: 112,
+        height: PANEL_BUTTON_HEIGHT,
+      },
+    );
+    layout.layout(28, PANEL_HEIGHT - 80, PANEL_INNER_WIDTH, PANEL_BUTTON_HEIGHT);
+    container.add(layout.container);
+    return container;
+  }
+
+  private createPageIndicator(label: string): Phaser.GameObjects.Container {
+    const container = this.add.container(0, 0);
+    container.add(
       this.add
-        .text(config.x + PANEL_WIDTH / 2, y, `${page + 1} / ${maxPage + 1}`, {
+        .text(60, PANEL_BUTTON_HEIGHT / 2, label, {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSize: '19px',
           color: '#d7ead4',
@@ -443,100 +503,122 @@ export class EquipmentScene extends Phaser.Scene {
         })
         .setOrigin(0.5),
     );
-    this.createPanelButton({
-      container: config.container,
-      x: config.x + PANEL_WIDTH - 84,
-      y,
-      width: 112,
-      height: 44,
-      label: 'Next',
-      enabled: page < maxPage,
-      onClick: () => {
-        config.onPageChange(page + 1);
-      },
-    });
+    return container;
   }
 
-  private createPanelButton(config: {
-    container: Phaser.GameObjects.Container;
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    label: string;
-    enabled: boolean;
-    onClick: () => void;
-  }): void {
+  private createPanelButton(
+    label: string,
+    enabled: boolean,
+    onClick: () => void,
+  ): Phaser.GameObjects.Container {
+    const container = this.add.container(0, 0);
     const background = this.add.rectangle(
-      config.x,
-      config.y,
-      config.width,
-      config.height,
-      config.enabled ? 0x1d3f31 : 0x12211c,
-      config.enabled ? 0.96 : 0.72,
+      56,
+      PANEL_BUTTON_HEIGHT / 2,
+      112,
+      PANEL_BUTTON_HEIGHT,
+      enabled ? 0x1d3f31 : 0x12211c,
+      enabled ? 0.96 : 0.72,
     );
-    background.setStrokeStyle(2, config.enabled ? 0xdaf6d3 : 0x51605a, config.enabled ? 0.9 : 0.5);
-    config.container.add(background);
-    config.container.add(
+    background.setStrokeStyle(2, enabled ? 0xdaf6d3 : 0x51605a, enabled ? 0.9 : 0.5);
+    container.add(background);
+    container.add(
       this.add
-        .text(config.x, config.y, config.label, {
+        .text(56, PANEL_BUTTON_HEIGHT / 2, label, {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSize: '18px',
-          color: config.enabled ? '#f5fff0' : '#7e8b84',
+          color: enabled ? '#f5fff0' : '#7e8b84',
           align: 'center',
         })
         .setOrigin(0.5),
     );
 
-    if (!config.enabled) {
-      return;
+    if (enabled) {
+      background.setInteractive({ useHandCursor: true });
+      background.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, onClick);
     }
 
-    background.setInteractive({ useHandCursor: true });
-    background.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, config.onClick);
+    return container;
   }
 
   private renderHud(): void {
     this.hudContainer?.destroy();
-    const container = this.add.container(0, 0);
-    this.hudContainer = container;
+    const layout = new LayoutBox(this, 'hbox', {
+      gap: 81,
+      align: 'center',
+    });
 
-    createMenuButton(this, {
-      x: 164,
-      y: 1760,
-      width: 190,
-      height: 64,
-      label: 'Back',
-      enabled: !this.isSaving,
-      parent: container,
-      onClick: () => {
+    layout.add(
+      this.createHudButton('Back', 190, !this.isSaving, () => {
         this.scene.start('StageScene', { session: this.savedSession } satisfies StageSceneData);
+      }),
+      {
+        width: 190,
+        height: HUD_BUTTON_HEIGHT,
       },
-    });
-    createMenuButton(this, {
-      x: 430,
-      y: 1760,
-      width: 180,
-      height: 64,
-      label: 'Save',
-      enabled: this.isDirty && !this.isSaving,
-      parent: container,
-      onClick: () => {
+    );
+    layout.add(
+      this.createHudButton('Save', 180, this.isDirty && !this.isSaving, () => {
         void this.handleSave();
+      }),
+      {
+        width: 180,
+        height: HUD_BUTTON_HEIGHT,
       },
-    });
+    );
 
     const summaryText = this.isDirty ? 'Unsaved equipment' : 'Saved equipment';
-    container.add(
+    layout.add(this.createHudSummary(summaryText, this.isDirty), {
+      width: 360,
+      height: HUD_BUTTON_HEIGHT,
+    });
+    layout.layout(69, 1728, 892, HUD_BUTTON_HEIGHT);
+    this.hudContainer = layout.container;
+  }
+
+  private createHudButton(
+    label: string,
+    width: number,
+    enabled: boolean,
+    onClick: () => void,
+  ): Phaser.GameObjects.Container {
+    const slot = this.add.container(0, 0);
+    const button = enabled
+      ? createMenuButton(this, {
+          x: width / 2,
+          y: HUD_BUTTON_HEIGHT / 2,
+          width,
+          height: HUD_BUTTON_HEIGHT,
+          label,
+          enabled,
+          onClick,
+        })
+      : createMenuButton(this, {
+          x: width / 2,
+          y: HUD_BUTTON_HEIGHT / 2,
+          width,
+          height: HUD_BUTTON_HEIGHT,
+          label,
+          enabled,
+        });
+
+    slot.add(button);
+    return slot;
+  }
+
+  private createHudSummary(text: string, isDirty: boolean): Phaser.GameObjects.Container {
+    const slot = this.add.container(0, 0);
+    slot.add(
       this.add
-        .text(790, 1760, summaryText, {
+        .text(180, HUD_BUTTON_HEIGHT / 2, text, {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSize: '22px',
-          color: this.isDirty ? '#fff3c2' : '#bfeec5',
+          color: isDirty ? '#fff3c2' : '#bfeec5',
           align: 'center',
         })
         .setOrigin(0.5),
     );
+    return slot;
   }
 
   private handleToggleEquipment(equipmentCardInstanceId: string): void {
