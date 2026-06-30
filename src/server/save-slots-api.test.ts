@@ -4,8 +4,7 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { describe, expect, it } from 'vitest';
-import { requireCardDefinition } from '../game/save/card-catalog';
-import { createCardInstanceFromDefinition } from '../game/save/deck-instancing';
+import { CARD_DEFINITIONS } from '../game/save/card-catalog';
 import type { SaveSlotState } from '../game/save/types';
 import { createSaveSlotsApiHandler, listSaveSlotSummaries } from './save-slots-api';
 
@@ -93,7 +92,13 @@ describe('save slots api', () => {
     expect(initBody.state.deck.leader.name).toBe('미네르바');
     expect(initBody.state.deck.leader.description).toBeTypeOf('string');
     expect(initBody.state.deck.leader.abilities).toEqual([]);
-    expect(initBody.state.collection.cards).toEqual([]);
+    expect(initBody.state.collection.cards.map((card) => card.id)).toEqual(
+      CARD_DEFINITIONS.filter((definition) => definition.type === 'EQUIPMENT').map(
+        (definition) => definition.id,
+      ),
+    );
+    expect(initBody.state.collection.cards.every((card) => card.type === 'EQUIPMENT')).toBe(true);
+    expect(initBody.state.collection.cards.every((card) => card.zone === 'COLLECTION')).toBe(true);
     expect(initBody.state.equipment).toEqual({ equipped: [] });
     expect(initBody.state.stageProgress).toEqual({
       clearedStageIds: [],
@@ -245,17 +250,11 @@ describe('save slots api', () => {
     await handler(initReq, initRes.response, () => undefined);
     const initBody = initRes.json() as { state: SaveSlotState };
     const target = initBody.state.deck.cards.find((card) => card.id === 'unit_elf_guardian_001')!;
-    const equipment = createCardInstanceFromDefinition({
-      definition: requireCardDefinition('equipment_rapier_001'),
-      owner: 'PLAYER',
-      zone: 'COLLECTION',
-      createId: () => 'equipment-rapier-reward-1',
-    });
+    const equipment = initBody.state.collection.cards.find(
+      (card) => card.id === 'equipment_rapier_001',
+    )!;
     const validState: SaveSlotState = {
       ...initBody.state,
-      collection: {
-        cards: [equipment],
-      },
       equipment: {
         equipped: [
           {
