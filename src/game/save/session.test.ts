@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { CARD_DEFINITIONS } from './card-catalog';
 import { createInitialSaveState } from './create-initial-save';
 import { createGameSession, createSaveSlotStateFromGameSession } from './session';
 
@@ -7,16 +6,13 @@ describe('createGameSession', () => {
   it('attaches card definitions to save instances', async () => {
     const state = await createInitialSaveState({ slotId: 1 });
     const session = createGameSession(state);
-    const starterEquipmentIds = CARD_DEFINITIONS.filter(
-      (definition) => definition.type === 'EQUIPMENT',
-    ).map((definition) => definition.id);
 
     expect(session.slotId).toBe(1);
     expect(session.deck.leader.instance.id).toBe('leader_minerva');
     expect(session.deck.leader.definition.name).toBe('미네르바');
     expect(session.deck.cards).toHaveLength(29);
     expect(session.deck.cards.every((card) => card.definition.id.startsWith('unit_'))).toBe(true);
-    expect(session.collection.cards.map((card) => card.definition.id)).toEqual(starterEquipmentIds);
+    expect(session.collection.cards).toEqual([]);
     expect(session.equipment).toEqual({ equipped: [] });
     expect(session.stageProgress).toEqual({
       clearedStageIds: [],
@@ -67,9 +63,6 @@ describe('createGameSession', () => {
     const createdAt = new Date('2024-01-01T00:00:00.000Z');
     const updatedAt = new Date('2024-01-02T00:00:00.000Z');
     const state = await createInitialSaveState({ slotId: 1, now: createdAt });
-    const starterEquipmentIds = CARD_DEFINITIONS.filter(
-      (definition) => definition.type === 'EQUIPMENT',
-    ).map((definition) => definition.id);
     state.stageProgress = {
       clearedStageIds: ['test-stage-dark'],
       lastSelectedStageId: 'test-stage-dark',
@@ -95,7 +88,7 @@ describe('createGameSession', () => {
         id: state.deck.id,
       },
       collection: {
-        cards: starterEquipmentIds.map((id) => expect.objectContaining({ id })),
+        cards: [],
       },
       equipment: {
         equipped: [],

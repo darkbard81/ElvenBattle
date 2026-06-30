@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { CardDefinition } from './card-catalog';
+import { requireCardDefinition, type CardDefinition } from './card-catalog';
 import { createInitialSaveState } from './create-initial-save';
 import { createCardInstanceFromDefinition } from './deck-instancing';
 import {
@@ -128,6 +128,15 @@ describe('equipment state', () => {
 
 async function createEquipmentSession(options: { extraEquipment?: CardDefinition } = {}) {
   const state = await createInitialSaveState({ slotId: 1 });
+  state.collection.cards.push(
+    createCardInstanceFromDefinition({
+      definition: requireCardDefinition('equipment_rapier_001'),
+      owner: 'PLAYER',
+      zone: 'COLLECTION',
+      createId: () => 'equipment-rapier-reward-1',
+    }),
+  );
+
   if (options.extraEquipment) {
     state.collection.cards.push(
       createCardInstanceFromDefinition({

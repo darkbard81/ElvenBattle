@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { requireCardDefinition } from '../save/card-catalog';
 import { createInitialSaveState } from '../save/create-initial-save';
+import { createCardInstanceFromDefinition } from '../save/deck-instancing';
 import { equipCollectionEquipmentToDeckUnit } from '../save/equipment';
 import { createGameSession } from '../save/session';
 import { requireStageDefinition } from '../stage/stage-definitions';
@@ -354,6 +356,14 @@ describe('battle engine', () => {
 
   it('uses equipped ATTACK abilities when resolving attack damage', async () => {
     const state = await createInitialSaveState({ slotId: 1 });
+    state.collection.cards.push(
+      createCardInstanceFromDefinition({
+        definition: requireCardDefinition('equipment_rapier_001'),
+        owner: 'PLAYER',
+        zone: 'COLLECTION',
+        createId: () => 'equipment-rapier-reward-1',
+      }),
+    );
     const session = createGameSession(state);
     const target = session.deck.cards.find(
       (card) => card.definition.id === 'unit_elf_guardian_001',
