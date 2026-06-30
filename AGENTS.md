@@ -65,6 +65,8 @@
 
 - HUD, 명령 메뉴, 설정, 서사 패널처럼 텍스트 밀도가 높은 UI는 DOM overlay를 우선한다.
 - Phaser 내부 UI는 월드 표현, 카드 배치, 전투 피드백처럼 canvas가 더 적합한 경우에 사용한다.
+- Phaser Scene 내부 레이아웃 구성은 `src/phaser/ui/LayoutBox.ts` Helper를 우선 사용한다.
+- `LayoutBox`는 rexUI plugin의 Sizer/GridSizer/OverlapSizer를 감싼 Helper이므로, Scene 호출부는 Helper의 public API를 기준으로 구현한다.
 - 카드 텍스트 도구는 `tools/card-text/index.html`과 `src/tools/card-text` 흐름을 유지한다.
 - Vite build input은 `index.html`과 `tools/card-text/index.html` 두 진입점을 고려한다.
 - 버튼, 저장 슬롯, 메뉴 등 사용자 입력 흐름은 실패 상태와 재시도 상태를 포함한다.
