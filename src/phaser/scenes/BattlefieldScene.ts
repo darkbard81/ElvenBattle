@@ -159,8 +159,9 @@ const HUD_WIDTH = 380;
 const HUD_HEIGHT = 104;
 const HUD_GAP = 14;
 const STATUS_PANEL_HEIGHT = 154;
-const BOTTOM_BUTTON_CENTER_Y = GAME_HEIGHT - 44;
-const BOTTOM_BUTTON_GAP = 18;
+const SIDE_BUTTON_MARGIN_X = HUD_X;
+const SIDE_BUTTON_BOTTOM_MARGIN = 18;
+const BUTTON_STACK_GAP = 18;
 const POPUP_STYLE = {
   PLACE: {
     fill: 0x173a24,
@@ -244,9 +245,9 @@ const BOARD_RECT = {
 const HAND_EXPANDED_Y = GAME_HEIGHT - 240;
 const HAND_HIDDEN_Y = GAME_HEIGHT - 88;
 const HAND_RECT = {
-  x: 260,
+  x: BOARD_RECT.x,
   y: HAND_EXPANDED_Y,
-  width: GAME_WIDTH - 520,
+  width: BOARD_RECT.width,
   height: 240,
 } as const satisfies Rect;
 const FIELD_SLOT_GRID_CELLS: Record<BattleSlotId, BattleGridCell> = {
@@ -1136,7 +1137,7 @@ export class BattlefieldScene extends Phaser.Scene {
   }
 
   private addUtilityButtons(): void {
-    const buttons: BottomButtonDefinition[] = [
+    const leftButtons: BottomButtonDefinition[] = [
       {
         label: 'Back',
         width: 132,
@@ -1164,6 +1165,8 @@ export class BattlefieldScene extends Phaser.Scene {
           void this.saveCurrentSession();
         },
       },
+    ];
+    const rightButtons: BottomButtonDefinition[] = [
       {
         label: 'Auto',
         width: 132,
@@ -1173,7 +1176,7 @@ export class BattlefieldScene extends Phaser.Scene {
     ];
 
     if (this.selection?.kind === 'BLOCK_DECISION') {
-      buttons.push(
+      rightButtons.push(
         {
           label: 'Block',
           width: 150,
@@ -1194,7 +1197,7 @@ export class BattlefieldScene extends Phaser.Scene {
         },
       );
     } else {
-      buttons.push(
+      rightButtons.push(
         {
           label: 'Turn End',
           width: 152,
@@ -1216,34 +1219,65 @@ export class BattlefieldScene extends Phaser.Scene {
       );
     }
 
-    this.addBottomButtonRow(buttons);
+    this.addSideButtonColumns(leftButtons, rightButtons);
   }
 
-  private addBottomButtonRow(buttons: readonly BottomButtonDefinition[]): void {
-    const totalWidth = buttons.reduce(
-      (total, button, index) => total + button.width + (index === 0 ? 0 : BOTTOM_BUTTON_GAP),
+  private addSideButtonColumns(
+    leftButtons: readonly BottomButtonDefinition[],
+    rightButtons: readonly BottomButtonDefinition[],
+  ): void {
+    this.addSideButtonColumn(leftButtons, 'left');
+    this.addSideButtonColumn(rightButtons, 'right');
+  }
+
+  private addSideButtonColumn(
+    buttons: readonly BottomButtonDefinition[],
+    side: 'left' | 'right',
+  ): void {
+    if (buttons.length === 0) {
+      return;
+    }
+
+    const width = Math.max(...buttons.map((button) => button.width));
+    const height = buttons.reduce(
+      (total, button, index) => total + button.height + (index === 0 ? 0 : BUTTON_STACK_GAP),
       0,
     );
-    let left = GAME_WIDTH / 2 - totalWidth / 2;
+    const x = side === 'left' ? SIDE_BUTTON_MARGIN_X : GAME_WIDTH - SIDE_BUTTON_MARGIN_X - width;
+    const y = GAME_HEIGHT - SIDE_BUTTON_BOTTOM_MARGIN - height;
+    const align = side === 'left' ? 'left' : 'right';
+    const layout = this.rexUI.add.sizer(x, y, width, height, 'y', {
+      origin: 0,
+      space: { item: BUTTON_STACK_GAP },
+    });
+    this.layers.buttonLayer.add(layout);
 
     for (const button of buttons) {
-      const baseConfig = {
-        x: left + button.width / 2,
-        y: BOTTOM_BUTTON_CENTER_Y,
-        width: button.width,
-        height: button.height,
-        label: button.label,
-        enabled: button.enabled,
-        parent: this.layers.buttonLayer,
-      };
-      if (button.onClick) {
-        createMenuButton(this, { ...baseConfig, onClick: button.onClick });
-      } else {
-        createMenuButton(this, baseConfig);
-      }
-
-      left += button.width + BOTTOM_BUTTON_GAP;
+      layout.add(this.createSideButton(button), {
+        align,
+        minWidth: button.width,
+        minHeight: button.height,
+        expand: false,
+      });
     }
+
+    layout.layout();
+  }
+
+  private createSideButton(button: BottomButtonDefinition): Phaser.GameObjects.Container {
+    const baseConfig = {
+      x: 0,
+      y: 0,
+      width: button.width,
+      height: button.height,
+      label: button.label,
+      enabled: button.enabled,
+    };
+    if (button.onClick) {
+      return createMenuButton(this, { ...baseConfig, onClick: button.onClick });
+    }
+
+    return createMenuButton(this, baseConfig);
   }
 
   private refreshUtilityButtons(): void {
