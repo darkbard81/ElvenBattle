@@ -127,9 +127,17 @@ type BattlePopupEvent = {
   text: string;
 };
 
-const FIELD_SLOT_WIDTH = 160;
-const FIELD_SLOT_HEIGHT = 240;
-const HAND_CARD_WIDTH = 144;
+type BottomButtonDefinition = {
+  label: string;
+  width: number;
+  height: number;
+  enabled: boolean;
+  onClick?: () => void;
+};
+
+const FIELD_SLOT_WIDTH = 174;
+const FIELD_SLOT_HEIGHT = 261;
+const HAND_CARD_WIDTH = 128;
 const BATTLE_POPUP_DURATION_MS = 500;
 const PLACE_HIGHLIGHT_COLOR = 0x71d879;
 const MOVE_HIGHLIGHT_COLOR = 0x79b8ff;
@@ -138,18 +146,21 @@ const SKILL_HIGHLIGHT_COLOR = 0xf4c95d;
 const BLOCK_HIGHLIGHT_COLOR = 0xc8f47a;
 const SELECTED_HIGHLIGHT_COLOR = 0xfff1a3;
 const CARD_BACK_TEXTURE_KEY = 'cards.webp.card_back';
-const CARD_INFO_PANEL_WIDTH = 576;
-const CARD_INFO_PANEL_HEIGHT = 1328;
-const CARD_INFO_PANEL_MARGIN_X = 24;
-const CARD_INFO_PANEL_Y = 196;
-const CARD_INFO_PANEL_PADDING = 24;
-const CARD_INFO_PREVIEW_WIDTH = 512;
-const CARD_INFO_PREVIEW_HEIGHT = 768;
-const HUD_X = 44;
-const HUD_Y = 52;
-const HUD_WIDTH = 240;
-const HUD_HEIGHT = 96;
-const HUD_GAP = 16;
+const CARD_INFO_PANEL_WIDTH = 420;
+const CARD_INFO_PANEL_HEIGHT = 980;
+const CARD_INFO_PANEL_MARGIN_X = 28;
+const CARD_INFO_PANEL_Y = 40;
+const CARD_INFO_PANEL_PADDING = 18;
+const CARD_INFO_PREVIEW_WIDTH = 300;
+const CARD_INFO_PREVIEW_HEIGHT = 450;
+const HUD_X = 36;
+const HUD_Y = 36;
+const HUD_WIDTH = 380;
+const HUD_HEIGHT = 104;
+const HUD_GAP = 14;
+const STATUS_PANEL_HEIGHT = 154;
+const BOTTOM_BUTTON_CENTER_Y = GAME_HEIGHT - 44;
+const BOTTOM_BUTTON_GAP = 18;
 const POPUP_STYLE = {
   PLACE: {
     fill: 0x173a24,
@@ -185,12 +196,11 @@ type BattleGridCell = {
   column: BattleGridColumn;
   row: BattleGridRow;
 };
-const BATTLE_GRID_X = 316;
-const BATTLE_GRID_Y = 326;
-const BATTLE_GRID_COLUMN_GAP = 16;
-const BATTLE_GRID_ROW_GAP_TOP = 16;
-const BATTLE_GRID_ROW_GAP_CENTER = 56;
-const BATTLE_GRID_ROW_GAP_BOTTOM = 16;
+const BATTLE_GRID_Y = 28;
+const BATTLE_GRID_COLUMN_GAP = 18;
+const BATTLE_GRID_ROW_GAP_TOP = 8;
+const BATTLE_GRID_ROW_GAP_CENTER = 20;
+const BATTLE_GRID_ROW_GAP_BOTTOM = 8;
 const BATTLE_GRID_ROW_GAPS = [
   BATTLE_GRID_ROW_GAP_TOP,
   BATTLE_GRID_ROW_GAP_CENTER,
@@ -202,6 +212,7 @@ const BATTLE_GRID_WIDTH =
 const BATTLE_GRID_HEIGHT =
   FIELD_SLOT_HEIGHT * BATTLE_GRID_ROWS.length +
   BATTLE_GRID_ROW_GAPS.reduce((total, gap) => total + gap, 0);
+const BATTLE_GRID_X = Math.round((GAME_WIDTH - BATTLE_GRID_WIDTH) / 2);
 const BATTLE_GRID_COLUMN_X: Record<BattleGridColumn, number> = {
   leftPile: BATTLE_GRID_X,
   FR: BATTLE_GRID_X + FIELD_SLOT_WIDTH + BATTLE_GRID_COLUMN_GAP,
@@ -225,16 +236,18 @@ const BATTLE_GRID_CENTER_X = BATTLE_GRID_X + BATTLE_GRID_WIDTH / 2;
 const BATTLE_GRID_SIDE_DIVIDER_Y =
   BATTLE_GRID_ROW_Y.enemyFront + FIELD_SLOT_HEIGHT + BATTLE_GRID_ROW_GAP_CENTER / 2;
 const BOARD_RECT = {
-  x: BATTLE_GRID_X - 16,
-  y: 244,
-  width: BATTLE_GRID_WIDTH + 32,
-  height: BATTLE_GRID_Y - 244 + BATTLE_GRID_HEIGHT + 24,
+  x: BATTLE_GRID_X - 30,
+  y: 14,
+  width: BATTLE_GRID_WIDTH + 60,
+  height: BATTLE_GRID_Y - 14 + BATTLE_GRID_HEIGHT + 16,
 } as const satisfies Rect;
+const HAND_EXPANDED_Y = GAME_HEIGHT - 240;
+const HAND_HIDDEN_Y = GAME_HEIGHT - 88;
 const HAND_RECT = {
-  x: 190,
-  y: 1526,
-  width: GAME_WIDTH - 380,
-  height: 288,
+  x: 260,
+  y: HAND_EXPANDED_Y,
+  width: GAME_WIDTH - 520,
+  height: 240,
 } as const satisfies Rect;
 const FIELD_SLOT_GRID_CELLS: Record<BattleSlotId, BattleGridCell> = {
   'enemy:BR': { column: 'FR', row: 'enemyBack' },
@@ -305,7 +318,7 @@ const PILE_RECTS: Record<BattlePileKey, Rect> = {
 };
 
 /**
- * 저장 슬롯의 전투 런타임을 1200x1920 단순 전장 레이아웃으로 표시하는 씬이다.
+ * 저장 슬롯의 전투 런타임을 1920x1280 임시 전장 레이아웃으로 표시하는 씬이다.
  * 전투 규칙은 도메인 런타임에 두고, 이 씬은 카드 슬롯, 손패, HUD와 저장 입력만 담당한다.
  */
 export class BattlefieldScene extends Phaser.Scene {
@@ -334,7 +347,7 @@ export class BattlefieldScene extends Phaser.Scene {
   }
 
   /**
-   * 초기 전투 런타임을 만들고 1200x1920 기준의 단순 슬롯 전장을 구성한다.
+   * 초기 전투 런타임을 만들고 1920x1280 기준의 단순 슬롯 전장을 구성한다.
    */
   create(data: BattlefieldSceneData): void {
     this.session = data.session;
@@ -523,18 +536,6 @@ export class BattlefieldScene extends Phaser.Scene {
       0.35,
     );
     this.layers.boardLayer.add(divider);
-
-    this.layers.boardLayer.add(
-      this.add
-        .text(BATTLE_GRID_CENTER_X, BOARD_RECT.y + 34, 'BATTLEFIELD', {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '24px',
-          color: '#9fd2ba',
-          align: 'center',
-        })
-        .setOrigin(0.5)
-        .setAlpha(0.78),
-    );
   }
 
   private addBattleGridSlots(): void {
@@ -935,10 +936,10 @@ export class BattlefieldScene extends Phaser.Scene {
         this.add
           .text(previewX, previewY, card.card.instance.name, {
             fontFamily: DEFAULT_FONT_FAMILY,
-            fontSize: '34px',
+            fontSize: '26px',
             color: '#ffffff',
             stroke: '#000000',
-            strokeThickness: 6,
+            strokeThickness: 5,
             align: 'center',
             wordWrap: { width: CARD_INFO_PREVIEW_WIDTH - 36 },
           })
@@ -950,12 +951,12 @@ export class BattlefieldScene extends Phaser.Scene {
     const infoText = this.add
       .text(CARD_INFO_PANEL_PADDING, textY, this.formatCardInfoLines(card).join('\n'), {
         fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '19px',
+        fontSize: '16px',
         color: '#edf7e8',
         stroke: '#07100d',
         strokeThickness: 2,
         align: 'left',
-        lineSpacing: 5,
+        lineSpacing: 4,
         wordWrap: {
           width: CARD_INFO_PANEL_WIDTH - CARD_INFO_PANEL_PADDING * 2,
           useAdvancedWrap: true,
@@ -965,7 +966,7 @@ export class BattlefieldScene extends Phaser.Scene {
 
     const maxTextHeight = CARD_INFO_PANEL_HEIGHT - textY - CARD_INFO_PANEL_PADDING;
     if (infoText.height > maxTextHeight) {
-      infoText.setFontSize('17px');
+      infoText.setFontSize('14px');
       infoText.setLineSpacing(2);
     }
     container.add(infoText);
@@ -1028,8 +1029,7 @@ export class BattlefieldScene extends Phaser.Scene {
   }
 
   private addHandDeckContainer(): void {
-    const hiddenY = HAND_RECT.y + HAND_RECT.height - 42;
-    const container = this.add.container(HAND_RECT.x + HAND_RECT.width / 2, hiddenY);
+    const container = this.add.container(HAND_RECT.x + HAND_RECT.width / 2, HAND_HIDDEN_Y);
     this.handDeckContainer = container;
     this.layers.handLayer.add(container);
 
@@ -1052,7 +1052,7 @@ export class BattlefieldScene extends Phaser.Scene {
     const cardHeight = Math.round(cardWidth * 1.5);
     const totalWidth = cardWidth * slotCount + gap * (slotCount - 1);
     const startX = -totalWidth / 2;
-    const y = 146;
+    const y = HAND_RECT.height / 2;
 
     for (let index = 0; index < slotCount; index += 1) {
       const card = this.runtime.player.hand[index] ?? null;
@@ -1128,83 +1128,121 @@ export class BattlefieldScene extends Phaser.Scene {
     }
 
     const pointer = this.input.activePointer;
-    const expandedY = HAND_RECT.y + 42;
-    const hiddenY = HAND_RECT.y + HAND_RECT.height - 42;
     this.moveHandDeckContainer(
-      isPointerInHandDeckHoverArea(pointer, expandedY, hiddenY) ? expandedY : hiddenY,
+      isPointerInHandDeckHoverArea(pointer, HAND_EXPANDED_Y, HAND_HIDDEN_Y)
+        ? HAND_EXPANDED_Y
+        : HAND_HIDDEN_Y,
     );
   }
 
   private addUtilityButtons(): void {
-    createMenuButton(this, {
-      x: 82,
-      y: 1710,
-      width: 132,
-      height: 52,
-      label: 'Back',
-      enabled: !this.isBattleEnded() && !this.isReturningToStage,
-      parent: this.layers.buttonLayer,
-      onClick: () => {
-        this.scene.start('StageScene', {
-          session: {
-            ...this.session,
-            stageProgress: {
-              ...this.session.stageProgress,
-              clearedStageIds: [...this.session.stageProgress.clearedStageIds],
-              lastSelectedStageId: this.stageDefinition.id,
+    const buttons: BottomButtonDefinition[] = [
+      {
+        label: 'Back',
+        width: 132,
+        height: 52,
+        enabled: !this.isBattleEnded() && !this.isReturningToStage,
+        onClick: () => {
+          this.scene.start('StageScene', {
+            session: {
+              ...this.session,
+              stageProgress: {
+                ...this.session.stageProgress,
+                clearedStageIds: [...this.session.stageProgress.clearedStageIds],
+                lastSelectedStageId: this.stageDefinition.id,
+              },
             },
-          },
-        } satisfies StageSceneData);
+          } satisfies StageSceneData);
+        },
       },
-    });
-    createMenuButton(this, {
-      x: 82,
-      y: 1778,
-      width: 132,
-      height: 52,
-      label: 'Save',
-      enabled: !this.isBattleEnded() && !this.isReturningToStage,
-      parent: this.layers.buttonLayer,
-      onClick: () => {
-        void this.saveCurrentSession();
+      {
+        label: 'Save',
+        width: 132,
+        height: 52,
+        enabled: !this.isBattleEnded() && !this.isReturningToStage,
+        onClick: () => {
+          void this.saveCurrentSession();
+        },
       },
-    });
-    createMenuButton(this, {
-      x: 82,
-      y: 1846,
-      width: 132,
-      height: 52,
-      label: 'Auto',
-      enabled: false,
-      parent: this.layers.buttonLayer,
-    });
-    createMenuButton(this, {
-      x: 1110,
-      y: 1744,
-      width: 152,
-      height: 58,
-      label: 'Turn End',
-      enabled: this.isPlayerControlActive(),
-      parent: this.layers.buttonLayer,
-      onClick: () => {
-        this.endCurrentTurn();
+      {
+        label: 'Auto',
+        width: 132,
+        height: 52,
+        enabled: false,
       },
-    });
-    createMenuButton(this, {
-      x: 1110,
-      y: 1818,
-      width: 152,
-      height: 52,
-      label: 'Skill',
-      enabled: this.canStartActiveSkillTargeting(),
-      parent: this.layers.buttonLayer,
-      onClick: () => {
-        this.startActiveSkillTargeting();
-      },
-    });
+    ];
 
     if (this.selection?.kind === 'BLOCK_DECISION') {
-      this.addBlockDecisionButtons();
+      buttons.push(
+        {
+          label: 'Block',
+          width: 150,
+          height: 56,
+          enabled: !this.isAnimatingBattleEvents && !this.isBattleEnded(),
+          onClick: () => {
+            this.resolveBlockDecision(true);
+          },
+        },
+        {
+          label: 'No Block',
+          width: 170,
+          height: 56,
+          enabled: !this.isAnimatingBattleEvents && !this.isBattleEnded(),
+          onClick: () => {
+            this.resolveBlockDecision(false);
+          },
+        },
+      );
+    } else {
+      buttons.push(
+        {
+          label: 'Turn End',
+          width: 152,
+          height: 58,
+          enabled: this.isPlayerControlActive(),
+          onClick: () => {
+            this.endCurrentTurn();
+          },
+        },
+        {
+          label: 'Skill',
+          width: 152,
+          height: 52,
+          enabled: this.canStartActiveSkillTargeting(),
+          onClick: () => {
+            this.startActiveSkillTargeting();
+          },
+        },
+      );
+    }
+
+    this.addBottomButtonRow(buttons);
+  }
+
+  private addBottomButtonRow(buttons: readonly BottomButtonDefinition[]): void {
+    const totalWidth = buttons.reduce(
+      (total, button, index) => total + button.width + (index === 0 ? 0 : BOTTOM_BUTTON_GAP),
+      0,
+    );
+    let left = GAME_WIDTH / 2 - totalWidth / 2;
+
+    for (const button of buttons) {
+      const baseConfig = {
+        x: left + button.width / 2,
+        y: BOTTOM_BUTTON_CENTER_Y,
+        width: button.width,
+        height: button.height,
+        label: button.label,
+        enabled: button.enabled,
+        parent: this.layers.buttonLayer,
+      };
+      if (button.onClick) {
+        createMenuButton(this, { ...baseConfig, onClick: button.onClick });
+      } else {
+        createMenuButton(this, baseConfig);
+      }
+
+      left += button.width + BOTTOM_BUTTON_GAP;
     }
   }
 
@@ -1213,43 +1251,34 @@ export class BattlefieldScene extends Phaser.Scene {
     this.addUtilityButtons();
   }
 
-  private addBlockDecisionButtons(): void {
-    createMenuButton(this, {
-      x: 500,
-      y: 1468,
-      width: 150,
-      height: 56,
-      label: 'Block',
-      enabled: !this.isAnimatingBattleEvents && !this.isBattleEnded(),
-      parent: this.layers.buttonLayer,
-      onClick: () => {
-        this.resolveBlockDecision(true);
-      },
-    });
-    createMenuButton(this, {
-      x: 700,
-      y: 1468,
-      width: 170,
-      height: 56,
-      label: 'No Block',
-      enabled: !this.isAnimatingBattleEvents && !this.isBattleEnded(),
-      parent: this.layers.buttonLayer,
-      onClick: () => {
-        this.resolveBlockDecision(false);
-      },
-    });
-  }
-
   private addStatusText(): void {
+    const rect = {
+      x: HUD_X,
+      y: HUD_Y + (HUD_HEIGHT + HUD_GAP) * 3,
+      width: HUD_WIDTH,
+      height: STATUS_PANEL_HEIGHT,
+    } as const satisfies Rect;
+    const panel = this.add.rectangle(
+      rect.x + rect.width / 2,
+      rect.y + rect.height / 2,
+      rect.width,
+      rect.height,
+      0x10211b,
+      0.94,
+    );
+    panel.setStrokeStyle(2, 0xbfeec5, 0.72);
+    this.layers.hudLayer.add(panel);
+
     this.statusText = this.add
-      .text(GAME_WIDTH / 2, 1408, this.statusMessage, {
+      .text(rect.x + 20, rect.y + 20, this.statusMessage, {
         fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '22px',
+        fontSize: '18px',
         color: '#c7d7ca',
-        align: 'center',
-        wordWrap: { width: 920 },
+        align: 'left',
+        lineSpacing: 5,
+        wordWrap: { width: rect.width - 40, useAdvancedWrap: true },
       })
-      .setOrigin(0.5)
+      .setOrigin(0, 0)
       .setAlpha(0.9);
     this.layers.hudLayer.add(this.statusText);
   }
@@ -1273,14 +1302,14 @@ export class BattlefieldScene extends Phaser.Scene {
     container.add(this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.52).setOrigin(0));
 
     const panelX = GAME_WIDTH / 2;
-    const panelY = 940;
-    const panel = this.add.rectangle(panelX, panelY, 720, 610, 0x10241e, 0.98);
+    const panelY = GAME_HEIGHT / 2;
+    const panel = this.add.rectangle(panelX, panelY, 720, 560, 0x10241e, 0.98);
     panel.setStrokeStyle(3, result.outcome === 'WIN' ? 0xffe4a8 : 0xff8e8e, 0.94);
     container.add(panel);
 
     container.add(
       this.add
-        .text(panelX, panelY - 238, result.outcome === 'WIN' ? 'VICTORY' : 'DEFEAT', {
+        .text(panelX, panelY - 218, result.outcome === 'WIN' ? 'VICTORY' : 'DEFEAT', {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSize: '58px',
           fontStyle: '700',
@@ -1305,7 +1334,7 @@ export class BattlefieldScene extends Phaser.Scene {
     ];
     container.add(
       this.add
-        .text(panelX, panelY - 140, resultLines.join('\n'), {
+        .text(panelX, panelY - 126, resultLines.join('\n'), {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSize: '24px',
           color: '#edf8e9',
@@ -1319,7 +1348,7 @@ export class BattlefieldScene extends Phaser.Scene {
     if (this.resultReturnStatusMessage) {
       container.add(
         this.add
-          .text(panelX, panelY + 188, this.resultReturnStatusMessage, {
+          .text(panelX, panelY + 166, this.resultReturnStatusMessage, {
             fontFamily: DEFAULT_FONT_FAMILY,
             fontSize: '18px',
             color: '#d7ead4',
@@ -1332,7 +1361,7 @@ export class BattlefieldScene extends Phaser.Scene {
 
     createMenuButton(this, {
       x: panelX,
-      y: panelY + 250,
+      y: panelY + 224,
       width: 280,
       height: 62,
       label: 'Back to Stage',
