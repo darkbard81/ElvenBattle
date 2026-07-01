@@ -4,6 +4,17 @@ import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
 import { createMenuButton } from '../ui/menu-button';
 import type { MainMenuSceneData } from './scene-data';
 
+const MENU_TOP = 88;
+const MENU_HEIGHT = 584;
+const TITLE_HEIGHT = 142;
+const BUTTON_WIDTH = 360;
+const BUTTON_HEIGHT = 72;
+const BUTTON_GAP = 22;
+const BUTTON_STACK_HEIGHT = 166;
+const BUTTON_TOP_PADDING = 128;
+const STATUS_HEIGHT = 96;
+const STATUS_TOP_PADDING = 52;
+
 /**
  * 자산 로딩이 끝난 뒤 사용자가 실제로 진입할 메인 메뉴를 보여주는 씬이다.
  * 현재 단계에서는 Start Game과 카드 텍스트 툴 진입만 제공한다.
@@ -31,39 +42,42 @@ export class MainMenuScene extends Phaser.Scene {
   }
 
   private addForegroundUi(data: MainMenuSceneData): void {
-    const root = this.rexUI.add.sizer(0, 88, GAME_WIDTH, 584, 'y', {
+    const root = this.rexUI.add.sizer(0, 0, GAME_WIDTH, MENU_HEIGHT, 'y', {
       origin: 0,
+      anchor: {
+        left: 'left',
+        top: `top+${MENU_TOP}`,
+        width: '100%',
+      },
     });
 
     root.add(this.createTitleGroup(), {
       align: 'left-top',
       minWidth: GAME_WIDTH,
-      minHeight: 142,
-      offsetX: -GAME_WIDTH / 2,
-      offsetY: -71,
+      minHeight: TITLE_HEIGHT,
+      offsetOriginX: -0.5,
+      offsetOriginY: -0.5,
     });
     root.add(this.createButtonLayout(), {
-      align: 'left-top',
-      minWidth: 360,
-      minHeight: 166,
-      offsetX: GAME_WIDTH / 2 - 180,
-      offsetY: 0,
-      padding: { top: 128 },
+      align: 'center-top',
+      minWidth: BUTTON_WIDTH,
+      minHeight: BUTTON_STACK_HEIGHT,
+      padding: { top: BUTTON_TOP_PADDING },
     });
     root.add(this.createStatusGroup(data), {
       align: 'left-top',
       minWidth: GAME_WIDTH,
-      minHeight: 96,
-      offsetX: -GAME_WIDTH / 2,
-      offsetY: -48,
-      padding: { top: 52 },
+      minHeight: STATUS_HEIGHT,
+      offsetOriginX: -0.5,
+      offsetOriginY: -0.5,
+      padding: { top: STATUS_TOP_PADDING },
     });
     root.layout();
   }
 
   private createTitleGroup(): Phaser.GameObjects.Container {
     const group = this.add.container(0, 0);
-    group.setSize(GAME_WIDTH, 142);
+    group.setSize(GAME_WIDTH, TITLE_HEIGHT);
     const title = this.add
       .text(GAME_WIDTH / 2, 30, 'ELVENBATTLE', {
         fontFamily: DEFAULT_FONT_FAMILY,
@@ -91,55 +105,46 @@ export class MainMenuScene extends Phaser.Scene {
   }
 
   private createButtonLayout(): Phaser.GameObjects.GameObject {
-    const buttonLayout = this.rexUI.add.sizer(0, 0, 360, 166, 'y', {
+    const buttonLayout = this.rexUI.add.sizer(0, 0, BUTTON_WIDTH, BUTTON_STACK_HEIGHT, 'y', {
       origin: 0,
-      space: { item: 22 },
+      space: { item: BUTTON_GAP },
     });
 
     buttonLayout.add(
-      this.createButtonSlot('Start Game', () => {
+      this.createButton('Start Game', () => {
         this.scene.start('SaveSlotScene');
       }),
       {
-        align: 'left-top',
-        minWidth: 360,
-        minHeight: 72,
-        offsetX: -180,
-        offsetY: -36,
+        align: 'center',
+        minWidth: BUTTON_WIDTH,
+        minHeight: BUTTON_HEIGHT,
       },
     );
 
     buttonLayout.add(
-      this.createButtonSlot('Card Text Tool', () => {
+      this.createButton('Card Text Tool', () => {
         window.location.assign('/tools/card-text/');
       }),
       {
-        align: 'left-top',
-        minWidth: 360,
-        minHeight: 72,
-        offsetX: -180,
-        offsetY: -36,
+        align: 'center',
+        minWidth: BUTTON_WIDTH,
+        minHeight: BUTTON_HEIGHT,
       },
     );
 
     return buttonLayout;
   }
 
-  private createButtonSlot(label: string, onClick: () => void): Phaser.GameObjects.Container {
-    const slot = this.add.container(0, 0);
-    slot.setSize(360, 72);
-    const button = createMenuButton(this, {
-      x: 180,
-      y: 36,
-      width: 360,
-      height: 72,
+  private createButton(label: string, onClick: () => void): Phaser.GameObjects.Container {
+    return createMenuButton(this, {
+      x: 0,
+      y: 0,
+      width: BUTTON_WIDTH,
+      height: BUTTON_HEIGHT,
       label,
       enabled: true,
       onClick,
     });
-
-    slot.add(button);
-    return slot;
   }
 
   private createStatusGroup(data: MainMenuSceneData): Phaser.GameObjects.Container {
@@ -149,7 +154,7 @@ export class MainMenuScene extends Phaser.Scene {
         : `Loaded ${data.loadedCount} textures`;
 
     const group = this.add.container(0, 0);
-    group.setSize(GAME_WIDTH, 96);
+    group.setSize(GAME_WIDTH, STATUS_HEIGHT);
     const status = this.add
       .text(GAME_WIDTH / 2, 44, statusText, {
         fontFamily: DEFAULT_FONT_FAMILY,
