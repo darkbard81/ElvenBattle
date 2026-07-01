@@ -12,18 +12,46 @@ import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
 import { createMenuButton } from '../ui/menu-button';
 import type { GrowthSceneData, StageSceneData } from './scene-data';
 
-const CARD_PAGE_SIZE = 8;
 const PANEL_Y = 248;
 const PANEL_WIDTH = 500;
-const PANEL_HEIGHT = 1320;
 const CARD_ROW_HEIGHT = 124;
 const CARD_ROW_GAP = 18;
 const PANEL_GAP = 56;
-const PANEL_BODY_X = 72;
 const PANEL_BODY_WIDTH = PANEL_WIDTH * 2 + PANEL_GAP;
+const PANEL_BODY_X = (GAME_WIDTH - PANEL_BODY_WIDTH) / 2;
 const PANEL_INNER_WIDTH = PANEL_WIDTH - 56;
-const PANEL_BUTTON_HEIGHT = 44;
+const PANEL_HEADER_HEIGHT = 104;
+const PANEL_BOTTOM_PADDING = 28;
+const PANEL_SCROLLBAR_WIDTH = 10;
+const PANEL_SCROLLBAR_GAP = 10;
+const PANEL_SCROLL_PANEL_WIDTH = PANEL_INNER_WIDTH + PANEL_SCROLLBAR_GAP + PANEL_SCROLLBAR_WIDTH;
+const MIN_VISIBLE_CARD_ROWS = 3;
+const MIN_PANEL_HEIGHT =
+  PANEL_HEADER_HEIGHT +
+  CARD_ROW_HEIGHT * MIN_VISIBLE_CARD_ROWS +
+  CARD_ROW_GAP * (MIN_VISIBLE_CARD_ROWS - 1) +
+  PANEL_BOTTOM_PADDING;
 const HUD_BUTTON_HEIGHT = 64;
+const HUD_BUTTON_GAP = 51;
+const HUD_BACK_BUTTON_WIDTH = 190;
+const HUD_APPLY_BUTTON_WIDTH = 280;
+const HUD_SAVE_BUTTON_WIDTH = 180;
+const HUD_SUMMARY_WIDTH = 300;
+const HUD_WIDTH =
+  HUD_BACK_BUTTON_WIDTH +
+  HUD_APPLY_BUTTON_WIDTH +
+  HUD_SAVE_BUTTON_WIDTH +
+  HUD_SUMMARY_WIDTH +
+  HUD_BUTTON_GAP * 3;
+const HUD_BOTTOM_SAFE_MARGIN = 128;
+const STATUS_HUD_GAP = 86;
+const PANEL_STATUS_GAP = 74;
+
+type GrowthLayoutMetrics = {
+  hudY: number;
+  panelHeight: number;
+  statusY: number;
+};
 
 type GrowthListEntry = {
   card: RuntimeCardInstance;
@@ -39,8 +67,8 @@ export class GrowthScene extends Phaser.Scene {
   private draftSession!: GameSession;
   private selectedTargetCardInstanceId: string | null = null;
   private selectedMaterialCardInstanceIds = new Set<string>();
-  private targetPage = 0;
-  private materialPage = 0;
+  private focusedTargetCardInstanceId: string | null = null;
+  private focusedMaterialCardInstanceId: string | null = null;
   private isDirty = false;
   private isSaving = false;
   private statusText!: Phaser.GameObjects.Text;
@@ -59,8 +87,8 @@ export class GrowthScene extends Phaser.Scene {
     this.draftSession = data.session;
     this.selectedTargetCardInstanceId = null;
     this.selectedMaterialCardInstanceIds = new Set();
-    this.targetPage = 0;
-    this.materialPage = 0;
+    this.focusedTargetCardInstanceId = null;
+    this.focusedMaterialCardInstanceId = null;
     this.isDirty = false;
     this.isSaving = false;
 
@@ -69,6 +97,11 @@ export class GrowthScene extends Phaser.Scene {
     this.addStatusText();
     this.renderLists();
     this.renderHud();
+    this.scale.off(Phaser.Scale.Events.RESIZE, this.handleScaleResize, this);
+    this.scale.on(Phaser.Scale.Events.RESIZE, this.handleScaleResize, this);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.scale.off(Phaser.Scale.Events.RESIZE, this.handleScaleResize, this);
+    });
   }
 
   private addBackground(): void {
@@ -106,13 +139,18 @@ export class GrowthScene extends Phaser.Scene {
 
   private addStatusText(): void {
     this.statusText = this.add
-      .text(GAME_WIDTH / 2, 1642, 'Select a deck UNIT and collection materials.', {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '22px',
-        color: '#e6f4df',
-        align: 'center',
-        wordWrap: { width: GAME_WIDTH - 120 },
-      })
+      .text(
+        GAME_WIDTH / 2,
+        this.getLayoutMetrics().statusY,
+        'Select a deck UNIT and collection materials.',
+        {
+          fontFamily: DEFAULT_FONT_FAMILY,
+          fontSize: '22px',
+          color: '#e6f4df',
+          align: 'center',
+          wordWrap: { width: GAME_WIDTH - 120 },
+        },
+      )
       .setOrigin(0.5);
   }
 
@@ -120,11 +158,12 @@ export class GrowthScene extends Phaser.Scene {
     this.listContainer?.destroy();
     const container = this.add.container(0, 0);
     this.listContainer = container;
+    const { panelHeight } = this.getLayoutMetrics();
     const bodyLayout = this.rexUI.add.sizer(
       PANEL_BODY_X,
       PANEL_Y,
       PANEL_BODY_WIDTH,
-      PANEL_HEIGHT,
+      panelHeight,
       'x',
       {
         origin: 0,
@@ -137,26 +176,23 @@ export class GrowthScene extends Phaser.Scene {
         title: 'Current Deck Target',
         subtitle: `${this.getTargetEntries().length} cards`,
         entries: this.getTargetEntries(),
-        page: this.targetPage,
         selectedInstanceIds: new Set(
           this.selectedTargetCardInstanceId ? [this.selectedTargetCardInstanceId] : [],
         ),
+        focusInstanceId: this.focusedTargetCardInstanceId ?? this.selectedTargetCardInstanceId,
         emptyMessage: 'No growable deck UNIT cards.',
         onSelect: (instanceId) => {
           this.selectedTargetCardInstanceId = instanceId;
+          this.focusedTargetCardInstanceId = instanceId;
           this.setStatus('Growth target selected.');
           this.renderLists();
           this.renderHud();
-        },
-        onPageChange: (page) => {
-          this.targetPage = page;
-          this.renderLists();
         },
       }),
       {
         align: 'left-top',
         minWidth: PANEL_WIDTH,
-        minHeight: PANEL_HEIGHT,
+        minHeight: panelHeight,
         offsetOriginX: -0.5,
         offsetOriginY: -0.5,
       },
@@ -169,21 +205,17 @@ export class GrowthScene extends Phaser.Scene {
           this.getMaterialEntries().length
         } selected`,
         entries: this.getMaterialEntries(),
-        page: this.materialPage,
         selectedInstanceIds: this.selectedMaterialCardInstanceIds,
+        focusInstanceId: this.focusedMaterialCardInstanceId,
         emptyMessage: 'No collection UNIT materials.',
         onSelect: (instanceId) => {
           this.toggleMaterialSelection(instanceId);
-        },
-        onPageChange: (page) => {
-          this.materialPage = page;
-          this.renderLists();
         },
       }),
       {
         align: 'left-top',
         minWidth: PANEL_WIDTH,
-        minHeight: PANEL_HEIGHT,
+        minHeight: panelHeight,
         offsetOriginX: -0.5,
         offsetOriginY: -0.5,
       },
@@ -197,15 +229,16 @@ export class GrowthScene extends Phaser.Scene {
     title: string;
     subtitle: string;
     entries: GrowthListEntry[];
-    page: number;
     selectedInstanceIds: ReadonlySet<string>;
+    focusInstanceId: string | null;
     emptyMessage: string;
     onSelect: (instanceId: string) => void;
-    onPageChange: (page: number) => void;
   }): Phaser.GameObjects.Container {
+    const { panelHeight } = this.getLayoutMetrics();
+    const viewportHeight = this.getPanelViewportHeight(panelHeight);
     const container = this.add.container(0, 0);
-    container.setSize(PANEL_WIDTH, PANEL_HEIGHT);
-    const panel = this.add.rectangle(0, 0, PANEL_WIDTH, PANEL_HEIGHT, 0x10261f, 0.94);
+    container.setSize(PANEL_WIDTH, panelHeight);
+    const panel = this.add.rectangle(0, 0, PANEL_WIDTH, panelHeight, 0x10261f, 0.94);
     panel.setOrigin(0, 0);
     panel.setStrokeStyle(2, 0xbfeec5, 0.64);
     container.add(panel);
@@ -233,64 +266,68 @@ export class GrowthScene extends Phaser.Scene {
     );
 
     if (config.entries.length === 0) {
-      const emptyLayout = this.rexUI.add.overlapSizer(28, 470, PANEL_INNER_WIDTH, 200, {
-        origin: 0,
-      });
-      emptyLayout.add(this.createEmptyPanelMessage(config.emptyMessage), {
-        align: 'left-top',
-        minWidth: PANEL_INNER_WIDTH,
-        minHeight: 200,
-        offsetOriginX: -0.5,
-        offsetOriginY: -0.5,
-      });
-      emptyLayout.layout();
-      container.add(emptyLayout);
-      container.add(this.createPagination(config));
+      container.add(this.createEmptyPanelMessage(config.emptyMessage, viewportHeight));
       return container;
     }
 
-    const maxPage = getMaxPage(config.entries.length);
-    const page = Math.min(config.page, maxPage);
-    const pageEntries = config.entries.slice(page * CARD_PAGE_SIZE, (page + 1) * CARD_PAGE_SIZE);
-    const rowLayout = this.rexUI.add.sizer(28, 104, PANEL_INNER_WIDTH, 1150, 'y', {
+    const rowLayoutHeight = Math.max(
+      viewportHeight,
+      config.entries.length * CARD_ROW_HEIGHT +
+        Math.max(0, config.entries.length - 1) * CARD_ROW_GAP,
+    );
+    const rowLayout = this.rexUI.add.sizer(0, 0, PANEL_INNER_WIDTH, rowLayoutHeight, 'y', {
       origin: 0,
       space: { item: CARD_ROW_GAP },
     });
 
-    pageEntries.forEach((entry) => {
-      rowLayout.add(
-        this.createCardRow({
-          entry,
-          selected: config.selectedInstanceIds.has(entry.card.instance.instanceId),
-          onSelect: config.onSelect,
-        }),
-        {
-          align: 'left-top',
-          minWidth: PANEL_INNER_WIDTH,
-          minHeight: CARD_ROW_HEIGHT,
-          offsetOriginX: -0.5,
-          offsetOriginY: -0.5,
-        },
-      );
+    let focusedRow: Phaser.GameObjects.Container | null = null;
+    config.entries.forEach((entry) => {
+      const row = this.createCardRow({
+        entry,
+        selected: config.selectedInstanceIds.has(entry.card.instance.instanceId),
+        onSelect: config.onSelect,
+      });
+      if (entry.card.instance.instanceId === config.focusInstanceId) {
+        focusedRow = row;
+      }
+
+      rowLayout.add(row, {
+        align: 'left-top',
+        minWidth: PANEL_INNER_WIDTH,
+        minHeight: CARD_ROW_HEIGHT,
+        offsetOriginX: -0.5,
+        offsetOriginY: -0.5,
+      });
     });
     rowLayout.layout();
-    container.add(rowLayout);
-
-    container.add(
-      this.createPagination({
-        ...config,
-        page,
-      }),
-    );
+    const scrollPanel = this.createCardScrollPanel(rowLayout, viewportHeight);
+    scrollPanel.layout();
+    if (focusedRow) {
+      scrollPanel.scrollToChild(focusedRow, 'centerY');
+    }
+    container.add(scrollPanel);
     return container;
   }
 
-  private createEmptyPanelMessage(message: string): Phaser.GameObjects.Container {
-    const container = this.add.container(0, 0);
-    container.setSize(PANEL_INNER_WIDTH, 200);
-    container.add(
+  private createEmptyPanelMessage(
+    message: string,
+    viewportHeight: number,
+  ): Phaser.GameObjects.GameObject {
+    const layout = this.rexUI.add.overlapSizer(
+      28,
+      PANEL_HEADER_HEIGHT,
+      PANEL_INNER_WIDTH,
+      viewportHeight,
+      {
+        origin: 0,
+      },
+    );
+
+    const messageContainer = this.add.container(0, 0);
+    messageContainer.setSize(PANEL_INNER_WIDTH, viewportHeight);
+    messageContainer.add(
       this.add
-        .text(PANEL_INNER_WIDTH / 2, 100, message, {
+        .text(PANEL_INNER_WIDTH / 2, viewportHeight / 2, message, {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSize: '24px',
           color: '#b8c9c0',
@@ -299,7 +336,55 @@ export class GrowthScene extends Phaser.Scene {
         })
         .setOrigin(0.5),
     );
-    return container;
+    layout.add(messageContainer, {
+      align: 'left-top',
+      minWidth: PANEL_INNER_WIDTH,
+      minHeight: viewportHeight,
+      offsetOriginX: -0.5,
+      offsetOriginY: -0.5,
+    });
+    layout.layout();
+    return layout;
+  }
+
+  private createCardScrollPanel(child: Phaser.GameObjects.GameObject, viewportHeight: number) {
+    return this.rexUI.add.scrollablePanel({
+      x: 28,
+      y: PANEL_HEADER_HEIGHT,
+      width: PANEL_SCROLL_PANEL_WIDTH,
+      height: viewportHeight,
+      origin: 0,
+      scrollMode: 'y',
+      clampChildOY: true,
+      panel: {
+        child,
+        mask: { padding: 2 },
+      },
+      space: {
+        sliderY: PANEL_SCROLLBAR_GAP,
+      },
+      slider: {
+        track: this.add.rectangle(0, 0, PANEL_SCROLLBAR_WIDTH, viewportHeight, 0x07130f, 0.72),
+        thumb: this.add.rectangle(0, 0, PANEL_SCROLLBAR_WIDTH, 48, 0xbfeec5, 0.78),
+        position: 'right',
+        input: 'drag',
+        hideUnscrollableSlider: true,
+        disableUnscrollableDrag: true,
+        adaptThumbSize: true,
+        minThumbSize: 42,
+      },
+      scroller: {
+        threshold: 8,
+        slidingDeceleration: 4200,
+        backDeceleration: 2200,
+        pointerOutRelease: true,
+      },
+      mouseWheelScroller: {
+        focus: false,
+        speed: 0.22,
+      },
+      scrollDetectionMode: 'rectBounds',
+    });
   }
 
   private createCardRow(config: {
@@ -365,157 +450,55 @@ export class GrowthScene extends Phaser.Scene {
     return container;
   }
 
-  private createPagination(config: {
-    entries: GrowthListEntry[];
-    page: number;
-    onPageChange: (page: number) => void;
-  }): Phaser.GameObjects.Container {
-    const container = this.add.container(0, 0);
-    const maxPage = getMaxPage(config.entries.length);
-    const page = Math.min(config.page, maxPage);
+  private renderHud(): void {
+    this.hudContainer?.destroy();
     const layout = this.rexUI.add.sizer(
-      28,
-      PANEL_HEIGHT - 80,
-      PANEL_INNER_WIDTH,
-      PANEL_BUTTON_HEIGHT,
+      (GAME_WIDTH - HUD_WIDTH) / 2,
+      this.getLayoutMetrics().hudY,
+      HUD_WIDTH,
+      HUD_BUTTON_HEIGHT,
       'x',
       {
         origin: 0,
+        space: { item: HUD_BUTTON_GAP },
       },
     );
-
-    layout.add(
-      this.createPanelButton('Prev', page > 0, () => {
-        config.onPageChange(page - 1);
-      }),
-      {
-        align: 'left-top',
-        minWidth: 112,
-        minHeight: PANEL_BUTTON_HEIGHT,
-        offsetOriginX: -0.5,
-        offsetOriginY: -0.5,
-      },
-    );
-    layout.addSpace();
-    layout.add(this.createPageIndicator(`${page + 1} / ${maxPage + 1}`), {
-      align: 'left-top',
-      minWidth: 120,
-      minHeight: PANEL_BUTTON_HEIGHT,
-      offsetOriginX: -0.5,
-      offsetOriginY: -0.5,
-    });
-    layout.addSpace();
-    layout.add(
-      this.createPanelButton('Next', page < maxPage, () => {
-        config.onPageChange(page + 1);
-      }),
-      {
-        align: 'left-top',
-        minWidth: 112,
-        minHeight: PANEL_BUTTON_HEIGHT,
-        offsetOriginX: -0.5,
-        offsetOriginY: -0.5,
-      },
-    );
-    layout.layout();
-    container.add(layout);
-    return container;
-  }
-
-  private createPageIndicator(label: string): Phaser.GameObjects.Container {
-    const container = this.add.container(0, 0);
-    container.setSize(120, PANEL_BUTTON_HEIGHT);
-    container.add(
-      this.add
-        .text(60, PANEL_BUTTON_HEIGHT / 2, label, {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '19px',
-          color: '#d7ead4',
-          align: 'center',
-        })
-        .setOrigin(0.5),
-    );
-    return container;
-  }
-
-  private createPanelButton(
-    label: string,
-    enabled: boolean,
-    onClick: () => void,
-  ): Phaser.GameObjects.Container {
-    const container = this.add.container(0, 0);
-    container.setSize(112, PANEL_BUTTON_HEIGHT);
-    const background = this.add.rectangle(
-      56,
-      PANEL_BUTTON_HEIGHT / 2,
-      112,
-      PANEL_BUTTON_HEIGHT,
-      enabled ? 0x1d3f31 : 0x12211c,
-      enabled ? 0.96 : 0.72,
-    );
-    background.setStrokeStyle(2, enabled ? 0xdaf6d3 : 0x51605a, enabled ? 0.9 : 0.5);
-    container.add(background);
-    container.add(
-      this.add
-        .text(56, PANEL_BUTTON_HEIGHT / 2, label, {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '18px',
-          color: enabled ? '#f5fff0' : '#7e8b84',
-          align: 'center',
-        })
-        .setOrigin(0.5),
-    );
-
-    if (enabled) {
-      background.setInteractive({ useHandCursor: true });
-      background.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, onClick);
-    }
-
-    return container;
-  }
-
-  private renderHud(): void {
-    this.hudContainer?.destroy();
-    const layout = this.rexUI.add.sizer(69, 1728, 1092, HUD_BUTTON_HEIGHT, 'x', {
-      origin: 0,
-      space: { item: 51 },
-    });
     const canApply =
       !this.isSaving &&
       this.selectedTargetCardInstanceId !== null &&
       this.selectedMaterialCardInstanceIds.size > 0;
 
     layout.add(
-      this.createHudButton('Back', 190, !this.isSaving, () => {
+      this.createHudButton('Back', HUD_BACK_BUTTON_WIDTH, !this.isSaving, () => {
         this.scene.start('StageScene', { session: this.savedSession } satisfies StageSceneData);
       }),
       {
         align: 'left-top',
-        minWidth: 190,
+        minWidth: HUD_BACK_BUTTON_WIDTH,
         minHeight: HUD_BUTTON_HEIGHT,
         offsetOriginX: -0.5,
         offsetOriginY: -0.5,
       },
     );
     layout.add(
-      this.createHudButton('Apply Growth', 280, canApply, () => {
+      this.createHudButton('Apply Growth', HUD_APPLY_BUTTON_WIDTH, canApply, () => {
         this.handleApplyGrowth();
       }),
       {
         align: 'left-top',
-        minWidth: 280,
+        minWidth: HUD_APPLY_BUTTON_WIDTH,
         minHeight: HUD_BUTTON_HEIGHT,
         offsetOriginX: -0.5,
         offsetOriginY: -0.5,
       },
     );
     layout.add(
-      this.createHudButton('Save', 180, this.isDirty && !this.isSaving, () => {
+      this.createHudButton('Save', HUD_SAVE_BUTTON_WIDTH, this.isDirty && !this.isSaving, () => {
         void this.handleSave();
       }),
       {
         align: 'left-top',
-        minWidth: 180,
+        minWidth: HUD_SAVE_BUTTON_WIDTH,
         minHeight: HUD_BUTTON_HEIGHT,
         offsetOriginX: -0.5,
         offsetOriginY: -0.5,
@@ -525,7 +508,7 @@ export class GrowthScene extends Phaser.Scene {
     const summaryText = this.isDirty ? 'Unsaved growth' : 'Saved growth';
     layout.add(this.createHudSummary(summaryText, this.isDirty), {
       align: 'left-top',
-      minWidth: 300,
+      minWidth: HUD_SUMMARY_WIDTH,
       minHeight: HUD_BUTTON_HEIGHT,
       offsetOriginX: -0.5,
       offsetOriginY: -0.5,
@@ -567,10 +550,10 @@ export class GrowthScene extends Phaser.Scene {
 
   private createHudSummary(text: string, isDirty: boolean): Phaser.GameObjects.Container {
     const slot = this.add.container(0, 0);
-    slot.setSize(300, HUD_BUTTON_HEIGHT);
+    slot.setSize(HUD_SUMMARY_WIDTH, HUD_BUTTON_HEIGHT);
     slot.add(
       this.add
-        .text(150, HUD_BUTTON_HEIGHT / 2, text, {
+        .text(HUD_SUMMARY_WIDTH / 2, HUD_BUTTON_HEIGHT / 2, text, {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSize: '22px',
           color: isDirty ? '#fff3c2' : '#bfeec5',
@@ -582,6 +565,7 @@ export class GrowthScene extends Phaser.Scene {
   }
 
   private toggleMaterialSelection(instanceId: string): void {
+    this.focusedMaterialCardInstanceId = instanceId;
     if (this.selectedMaterialCardInstanceIds.has(instanceId)) {
       this.selectedMaterialCardInstanceIds.delete(instanceId);
       this.setStatus('Material removed from selection.');
@@ -607,6 +591,7 @@ export class GrowthScene extends Phaser.Scene {
       this.draftSession = result.session;
       this.isDirty = true;
       this.selectedMaterialCardInstanceIds = new Set();
+      this.focusedMaterialCardInstanceId = null;
       this.setStatus(formatGrowthResultStatus(result));
       this.renderLists();
       this.renderHud();
@@ -633,6 +618,8 @@ export class GrowthScene extends Phaser.Scene {
       this.isDirty = false;
       this.selectedTargetCardInstanceId = null;
       this.selectedMaterialCardInstanceIds = new Set();
+      this.focusedTargetCardInstanceId = null;
+      this.focusedMaterialCardInstanceId = null;
       this.setStatus('Growth changes saved.');
       this.renderLists();
     } catch (error: unknown) {
@@ -663,10 +650,36 @@ export class GrowthScene extends Phaser.Scene {
   private setStatus(message: string): void {
     this.statusText.setText(message);
   }
-}
 
-function getMaxPage(totalCount: number): number {
-  return Math.max(0, Math.ceil(totalCount / CARD_PAGE_SIZE) - 1);
+  private handleScaleResize(): void {
+    this.statusText.setY(this.getLayoutMetrics().statusY);
+    this.renderLists();
+    this.renderHud();
+  }
+
+  private getLayoutMetrics(): GrowthLayoutMetrics {
+    const gameHeight = this.getGameHeight();
+    const hudY = gameHeight - HUD_BOTTOM_SAFE_MARGIN - HUD_BUTTON_HEIGHT;
+    const statusY = hudY - STATUS_HUD_GAP;
+
+    return {
+      hudY,
+      panelHeight: Math.max(MIN_PANEL_HEIGHT, statusY - PANEL_STATUS_GAP - PANEL_Y),
+      statusY,
+    };
+  }
+
+  private getPanelViewportHeight(panelHeight: number): number {
+    return Math.max(
+      MIN_PANEL_HEIGHT - PANEL_HEADER_HEIGHT,
+      panelHeight - PANEL_HEADER_HEIGHT - PANEL_BOTTOM_PADDING,
+    );
+  }
+
+  private getGameHeight(): number {
+    const gameHeight = this.scale.gameSize.height;
+    return gameHeight > 0 ? gameHeight : GAME_HEIGHT;
+  }
 }
 
 function formatCardStats(card: RuntimeCardInstance): string {
