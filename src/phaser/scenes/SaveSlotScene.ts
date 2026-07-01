@@ -15,6 +15,17 @@ const SLOT_CARD_WIDTH = 330;
 const SLOT_CARD_HEIGHT = 260;
 const SLOT_CARD_GAP = 28;
 const SLOT_LIST_WIDTH = SLOT_CARD_WIDTH * 3 + SLOT_CARD_GAP * 2;
+const TITLE_GROUP_HEIGHT = 190;
+const BACK_BUTTON_X = 70;
+const BACK_BUTTON_Y = 57;
+const BACK_BUTTON_WIDTH = 180;
+const BACK_BUTTON_HEIGHT = 58;
+const STATUS_GROUP_Y = 232;
+const STATUS_GROUP_HEIGHT = 1;
+const RETRY_BUTTON_WIDTH = 280;
+const RETRY_BUTTON_HEIGHT = 64;
+const RETRY_BUTTON_X = (GAME_WIDTH - RETRY_BUTTON_WIDTH) / 2;
+const RETRY_BUTTON_Y = 446;
 
 /**
  * `Start Game` 진입 후 3개의 저장 슬롯을 보여주는 선택 화면이다.
@@ -51,35 +62,44 @@ export class SaveSlotScene extends Phaser.Scene {
   private addForegroundUi(): void {
     const root = this.rexUI.add.overlapSizer(0, 0, GAME_WIDTH, GAME_HEIGHT, {
       origin: 0,
+      anchor: {
+        left: 'left',
+        top: 'top',
+        width: '100%',
+        height: '100%',
+      },
     });
 
     root.add(this.createTitleGroup(), {
       align: 'left-top',
       minWidth: GAME_WIDTH,
-      minHeight: 190,
-      offsetX: -GAME_WIDTH / 2,
-      offsetY: -GAME_HEIGHT / 2,
+      minHeight: TITLE_GROUP_HEIGHT,
+      offsetOriginX: -0.5,
+      offsetOriginY: -0.5,
     });
     root.add(this.createBackButton(), {
       align: 'left-top',
-      minWidth: 180,
-      minHeight: 58,
-      offsetX: 70 - GAME_WIDTH / 2,
-      offsetY: 57 - GAME_HEIGHT / 2,
+      minWidth: BACK_BUTTON_WIDTH,
+      minHeight: BACK_BUTTON_HEIGHT,
+      offsetX: BACK_BUTTON_X,
+      offsetY: BACK_BUTTON_Y,
+      offsetOriginX: -0.5,
+      offsetOriginY: -0.5,
     });
     root.add(this.createStatusGroup(), {
       align: 'left-top',
       minWidth: GAME_WIDTH,
-      minHeight: 1,
-      offsetX: -GAME_WIDTH / 2,
-      offsetY: 232 - GAME_HEIGHT / 2,
+      minHeight: STATUS_GROUP_HEIGHT,
+      offsetY: STATUS_GROUP_Y,
+      offsetOriginX: -0.5,
+      offsetOriginY: -0.5,
     });
     root.layout();
   }
 
   private createTitleGroup(): Phaser.GameObjects.Container {
     const group = this.add.container(0, 0);
-    group.setSize(GAME_WIDTH, 190);
+    group.setSize(GAME_WIDTH, TITLE_GROUP_HEIGHT);
     const title = this.add
       .text(GAME_WIDTH / 2, 104, 'START GAME', {
         fontFamily: DEFAULT_FONT_FAMILY,
@@ -108,12 +128,12 @@ export class SaveSlotScene extends Phaser.Scene {
 
   private createBackButton(): Phaser.GameObjects.Container {
     const slot = this.add.container(0, 0);
-    slot.setSize(180, 58);
+    slot.setSize(BACK_BUTTON_WIDTH, BACK_BUTTON_HEIGHT);
     const button = createMenuButton(this, {
-      x: 90,
-      y: 29,
-      width: 180,
-      height: 58,
+      x: BACK_BUTTON_WIDTH / 2,
+      y: BACK_BUTTON_HEIGHT / 2,
+      width: BACK_BUTTON_WIDTH,
+      height: BACK_BUTTON_HEIGHT,
       label: 'Back',
       enabled: true,
       onClick: () => {
@@ -130,7 +150,7 @@ export class SaveSlotScene extends Phaser.Scene {
 
   private createStatusGroup(): Phaser.GameObjects.Container {
     const group = this.add.container(0, 0);
-    group.setSize(GAME_WIDTH, 1);
+    group.setSize(GAME_WIDTH, STATUS_GROUP_HEIGHT);
     this.statusText = this.add
       .text(GAME_WIDTH / 2, 0, 'Loading save slots...', {
         fontFamily: DEFAULT_FONT_FAMILY,
@@ -177,8 +197,8 @@ export class SaveSlotScene extends Phaser.Scene {
         align: 'left-top',
         minWidth: SLOT_CARD_WIDTH,
         minHeight: SLOT_CARD_HEIGHT,
-        offsetX: -SLOT_CARD_WIDTH / 2,
-        offsetY: -SLOT_CARD_HEIGHT / 2,
+        offsetOriginX: -0.5,
+        offsetOriginY: -0.5,
       });
     });
 
@@ -273,14 +293,22 @@ export class SaveSlotScene extends Phaser.Scene {
     this.setStatus(`Failed to load save slots: ${message}`);
     const root = this.rexUI.add.overlapSizer(0, 0, GAME_WIDTH, GAME_HEIGHT, {
       origin: 0,
+      anchor: {
+        left: 'left',
+        top: 'top',
+        width: '100%',
+        height: '100%',
+      },
     });
 
     root.add(this.createRetryButton(), {
       align: 'left-top',
-      minWidth: 280,
-      minHeight: 64,
-      offsetX: GAME_WIDTH / 2 - 140 - GAME_WIDTH / 2,
-      offsetY: 478 - 32 - GAME_HEIGHT / 2,
+      minWidth: RETRY_BUTTON_WIDTH,
+      minHeight: RETRY_BUTTON_HEIGHT,
+      offsetX: RETRY_BUTTON_X,
+      offsetY: RETRY_BUTTON_Y,
+      offsetOriginX: -0.5,
+      offsetOriginY: -0.5,
     });
     root.layout();
     this.slotContentContainer = root;
@@ -288,12 +316,12 @@ export class SaveSlotScene extends Phaser.Scene {
 
   private createRetryButton(): Phaser.GameObjects.Container {
     const slot = this.add.container(0, 0);
-    slot.setSize(280, 64);
+    slot.setSize(RETRY_BUTTON_WIDTH, RETRY_BUTTON_HEIGHT);
     const button = createMenuButton(this, {
-      x: 140,
-      y: 32,
-      width: 280,
-      height: 64,
+      x: RETRY_BUTTON_WIDTH / 2,
+      y: RETRY_BUTTON_HEIGHT / 2,
+      width: RETRY_BUTTON_WIDTH,
+      height: RETRY_BUTTON_HEIGHT,
       label: 'Retry',
       enabled: true,
       onClick: () => {

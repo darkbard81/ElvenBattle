@@ -3,6 +3,10 @@ import { DEFAULT_FONT_FAMILY } from '../../theme';
 import { DEFAULT_ASSET_BASE_URL, GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
 import type { LoaderSceneData } from './scene-data';
 
+const TITLE_GROUP_HEIGHT = 260;
+const PROMPT_GROUP_HEIGHT = 120;
+const PROMPT_GROUP_TOP = GAME_HEIGHT - PROMPT_GROUP_HEIGHT;
+
 /**
  * 첫 진입 화면을 담당하는 타이틀 씬이다.
  * 클릭 전까지는 시작 안내만 보여주고, 클릭하면 로더 씬으로 보낸다.
@@ -38,6 +42,12 @@ export class TitleScene extends Phaser.Scene {
   private addForegroundUi(): void {
     const root = this.rexUI.add.overlapSizer(0, 0, GAME_WIDTH, GAME_HEIGHT, {
       origin: 0,
+      anchor: {
+        left: 'left',
+        top: 'top',
+        width: '100%',
+        height: '100%',
+      },
     });
     const titleGroup = this.createTitleGroup();
     const promptGroup = this.createPromptGroup();
@@ -45,23 +55,24 @@ export class TitleScene extends Phaser.Scene {
     root.add(titleGroup, {
       align: 'left-top',
       minWidth: GAME_WIDTH,
-      minHeight: 260,
-      offsetX: -GAME_WIDTH / 2,
-      offsetY: -GAME_HEIGHT / 2,
+      minHeight: TITLE_GROUP_HEIGHT,
+      offsetOriginX: -0.5,
+      offsetOriginY: -0.5,
     });
     root.add(promptGroup, {
       align: 'left-top',
       minWidth: GAME_WIDTH,
-      minHeight: 120,
-      offsetX: -GAME_WIDTH / 2,
-      offsetY: GAME_HEIGHT / 2 - 120,
+      minHeight: PROMPT_GROUP_HEIGHT,
+      offsetY: PROMPT_GROUP_TOP,
+      offsetOriginX: -0.5,
+      offsetOriginY: -0.5,
     });
     root.layout();
   }
 
   private createTitleGroup(): Phaser.GameObjects.Container {
     const group = this.add.container(0, 0);
-    group.setSize(GAME_WIDTH, 260);
+    group.setSize(GAME_WIDTH, TITLE_GROUP_HEIGHT);
     const title = this.add
       .text(GAME_WIDTH / 2, 140, 'ELVENBATTLE', {
         fontFamily: DEFAULT_FONT_FAMILY,
@@ -91,7 +102,7 @@ export class TitleScene extends Phaser.Scene {
 
   private createPromptGroup(): Phaser.GameObjects.Container {
     const group = this.add.container(0, 0);
-    group.setSize(GAME_WIDTH, 120);
+    group.setSize(GAME_WIDTH, PROMPT_GROUP_HEIGHT);
     const prompt = this.add
       .text(GAME_WIDTH / 2, 28, 'click anywhere to begin', {
         fontFamily: DEFAULT_FONT_FAMILY,

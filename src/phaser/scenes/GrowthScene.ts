@@ -157,8 +157,8 @@ export class GrowthScene extends Phaser.Scene {
         align: 'left-top',
         minWidth: PANEL_WIDTH,
         minHeight: PANEL_HEIGHT,
-        offsetX: -PANEL_WIDTH / 2,
-        offsetY: -PANEL_HEIGHT / 2,
+        offsetOriginX: -0.5,
+        offsetOriginY: -0.5,
       },
     );
 
@@ -184,8 +184,8 @@ export class GrowthScene extends Phaser.Scene {
         align: 'left-top',
         minWidth: PANEL_WIDTH,
         minHeight: PANEL_HEIGHT,
-        offsetX: -PANEL_WIDTH / 2,
-        offsetY: -PANEL_HEIGHT / 2,
+        offsetOriginX: -0.5,
+        offsetOriginY: -0.5,
       },
     );
 
@@ -240,8 +240,8 @@ export class GrowthScene extends Phaser.Scene {
         align: 'left-top',
         minWidth: PANEL_INNER_WIDTH,
         minHeight: 200,
-        offsetX: -PANEL_INNER_WIDTH / 2,
-        offsetY: -100,
+        offsetOriginX: -0.5,
+        offsetOriginY: -0.5,
       });
       emptyLayout.layout();
       container.add(emptyLayout);
@@ -268,8 +268,8 @@ export class GrowthScene extends Phaser.Scene {
           align: 'left-top',
           minWidth: PANEL_INNER_WIDTH,
           minHeight: CARD_ROW_HEIGHT,
-          offsetX: -PANEL_INNER_WIDTH / 2,
-          offsetY: -CARD_ROW_HEIGHT / 2,
+          offsetOriginX: -0.5,
+          offsetOriginY: -0.5,
         },
       );
     });
@@ -392,8 +392,8 @@ export class GrowthScene extends Phaser.Scene {
         align: 'left-top',
         minWidth: 112,
         minHeight: PANEL_BUTTON_HEIGHT,
-        offsetX: -56,
-        offsetY: -PANEL_BUTTON_HEIGHT / 2,
+        offsetOriginX: -0.5,
+        offsetOriginY: -0.5,
       },
     );
     layout.addSpace();
@@ -401,8 +401,8 @@ export class GrowthScene extends Phaser.Scene {
       align: 'left-top',
       minWidth: 120,
       minHeight: PANEL_BUTTON_HEIGHT,
-      offsetX: -60,
-      offsetY: -PANEL_BUTTON_HEIGHT / 2,
+      offsetOriginX: -0.5,
+      offsetOriginY: -0.5,
     });
     layout.addSpace();
     layout.add(
@@ -413,8 +413,8 @@ export class GrowthScene extends Phaser.Scene {
         align: 'left-top',
         minWidth: 112,
         minHeight: PANEL_BUTTON_HEIGHT,
-        offsetX: -56,
-        offsetY: -PANEL_BUTTON_HEIGHT / 2,
+        offsetOriginX: -0.5,
+        offsetOriginY: -0.5,
       },
     );
     layout.layout();
@@ -493,8 +493,8 @@ export class GrowthScene extends Phaser.Scene {
         align: 'left-top',
         minWidth: 190,
         minHeight: HUD_BUTTON_HEIGHT,
-        offsetX: -95,
-        offsetY: -HUD_BUTTON_HEIGHT / 2,
+        offsetOriginX: -0.5,
+        offsetOriginY: -0.5,
       },
     );
     layout.add(
@@ -505,8 +505,8 @@ export class GrowthScene extends Phaser.Scene {
         align: 'left-top',
         minWidth: 280,
         minHeight: HUD_BUTTON_HEIGHT,
-        offsetX: -140,
-        offsetY: -HUD_BUTTON_HEIGHT / 2,
+        offsetOriginX: -0.5,
+        offsetOriginY: -0.5,
       },
     );
     layout.add(
@@ -517,8 +517,8 @@ export class GrowthScene extends Phaser.Scene {
         align: 'left-top',
         minWidth: 180,
         minHeight: HUD_BUTTON_HEIGHT,
-        offsetX: -90,
-        offsetY: -HUD_BUTTON_HEIGHT / 2,
+        offsetOriginX: -0.5,
+        offsetOriginY: -0.5,
       },
     );
 
@@ -527,8 +527,8 @@ export class GrowthScene extends Phaser.Scene {
       align: 'left-top',
       minWidth: 300,
       minHeight: HUD_BUTTON_HEIGHT,
-      offsetX: -150,
-      offsetY: -HUD_BUTTON_HEIGHT / 2,
+      offsetOriginX: -0.5,
+      offsetOriginY: -0.5,
     });
     layout.layout();
     this.hudContainer = layout;

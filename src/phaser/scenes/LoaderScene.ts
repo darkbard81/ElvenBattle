@@ -6,6 +6,10 @@ import type { MainMenuSceneData, LoaderSceneData } from './scene-data';
 
 const PROGRESS_BAR_WIDTH = 560;
 const PROGRESS_BAR_HEIGHT = 20;
+const TITLE_GROUP_HEIGHT = 220;
+const PROGRESS_GROUP_HEIGHT = 120;
+const PROGRESS_GROUP_TOP = 394;
+const PROGRESS_GROUP_LEFT = (GAME_WIDTH - PROGRESS_BAR_WIDTH) / 2;
 
 /**
  * `assets.json`을 읽고 필요한 `webp` 텍스처만 순차적으로 로딩하는 씬이다.
@@ -52,6 +56,12 @@ export class LoaderScene extends Phaser.Scene {
   private addForegroundUi(): void {
     const root = this.rexUI.add.overlapSizer(0, 0, GAME_WIDTH, GAME_HEIGHT, {
       origin: 0,
+      anchor: {
+        left: 'left',
+        top: 'top',
+        width: '100%',
+        height: '100%',
+      },
     });
     const titleGroup = this.createTitleGroup();
     const progressGroup = this.createProgressGroup();
@@ -59,23 +69,25 @@ export class LoaderScene extends Phaser.Scene {
     root.add(titleGroup, {
       align: 'left-top',
       minWidth: GAME_WIDTH,
-      minHeight: 220,
-      offsetX: -GAME_WIDTH / 2,
-      offsetY: -GAME_HEIGHT / 2,
+      minHeight: TITLE_GROUP_HEIGHT,
+      offsetOriginX: -0.5,
+      offsetOriginY: -0.5,
     });
     root.add(progressGroup, {
       align: 'left-top',
       minWidth: PROGRESS_BAR_WIDTH,
-      minHeight: 120,
-      offsetX: -PROGRESS_BAR_WIDTH / 2,
-      offsetY: 394 - GAME_HEIGHT / 2,
+      minHeight: PROGRESS_GROUP_HEIGHT,
+      offsetX: PROGRESS_GROUP_LEFT,
+      offsetY: PROGRESS_GROUP_TOP,
+      offsetOriginX: -0.5,
+      offsetOriginY: -0.5,
     });
     root.layout();
   }
 
   private createTitleGroup(): Phaser.GameObjects.Container {
     const group = this.add.container(0, 0);
-    group.setSize(GAME_WIDTH, 220);
+    group.setSize(GAME_WIDTH, TITLE_GROUP_HEIGHT);
     const title = this.add
       .text(GAME_WIDTH / 2, 146, 'Loading archive', {
         fontFamily: DEFAULT_FONT_FAMILY,
@@ -91,7 +103,7 @@ export class LoaderScene extends Phaser.Scene {
 
   private createProgressGroup(): Phaser.GameObjects.Container {
     const group = this.add.container(0, 0);
-    group.setSize(PROGRESS_BAR_WIDTH, 120);
+    group.setSize(PROGRESS_BAR_WIDTH, PROGRESS_GROUP_HEIGHT);
     const progressTrack = this.add
       .rectangle(
         PROGRESS_BAR_WIDTH / 2,

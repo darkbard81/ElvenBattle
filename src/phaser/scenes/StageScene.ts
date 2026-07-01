@@ -142,15 +142,15 @@ export class StageScene extends Phaser.Scene {
       align: 'left-top',
       minWidth: STAGE_LIST_WIDTH,
       minHeight: STAGE_BODY_HEIGHT,
-      offsetX: -STAGE_LIST_WIDTH / 2,
-      offsetY: -STAGE_BODY_HEIGHT / 2,
+      offsetOriginX: -0.5,
+      offsetOriginY: -0.5,
     });
     bodyLayout.add(this.createStageDetailPanel(), {
       align: 'left-top',
       minWidth: STAGE_DETAIL_WIDTH,
       minHeight: STAGE_BODY_HEIGHT,
-      offsetX: -STAGE_DETAIL_WIDTH / 2,
-      offsetY: -STAGE_BODY_HEIGHT / 2,
+      offsetOriginX: -0.5,
+      offsetOriginY: -0.5,
     });
     bodyLayout.layout();
     this.stageBodyContainer = bodyLayout;
@@ -192,8 +192,8 @@ export class StageScene extends Phaser.Scene {
         align: 'left-top',
         minWidth: STAGE_CARD_WIDTH,
         minHeight: STAGE_CARD_HEIGHT,
-        offsetX: -STAGE_CARD_WIDTH / 2,
-        offsetY: -STAGE_CARD_HEIGHT / 2,
+        offsetOriginX: -0.5,
+        offsetOriginY: -0.5,
       });
     });
 
@@ -313,8 +313,8 @@ export class StageScene extends Phaser.Scene {
         align: 'left-top',
         minWidth: DETAIL_ROW_WIDTH,
         minHeight: DETAIL_ROW_HEIGHT,
-        offsetX: -DETAIL_ROW_WIDTH / 2,
-        offsetY: -DETAIL_ROW_HEIGHT / 2,
+        offsetOriginX: -0.5,
+        offsetOriginY: -0.5,
       });
     });
     rowLayout.layout();
@@ -436,8 +436,8 @@ export class StageScene extends Phaser.Scene {
         align: 'left-top',
         minWidth: 180,
         minHeight: HUD_BUTTON_HEIGHT,
-        offsetX: -90,
-        offsetY: -HUD_BUTTON_HEIGHT / 2,
+        offsetOriginX: -0.5,
+        offsetOriginY: -0.5,
       },
     );
     layout.add(
@@ -448,8 +448,8 @@ export class StageScene extends Phaser.Scene {
         align: 'left-top',
         minWidth: 250,
         minHeight: HUD_BUTTON_HEIGHT,
-        offsetX: -125,
-        offsetY: -HUD_BUTTON_HEIGHT / 2,
+        offsetOriginX: -0.5,
+        offsetOriginY: -0.5,
       },
     );
 
@@ -463,8 +463,8 @@ export class StageScene extends Phaser.Scene {
         align: 'left-top',
         minWidth: 128,
         minHeight: HUD_BUTTON_HEIGHT,
-        offsetX: -64,
-        offsetY: -HUD_BUTTON_HEIGHT / 2,
+        offsetOriginX: -0.5,
+        offsetOriginY: -0.5,
       },
     );
     layout.add(
@@ -477,8 +477,8 @@ export class StageScene extends Phaser.Scene {
         align: 'left-top',
         minWidth: 128,
         minHeight: HUD_BUTTON_HEIGHT,
-        offsetX: -64,
-        offsetY: -HUD_BUTTON_HEIGHT / 2,
+        offsetOriginX: -0.5,
+        offsetOriginY: -0.5,
       },
     );
     layout.add(
@@ -491,16 +491,16 @@ export class StageScene extends Phaser.Scene {
         align: 'left-top',
         minWidth: 128,
         minHeight: HUD_BUTTON_HEIGHT,
-        offsetX: -64,
-        offsetY: -HUD_BUTTON_HEIGHT / 2,
+        offsetOriginX: -0.5,
+        offsetOriginY: -0.5,
       },
     );
     layout.add(this.createHudButton('연성', 128, false), {
       align: 'left-top',
       minWidth: 128,
       minHeight: HUD_BUTTON_HEIGHT,
-      offsetX: -64,
-      offsetY: -HUD_BUTTON_HEIGHT / 2,
+      offsetOriginX: -0.5,
+      offsetOriginY: -0.5,
     });
 
     layout.layout();
