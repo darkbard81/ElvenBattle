@@ -1,5 +1,6 @@
 import type GridSizer from 'phaser4-rex-plugins/templates/ui/gridsizer/GridSizer';
 import type OverlapSizer from 'phaser4-rex-plugins/templates/ui/overlapsizer/OverlapSizer';
+import type ScrollablePanel from 'phaser4-rex-plugins/templates/ui/scrollablepanel/ScrollablePanel';
 import type Sizer from 'phaser4-rex-plugins/templates/ui/sizer/Sizer';
 
 declare module 'phaser4-rex-plugins/templates/ui/ui-plugin.js' {
@@ -43,6 +44,7 @@ type RexUIObjectFactory = {
       | [x: number, y: number, config?: OverlapSizer.IConfig]
       | [x: number, y: number, width: number, height: number, config?: OverlapSizer.IConfig]
   ) => OverlapSizer;
+  scrollablePanel: (config?: ScrollablePanel.IConfig) => ScrollablePanel;
 };
 
 type RexUIPluginInstance = Phaser.Plugins.ScenePlugin & {
