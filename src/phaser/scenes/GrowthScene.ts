@@ -12,12 +12,46 @@ import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
 import { createMenuButton } from '../ui/menu-button';
 import type { GrowthSceneData, StageSceneData } from './scene-data';
 
-const CARD_PAGE_SIZE = 8;
 const PANEL_Y = 248;
 const PANEL_WIDTH = 500;
-const PANEL_HEIGHT = 1320;
 const CARD_ROW_HEIGHT = 124;
 const CARD_ROW_GAP = 18;
+const PANEL_GAP = 56;
+const PANEL_BODY_WIDTH = PANEL_WIDTH * 2 + PANEL_GAP;
+const PANEL_BODY_X = (GAME_WIDTH - PANEL_BODY_WIDTH) / 2;
+const PANEL_INNER_WIDTH = PANEL_WIDTH - 56;
+const PANEL_HEADER_HEIGHT = 104;
+const PANEL_BOTTOM_PADDING = 28;
+const PANEL_SCROLLBAR_WIDTH = 10;
+const PANEL_SCROLLBAR_GAP = 10;
+const PANEL_SCROLL_PANEL_WIDTH = PANEL_INNER_WIDTH + PANEL_SCROLLBAR_GAP + PANEL_SCROLLBAR_WIDTH;
+const MIN_VISIBLE_CARD_ROWS = 3;
+const MIN_PANEL_HEIGHT =
+  PANEL_HEADER_HEIGHT +
+  CARD_ROW_HEIGHT * MIN_VISIBLE_CARD_ROWS +
+  CARD_ROW_GAP * (MIN_VISIBLE_CARD_ROWS - 1) +
+  PANEL_BOTTOM_PADDING;
+const HUD_BUTTON_HEIGHT = 64;
+const HUD_BUTTON_GAP = 51;
+const HUD_BACK_BUTTON_WIDTH = 190;
+const HUD_APPLY_BUTTON_WIDTH = 280;
+const HUD_SAVE_BUTTON_WIDTH = 180;
+const HUD_SUMMARY_WIDTH = 300;
+const HUD_WIDTH =
+  HUD_BACK_BUTTON_WIDTH +
+  HUD_APPLY_BUTTON_WIDTH +
+  HUD_SAVE_BUTTON_WIDTH +
+  HUD_SUMMARY_WIDTH +
+  HUD_BUTTON_GAP * 3;
+const HUD_BOTTOM_SAFE_MARGIN = 128;
+const STATUS_HUD_GAP = 86;
+const PANEL_STATUS_GAP = 74;
+
+type GrowthLayoutMetrics = {
+  hudY: number;
+  panelHeight: number;
+  statusY: number;
+};
 
 type GrowthListEntry = {
   card: RuntimeCardInstance;
@@ -33,13 +67,13 @@ export class GrowthScene extends Phaser.Scene {
   private draftSession!: GameSession;
   private selectedTargetCardInstanceId: string | null = null;
   private selectedMaterialCardInstanceIds = new Set<string>();
-  private targetPage = 0;
-  private materialPage = 0;
+  private focusedTargetCardInstanceId: string | null = null;
+  private focusedMaterialCardInstanceId: string | null = null;
   private isDirty = false;
   private isSaving = false;
   private statusText!: Phaser.GameObjects.Text;
   private listContainer: Phaser.GameObjects.Container | null = null;
-  private hudContainer: Phaser.GameObjects.Container | null = null;
+  private hudContainer: Phaser.GameObjects.GameObject | null = null;
 
   constructor() {
     super({ key: 'GrowthScene' });
@@ -53,8 +87,8 @@ export class GrowthScene extends Phaser.Scene {
     this.draftSession = data.session;
     this.selectedTargetCardInstanceId = null;
     this.selectedMaterialCardInstanceIds = new Set();
-    this.targetPage = 0;
-    this.materialPage = 0;
+    this.focusedTargetCardInstanceId = null;
+    this.focusedMaterialCardInstanceId = null;
     this.isDirty = false;
     this.isSaving = false;
 
@@ -63,6 +97,11 @@ export class GrowthScene extends Phaser.Scene {
     this.addStatusText();
     this.renderLists();
     this.renderHud();
+    this.scale.off(Phaser.Scale.Events.RESIZE, this.handleScaleResize, this);
+    this.scale.on(Phaser.Scale.Events.RESIZE, this.handleScaleResize, this);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.scale.off(Phaser.Scale.Events.RESIZE, this.handleScaleResize, this);
+    });
   }
 
   private addBackground(): void {
@@ -100,13 +139,18 @@ export class GrowthScene extends Phaser.Scene {
 
   private addStatusText(): void {
     this.statusText = this.add
-      .text(GAME_WIDTH / 2, 1642, 'Select a deck UNIT and collection materials.', {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '22px',
-        color: '#e6f4df',
-        align: 'center',
-        wordWrap: { width: GAME_WIDTH - 120 },
-      })
+      .text(
+        GAME_WIDTH / 2,
+        this.getLayoutMetrics().statusY,
+        'Select a deck UNIT and collection materials.',
+        {
+          fontFamily: DEFAULT_FONT_FAMILY,
+          fontSize: '22px',
+          color: '#e6f4df',
+          align: 'center',
+          wordWrap: { width: GAME_WIDTH - 120 },
+        },
+      )
       .setOrigin(0.5);
   }
 
@@ -114,71 +158,94 @@ export class GrowthScene extends Phaser.Scene {
     this.listContainer?.destroy();
     const container = this.add.container(0, 0);
     this.listContainer = container;
+    const { panelHeight } = this.getLayoutMetrics();
+    const bodyLayout = this.rexUI.add.sizer(
+      PANEL_BODY_X,
+      PANEL_Y,
+      PANEL_BODY_WIDTH,
+      panelHeight,
+      'x',
+      {
+        origin: 0,
+        space: { item: PANEL_GAP },
+      },
+    );
 
-    this.renderCardPanel({
-      container,
-      x: 72,
-      title: 'Current Deck Target',
-      subtitle: `${this.getTargetEntries().length} cards`,
-      entries: this.getTargetEntries(),
-      page: this.targetPage,
-      selectedInstanceIds: new Set(
-        this.selectedTargetCardInstanceId ? [this.selectedTargetCardInstanceId] : [],
-      ),
-      emptyMessage: 'No growable deck UNIT cards.',
-      onSelect: (instanceId) => {
-        this.selectedTargetCardInstanceId = instanceId;
-        this.setStatus('Growth target selected.');
-        this.renderLists();
-        this.renderHud();
+    bodyLayout.add(
+      this.createCardPanel({
+        title: 'Current Deck Target',
+        subtitle: `${this.getTargetEntries().length} cards`,
+        entries: this.getTargetEntries(),
+        selectedInstanceIds: new Set(
+          this.selectedTargetCardInstanceId ? [this.selectedTargetCardInstanceId] : [],
+        ),
+        focusInstanceId: this.focusedTargetCardInstanceId ?? this.selectedTargetCardInstanceId,
+        emptyMessage: 'No growable deck UNIT cards.',
+        onSelect: (instanceId) => {
+          this.selectedTargetCardInstanceId = instanceId;
+          this.focusedTargetCardInstanceId = instanceId;
+          this.setStatus('Growth target selected.');
+          this.renderLists();
+          this.renderHud();
+        },
+      }),
+      {
+        align: 'left-top',
+        minWidth: PANEL_WIDTH,
+        minHeight: panelHeight,
+        offsetOriginX: -0.5,
+        offsetOriginY: -0.5,
       },
-      onPageChange: (page) => {
-        this.targetPage = page;
-        this.renderLists();
-      },
-    });
+    );
 
-    this.renderCardPanel({
-      container,
-      x: 628,
-      title: 'Collection Materials',
-      subtitle: `${this.selectedMaterialCardInstanceIds.size} / ${
-        this.getMaterialEntries().length
-      } selected`,
-      entries: this.getMaterialEntries(),
-      page: this.materialPage,
-      selectedInstanceIds: this.selectedMaterialCardInstanceIds,
-      emptyMessage: 'No collection UNIT materials.',
-      onSelect: (instanceId) => {
-        this.toggleMaterialSelection(instanceId);
+    bodyLayout.add(
+      this.createCardPanel({
+        title: 'Collection Materials',
+        subtitle: `${this.selectedMaterialCardInstanceIds.size} / ${
+          this.getMaterialEntries().length
+        } selected`,
+        entries: this.getMaterialEntries(),
+        selectedInstanceIds: this.selectedMaterialCardInstanceIds,
+        focusInstanceId: this.focusedMaterialCardInstanceId,
+        emptyMessage: 'No collection UNIT materials.',
+        onSelect: (instanceId) => {
+          this.toggleMaterialSelection(instanceId);
+        },
+      }),
+      {
+        align: 'left-top',
+        minWidth: PANEL_WIDTH,
+        minHeight: panelHeight,
+        offsetOriginX: -0.5,
+        offsetOriginY: -0.5,
       },
-      onPageChange: (page) => {
-        this.materialPage = page;
-        this.renderLists();
-      },
-    });
+    );
+
+    bodyLayout.layout();
+    container.add(bodyLayout);
   }
 
-  private renderCardPanel(config: {
-    container: Phaser.GameObjects.Container;
-    x: number;
+  private createCardPanel(config: {
     title: string;
     subtitle: string;
     entries: GrowthListEntry[];
-    page: number;
     selectedInstanceIds: ReadonlySet<string>;
+    focusInstanceId: string | null;
     emptyMessage: string;
     onSelect: (instanceId: string) => void;
-    onPageChange: (page: number) => void;
-  }): void {
-    const panel = this.add.rectangle(config.x, PANEL_Y, PANEL_WIDTH, PANEL_HEIGHT, 0x10261f, 0.94);
+  }): Phaser.GameObjects.Container {
+    const { panelHeight } = this.getLayoutMetrics();
+    const viewportHeight = this.getPanelViewportHeight(panelHeight);
+    const container = this.add.container(0, 0);
+    container.setSize(PANEL_WIDTH, panelHeight);
+    const panel = this.add.rectangle(0, 0, PANEL_WIDTH, panelHeight, 0x10261f, 0.94);
     panel.setOrigin(0, 0);
     panel.setStrokeStyle(2, 0xbfeec5, 0.64);
-    config.container.add(panel);
+    container.add(panel);
 
-    config.container.add(
+    container.add(
       this.add
-        .text(config.x + 28, PANEL_Y + 38, config.title, {
+        .text(28, 38, config.title, {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSize: '30px',
           fontStyle: '700',
@@ -187,9 +254,9 @@ export class GrowthScene extends Phaser.Scene {
         })
         .setOrigin(0, 0.5),
     );
-    config.container.add(
+    container.add(
       this.add
-        .text(config.x + PANEL_WIDTH - 28, PANEL_Y + 38, config.subtitle, {
+        .text(PANEL_WIDTH - 28, 38, config.subtitle, {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSize: '18px',
           color: '#a8d2af',
@@ -199,63 +266,147 @@ export class GrowthScene extends Phaser.Scene {
     );
 
     if (config.entries.length === 0) {
-      config.container.add(
-        this.add
-          .text(config.x + PANEL_WIDTH / 2, PANEL_Y + 570, config.emptyMessage, {
-            fontFamily: DEFAULT_FONT_FAMILY,
-            fontSize: '24px',
-            color: '#b8c9c0',
-            align: 'center',
-            wordWrap: { width: PANEL_WIDTH - 72 },
-          })
-          .setOrigin(0.5),
-      );
-      this.renderPagination(config);
-      return;
+      container.add(this.createEmptyPanelMessage(config.emptyMessage, viewportHeight));
+      return container;
     }
 
-    const maxPage = getMaxPage(config.entries.length);
-    const page = Math.min(config.page, maxPage);
-    const pageEntries = config.entries.slice(page * CARD_PAGE_SIZE, (page + 1) * CARD_PAGE_SIZE);
-    pageEntries.forEach((entry, index) => {
-      const rowY = PANEL_Y + 104 + index * (CARD_ROW_HEIGHT + CARD_ROW_GAP);
-      this.renderCardRow({
-        container: config.container,
-        x: config.x + 28,
-        y: rowY,
+    const rowLayoutHeight = Math.max(
+      viewportHeight,
+      config.entries.length * CARD_ROW_HEIGHT +
+        Math.max(0, config.entries.length - 1) * CARD_ROW_GAP,
+    );
+    const rowLayout = this.rexUI.add.sizer(0, 0, PANEL_INNER_WIDTH, rowLayoutHeight, 'y', {
+      origin: 0,
+      space: { item: CARD_ROW_GAP },
+    });
+
+    let focusedRow: Phaser.GameObjects.Container | null = null;
+    config.entries.forEach((entry) => {
+      const row = this.createCardRow({
         entry,
         selected: config.selectedInstanceIds.has(entry.card.instance.instanceId),
         onSelect: config.onSelect,
       });
-    });
+      if (entry.card.instance.instanceId === config.focusInstanceId) {
+        focusedRow = row;
+      }
 
-    this.renderPagination({
-      ...config,
-      page,
+      rowLayout.add(row, {
+        align: 'left-top',
+        minWidth: PANEL_INNER_WIDTH,
+        minHeight: CARD_ROW_HEIGHT,
+        offsetOriginX: -0.5,
+        offsetOriginY: -0.5,
+      });
+    });
+    rowLayout.layout();
+    const scrollPanel = this.createCardScrollPanel(rowLayout, viewportHeight);
+    scrollPanel.layout();
+    if (focusedRow) {
+      scrollPanel.scrollToChild(focusedRow, 'centerY');
+    }
+    container.add(scrollPanel);
+    return container;
+  }
+
+  private createEmptyPanelMessage(
+    message: string,
+    viewportHeight: number,
+  ): Phaser.GameObjects.GameObject {
+    const layout = this.rexUI.add.overlapSizer(
+      28,
+      PANEL_HEADER_HEIGHT,
+      PANEL_INNER_WIDTH,
+      viewportHeight,
+      {
+        origin: 0,
+      },
+    );
+
+    const messageContainer = this.add.container(0, 0);
+    messageContainer.setSize(PANEL_INNER_WIDTH, viewportHeight);
+    messageContainer.add(
+      this.add
+        .text(PANEL_INNER_WIDTH / 2, viewportHeight / 2, message, {
+          fontFamily: DEFAULT_FONT_FAMILY,
+          fontSize: '24px',
+          color: '#b8c9c0',
+          align: 'center',
+          wordWrap: { width: PANEL_WIDTH - 72 },
+        })
+        .setOrigin(0.5),
+    );
+    layout.add(messageContainer, {
+      align: 'left-top',
+      minWidth: PANEL_INNER_WIDTH,
+      minHeight: viewportHeight,
+      offsetOriginX: -0.5,
+      offsetOriginY: -0.5,
+    });
+    layout.layout();
+    return layout;
+  }
+
+  private createCardScrollPanel(child: Phaser.GameObjects.GameObject, viewportHeight: number) {
+    return this.rexUI.add.scrollablePanel({
+      x: 28,
+      y: PANEL_HEADER_HEIGHT,
+      width: PANEL_SCROLL_PANEL_WIDTH,
+      height: viewportHeight,
+      origin: 0,
+      scrollMode: 'y',
+      clampChildOY: true,
+      panel: {
+        child,
+        mask: { padding: 2 },
+      },
+      space: {
+        sliderY: PANEL_SCROLLBAR_GAP,
+      },
+      slider: {
+        track: this.add.rectangle(0, 0, PANEL_SCROLLBAR_WIDTH, viewportHeight, 0x07130f, 0.72),
+        thumb: this.add.rectangle(0, 0, PANEL_SCROLLBAR_WIDTH, 48, 0xbfeec5, 0.78),
+        position: 'right',
+        input: 'drag',
+        hideUnscrollableSlider: true,
+        disableUnscrollableDrag: true,
+        adaptThumbSize: true,
+        minThumbSize: 42,
+      },
+      scroller: {
+        threshold: 8,
+        slidingDeceleration: 4200,
+        backDeceleration: 2200,
+        pointerOutRelease: true,
+      },
+      mouseWheelScroller: {
+        focus: false,
+        speed: 0.22,
+      },
+      scrollDetectionMode: 'rectBounds',
     });
   }
 
-  private renderCardRow(config: {
-    container: Phaser.GameObjects.Container;
-    x: number;
-    y: number;
+  private createCardRow(config: {
     entry: GrowthListEntry;
     selected: boolean;
     onSelect: (instanceId: string) => void;
-  }): void {
+  }): Phaser.GameObjects.Container {
+    const container = this.add.container(0, 0);
+    container.setSize(PANEL_INNER_WIDTH, CARD_ROW_HEIGHT);
     const card = config.entry.card;
     const fillColor = config.selected ? 0x31543d : 0x17352d;
     const strokeColor = config.selected ? 0xffe4a8 : 0x78a98d;
     const background = this.add
-      .rectangle(config.x, config.y, PANEL_WIDTH - 56, CARD_ROW_HEIGHT, fillColor, 0.92)
+      .rectangle(0, 0, PANEL_INNER_WIDTH, CARD_ROW_HEIGHT, fillColor, 0.92)
       .setOrigin(0, 0);
     background.setStrokeStyle(config.selected ? 3 : 1, strokeColor, config.selected ? 0.95 : 0.5);
     background.setInteractive({ useHandCursor: true });
-    config.container.add(background);
+    container.add(background);
 
-    config.container.add(
+    container.add(
       this.add
-        .text(config.x + 18, config.y + 24, `${config.entry.index + 1}. ${card.instance.name}`, {
+        .text(18, 24, `${config.entry.index + 1}. ${card.instance.name}`, {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSize: '22px',
           color: '#f5fff0',
@@ -264,9 +415,9 @@ export class GrowthScene extends Phaser.Scene {
         })
         .setOrigin(0, 0.5),
     );
-    config.container.add(
+    container.add(
       this.add
-        .text(config.x + 18, config.y + 64, formatCardStats(card), {
+        .text(18, 64, formatCardStats(card), {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSize: '17px',
           color: '#d7ead4',
@@ -275,9 +426,9 @@ export class GrowthScene extends Phaser.Scene {
         })
         .setOrigin(0, 0.5),
     );
-    config.container.add(
+    container.add(
       this.add
-        .text(config.x + 18, config.y + 94, card.definition.id, {
+        .text(18, 94, card.definition.id, {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSize: '14px',
           color: '#92aa9e',
@@ -296,153 +447,125 @@ export class GrowthScene extends Phaser.Scene {
     background.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
       config.onSelect(card.instance.instanceId);
     });
-  }
-
-  private renderPagination(config: {
-    container: Phaser.GameObjects.Container;
-    x: number;
-    entries: GrowthListEntry[];
-    page: number;
-    onPageChange: (page: number) => void;
-  }): void {
-    const maxPage = getMaxPage(config.entries.length);
-    const page = Math.min(config.page, maxPage);
-    const y = PANEL_Y + PANEL_HEIGHT - 58;
-    this.createPanelButton({
-      container: config.container,
-      x: config.x + 84,
-      y,
-      width: 112,
-      height: 44,
-      label: 'Prev',
-      enabled: page > 0,
-      onClick: () => {
-        config.onPageChange(page - 1);
-      },
-    });
-    config.container.add(
-      this.add
-        .text(config.x + PANEL_WIDTH / 2, y, `${page + 1} / ${maxPage + 1}`, {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '19px',
-          color: '#d7ead4',
-          align: 'center',
-        })
-        .setOrigin(0.5),
-    );
-    this.createPanelButton({
-      container: config.container,
-      x: config.x + PANEL_WIDTH - 84,
-      y,
-      width: 112,
-      height: 44,
-      label: 'Next',
-      enabled: page < maxPage,
-      onClick: () => {
-        config.onPageChange(page + 1);
-      },
-    });
-  }
-
-  private createPanelButton(config: {
-    container: Phaser.GameObjects.Container;
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    label: string;
-    enabled: boolean;
-    onClick: () => void;
-  }): void {
-    const background = this.add.rectangle(
-      config.x,
-      config.y,
-      config.width,
-      config.height,
-      config.enabled ? 0x1d3f31 : 0x12211c,
-      config.enabled ? 0.96 : 0.72,
-    );
-    background.setStrokeStyle(2, config.enabled ? 0xdaf6d3 : 0x51605a, config.enabled ? 0.9 : 0.5);
-    config.container.add(background);
-    config.container.add(
-      this.add
-        .text(config.x, config.y, config.label, {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '18px',
-          color: config.enabled ? '#f5fff0' : '#7e8b84',
-          align: 'center',
-        })
-        .setOrigin(0.5),
-    );
-
-    if (!config.enabled) {
-      return;
-    }
-
-    background.setInteractive({ useHandCursor: true });
-    background.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, config.onClick);
+    return container;
   }
 
   private renderHud(): void {
     this.hudContainer?.destroy();
-    const container = this.add.container(0, 0);
-    this.hudContainer = container;
+    const layout = this.rexUI.add.sizer(
+      (GAME_WIDTH - HUD_WIDTH) / 2,
+      this.getLayoutMetrics().hudY,
+      HUD_WIDTH,
+      HUD_BUTTON_HEIGHT,
+      'x',
+      {
+        origin: 0,
+        space: { item: HUD_BUTTON_GAP },
+      },
+    );
     const canApply =
       !this.isSaving &&
       this.selectedTargetCardInstanceId !== null &&
       this.selectedMaterialCardInstanceIds.size > 0;
 
-    createMenuButton(this, {
-      x: 164,
-      y: 1760,
-      width: 190,
-      height: 64,
-      label: 'Back',
-      enabled: !this.isSaving,
-      parent: container,
-      onClick: () => {
+    layout.add(
+      this.createHudButton('Back', HUD_BACK_BUTTON_WIDTH, !this.isSaving, () => {
         this.scene.start('StageScene', { session: this.savedSession } satisfies StageSceneData);
+      }),
+      {
+        align: 'left-top',
+        minWidth: HUD_BACK_BUTTON_WIDTH,
+        minHeight: HUD_BUTTON_HEIGHT,
+        offsetOriginX: -0.5,
+        offsetOriginY: -0.5,
       },
-    });
-    createMenuButton(this, {
-      x: 450,
-      y: 1760,
-      width: 280,
-      height: 64,
-      label: 'Apply Growth',
-      enabled: canApply,
-      parent: container,
-      onClick: () => {
+    );
+    layout.add(
+      this.createHudButton('Apply Growth', HUD_APPLY_BUTTON_WIDTH, canApply, () => {
         this.handleApplyGrowth();
+      }),
+      {
+        align: 'left-top',
+        minWidth: HUD_APPLY_BUTTON_WIDTH,
+        minHeight: HUD_BUTTON_HEIGHT,
+        offsetOriginX: -0.5,
+        offsetOriginY: -0.5,
       },
-    });
-    createMenuButton(this, {
-      x: 734,
-      y: 1760,
-      width: 180,
-      height: 64,
-      label: 'Save',
-      enabled: this.isDirty && !this.isSaving,
-      parent: container,
-      onClick: () => {
+    );
+    layout.add(
+      this.createHudButton('Save', HUD_SAVE_BUTTON_WIDTH, this.isDirty && !this.isSaving, () => {
         void this.handleSave();
+      }),
+      {
+        align: 'left-top',
+        minWidth: HUD_SAVE_BUTTON_WIDTH,
+        minHeight: HUD_BUTTON_HEIGHT,
+        offsetOriginX: -0.5,
+        offsetOriginY: -0.5,
       },
-    });
+    );
 
     const summaryText = this.isDirty ? 'Unsaved growth' : 'Saved growth';
-    container.add(
+    layout.add(this.createHudSummary(summaryText, this.isDirty), {
+      align: 'left-top',
+      minWidth: HUD_SUMMARY_WIDTH,
+      minHeight: HUD_BUTTON_HEIGHT,
+      offsetOriginX: -0.5,
+      offsetOriginY: -0.5,
+    });
+    layout.layout();
+    this.hudContainer = layout;
+  }
+
+  private createHudButton(
+    label: string,
+    width: number,
+    enabled: boolean,
+    onClick: () => void,
+  ): Phaser.GameObjects.Container {
+    const slot = this.add.container(0, 0);
+    slot.setSize(width, HUD_BUTTON_HEIGHT);
+    const button = enabled
+      ? createMenuButton(this, {
+          x: width / 2,
+          y: HUD_BUTTON_HEIGHT / 2,
+          width,
+          height: HUD_BUTTON_HEIGHT,
+          label,
+          enabled,
+          onClick,
+        })
+      : createMenuButton(this, {
+          x: width / 2,
+          y: HUD_BUTTON_HEIGHT / 2,
+          width,
+          height: HUD_BUTTON_HEIGHT,
+          label,
+          enabled,
+        });
+
+    slot.add(button);
+    return slot;
+  }
+
+  private createHudSummary(text: string, isDirty: boolean): Phaser.GameObjects.Container {
+    const slot = this.add.container(0, 0);
+    slot.setSize(HUD_SUMMARY_WIDTH, HUD_BUTTON_HEIGHT);
+    slot.add(
       this.add
-        .text(1010, 1760, summaryText, {
+        .text(HUD_SUMMARY_WIDTH / 2, HUD_BUTTON_HEIGHT / 2, text, {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSize: '22px',
-          color: this.isDirty ? '#fff3c2' : '#bfeec5',
+          color: isDirty ? '#fff3c2' : '#bfeec5',
           align: 'center',
         })
         .setOrigin(0.5),
     );
+    return slot;
   }
 
   private toggleMaterialSelection(instanceId: string): void {
+    this.focusedMaterialCardInstanceId = instanceId;
     if (this.selectedMaterialCardInstanceIds.has(instanceId)) {
       this.selectedMaterialCardInstanceIds.delete(instanceId);
       this.setStatus('Material removed from selection.');
@@ -468,6 +591,7 @@ export class GrowthScene extends Phaser.Scene {
       this.draftSession = result.session;
       this.isDirty = true;
       this.selectedMaterialCardInstanceIds = new Set();
+      this.focusedMaterialCardInstanceId = null;
       this.setStatus(formatGrowthResultStatus(result));
       this.renderLists();
       this.renderHud();
@@ -494,6 +618,8 @@ export class GrowthScene extends Phaser.Scene {
       this.isDirty = false;
       this.selectedTargetCardInstanceId = null;
       this.selectedMaterialCardInstanceIds = new Set();
+      this.focusedTargetCardInstanceId = null;
+      this.focusedMaterialCardInstanceId = null;
       this.setStatus('Growth changes saved.');
       this.renderLists();
     } catch (error: unknown) {
@@ -524,10 +650,36 @@ export class GrowthScene extends Phaser.Scene {
   private setStatus(message: string): void {
     this.statusText.setText(message);
   }
-}
 
-function getMaxPage(totalCount: number): number {
-  return Math.max(0, Math.ceil(totalCount / CARD_PAGE_SIZE) - 1);
+  private handleScaleResize(): void {
+    this.statusText.setY(this.getLayoutMetrics().statusY);
+    this.renderLists();
+    this.renderHud();
+  }
+
+  private getLayoutMetrics(): GrowthLayoutMetrics {
+    const gameHeight = this.getGameHeight();
+    const hudY = gameHeight - HUD_BOTTOM_SAFE_MARGIN - HUD_BUTTON_HEIGHT;
+    const statusY = hudY - STATUS_HUD_GAP;
+
+    return {
+      hudY,
+      panelHeight: Math.max(MIN_PANEL_HEIGHT, statusY - PANEL_STATUS_GAP - PANEL_Y),
+      statusY,
+    };
+  }
+
+  private getPanelViewportHeight(panelHeight: number): number {
+    return Math.max(
+      MIN_PANEL_HEIGHT - PANEL_HEADER_HEIGHT,
+      panelHeight - PANEL_HEADER_HEIGHT - PANEL_BOTTOM_PADDING,
+    );
+  }
+
+  private getGameHeight(): number {
+    const gameHeight = this.scale.gameSize.height;
+    return gameHeight > 0 ? gameHeight : GAME_HEIGHT;
+  }
 }
 
 function formatCardStats(card: RuntimeCardInstance): string {
