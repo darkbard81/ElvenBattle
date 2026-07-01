@@ -127,8 +127,8 @@ type BattlePopupEvent = {
   text: string;
 };
 
-const FIELD_SLOT_WIDTH = 180;
-const FIELD_SLOT_HEIGHT = 270;
+const FIELD_SLOT_WIDTH = 160;
+const FIELD_SLOT_HEIGHT = 240;
 const HAND_CARD_WIDTH = 144;
 const BATTLE_POPUP_DURATION_MS = 500;
 const PLACE_HIGHLIGHT_COLOR = 0x71d879;
@@ -145,6 +145,11 @@ const CARD_INFO_PANEL_Y = 196;
 const CARD_INFO_PANEL_PADDING = 24;
 const CARD_INFO_PREVIEW_WIDTH = 512;
 const CARD_INFO_PREVIEW_HEIGHT = 768;
+const HUD_X = 44;
+const HUD_Y = 52;
+const HUD_WIDTH = 240;
+const HUD_HEIGHT = 96;
+const HUD_GAP = 16;
 const POPUP_STYLE = {
   PLACE: {
     fill: 0x173a24,
@@ -172,22 +177,58 @@ const POPUP_STYLE = {
     color: '#f4ffd2',
   },
 } as const;
-const SLOT_COLUMNS = {
-  FR: GAME_WIDTH / 2 - 210,
-  FC: GAME_WIDTH / 2,
-  FL: GAME_WIDTH / 2 + 210,
-} as const;
-const SLOT_ROWS = {
-  enemyBack: 400,
-  enemyFront: 700,
-  playerFront: 1100,
-  playerBack: 1400,
-} as const;
+const BATTLE_GRID_COLUMNS = ['leftPile', 'FR', 'FC', 'FL', 'rightPile'] as const;
+const BATTLE_GRID_ROWS = ['enemyBack', 'enemyFront', 'playerFront', 'playerBack'] as const;
+type BattleGridColumn = (typeof BATTLE_GRID_COLUMNS)[number];
+type BattleGridRow = (typeof BATTLE_GRID_ROWS)[number];
+type BattleGridCell = {
+  column: BattleGridColumn;
+  row: BattleGridRow;
+};
+const BATTLE_GRID_X = 316;
+const BATTLE_GRID_Y = 326;
+const BATTLE_GRID_COLUMN_GAP = 16;
+const BATTLE_GRID_ROW_GAP_TOP = 16;
+const BATTLE_GRID_ROW_GAP_CENTER = 56;
+const BATTLE_GRID_ROW_GAP_BOTTOM = 16;
+const BATTLE_GRID_ROW_GAPS = [
+  BATTLE_GRID_ROW_GAP_TOP,
+  BATTLE_GRID_ROW_GAP_CENTER,
+  BATTLE_GRID_ROW_GAP_BOTTOM,
+];
+const BATTLE_GRID_WIDTH =
+  FIELD_SLOT_WIDTH * BATTLE_GRID_COLUMNS.length +
+  BATTLE_GRID_COLUMN_GAP * (BATTLE_GRID_COLUMNS.length - 1);
+const BATTLE_GRID_HEIGHT =
+  FIELD_SLOT_HEIGHT * BATTLE_GRID_ROWS.length +
+  BATTLE_GRID_ROW_GAPS.reduce((total, gap) => total + gap, 0);
+const BATTLE_GRID_COLUMN_X: Record<BattleGridColumn, number> = {
+  leftPile: BATTLE_GRID_X,
+  FR: BATTLE_GRID_X + FIELD_SLOT_WIDTH + BATTLE_GRID_COLUMN_GAP,
+  FC: BATTLE_GRID_X + (FIELD_SLOT_WIDTH + BATTLE_GRID_COLUMN_GAP) * 2,
+  FL: BATTLE_GRID_X + (FIELD_SLOT_WIDTH + BATTLE_GRID_COLUMN_GAP) * 3,
+  rightPile: BATTLE_GRID_X + (FIELD_SLOT_WIDTH + BATTLE_GRID_COLUMN_GAP) * 4,
+};
+const BATTLE_GRID_ROW_Y: Record<BattleGridRow, number> = {
+  enemyBack: BATTLE_GRID_Y,
+  enemyFront: BATTLE_GRID_Y + FIELD_SLOT_HEIGHT + BATTLE_GRID_ROW_GAP_TOP,
+  playerFront:
+    BATTLE_GRID_Y + FIELD_SLOT_HEIGHT * 2 + BATTLE_GRID_ROW_GAP_TOP + BATTLE_GRID_ROW_GAP_CENTER,
+  playerBack:
+    BATTLE_GRID_Y +
+    FIELD_SLOT_HEIGHT * 3 +
+    BATTLE_GRID_ROW_GAP_TOP +
+    BATTLE_GRID_ROW_GAP_CENTER +
+    BATTLE_GRID_ROW_GAP_BOTTOM,
+};
+const BATTLE_GRID_CENTER_X = BATTLE_GRID_X + BATTLE_GRID_WIDTH / 2;
+const BATTLE_GRID_SIDE_DIVIDER_Y =
+  BATTLE_GRID_ROW_Y.enemyFront + FIELD_SLOT_HEIGHT + BATTLE_GRID_ROW_GAP_CENTER / 2;
 const BOARD_RECT = {
-  x: 44,
+  x: BATTLE_GRID_X - 16,
   y: 244,
-  width: GAME_WIDTH - 88,
-  height: 1314,
+  width: BATTLE_GRID_WIDTH + 32,
+  height: BATTLE_GRID_Y - 244 + BATTLE_GRID_HEIGHT + 24,
 } as const satisfies Rect;
 const HAND_RECT = {
   x: 190,
@@ -195,79 +236,33 @@ const HAND_RECT = {
   width: GAME_WIDTH - 380,
   height: 288,
 } as const satisfies Rect;
+const FIELD_SLOT_GRID_CELLS: Record<BattleSlotId, BattleGridCell> = {
+  'enemy:BR': { column: 'FR', row: 'enemyBack' },
+  'enemy:BC': { column: 'FC', row: 'enemyBack' },
+  'enemy:BL': { column: 'FL', row: 'enemyBack' },
+  'enemy:FR': { column: 'FR', row: 'enemyFront' },
+  'enemy:FC': { column: 'FC', row: 'enemyFront' },
+  'enemy:FL': { column: 'FL', row: 'enemyFront' },
+  'player:FR': { column: 'FR', row: 'playerFront' },
+  'player:FC': { column: 'FC', row: 'playerFront' },
+  'player:FL': { column: 'FL', row: 'playerFront' },
+  'player:BR': { column: 'FR', row: 'playerBack' },
+  'player:BC': { column: 'FC', row: 'playerBack' },
+  'player:BL': { column: 'FL', row: 'playerBack' },
+};
 const FIELD_SLOT_RECTS: Record<BattleSlotId, Rect> = {
-  'enemy:BR': createCenteredRect(
-    SLOT_COLUMNS.FR,
-    SLOT_ROWS.enemyBack,
-    FIELD_SLOT_WIDTH,
-    FIELD_SLOT_HEIGHT,
-  ),
-  'enemy:BC': createCenteredRect(
-    SLOT_COLUMNS.FC,
-    SLOT_ROWS.enemyBack,
-    FIELD_SLOT_WIDTH,
-    FIELD_SLOT_HEIGHT,
-  ),
-  'enemy:BL': createCenteredRect(
-    SLOT_COLUMNS.FL,
-    SLOT_ROWS.enemyBack,
-    FIELD_SLOT_WIDTH,
-    FIELD_SLOT_HEIGHT,
-  ),
-  'enemy:FR': createCenteredRect(
-    SLOT_COLUMNS.FR,
-    SLOT_ROWS.enemyFront,
-    FIELD_SLOT_WIDTH,
-    FIELD_SLOT_HEIGHT,
-  ),
-  'enemy:FC': createCenteredRect(
-    SLOT_COLUMNS.FC,
-    SLOT_ROWS.enemyFront,
-    FIELD_SLOT_WIDTH,
-    FIELD_SLOT_HEIGHT,
-  ),
-  'enemy:FL': createCenteredRect(
-    SLOT_COLUMNS.FL,
-    SLOT_ROWS.enemyFront,
-    FIELD_SLOT_WIDTH,
-    FIELD_SLOT_HEIGHT,
-  ),
-  'player:FR': createCenteredRect(
-    SLOT_COLUMNS.FR,
-    SLOT_ROWS.playerFront,
-    FIELD_SLOT_WIDTH,
-    FIELD_SLOT_HEIGHT,
-  ),
-  'player:FC': createCenteredRect(
-    SLOT_COLUMNS.FC,
-    SLOT_ROWS.playerFront,
-    FIELD_SLOT_WIDTH,
-    FIELD_SLOT_HEIGHT,
-  ),
-  'player:FL': createCenteredRect(
-    SLOT_COLUMNS.FL,
-    SLOT_ROWS.playerFront,
-    FIELD_SLOT_WIDTH,
-    FIELD_SLOT_HEIGHT,
-  ),
-  'player:BR': createCenteredRect(
-    SLOT_COLUMNS.FR,
-    SLOT_ROWS.playerBack,
-    FIELD_SLOT_WIDTH,
-    FIELD_SLOT_HEIGHT,
-  ),
-  'player:BC': createCenteredRect(
-    SLOT_COLUMNS.FC,
-    SLOT_ROWS.playerBack,
-    FIELD_SLOT_WIDTH,
-    FIELD_SLOT_HEIGHT,
-  ),
-  'player:BL': createCenteredRect(
-    SLOT_COLUMNS.FL,
-    SLOT_ROWS.playerBack,
-    FIELD_SLOT_WIDTH,
-    FIELD_SLOT_HEIGHT,
-  ),
+  'enemy:BR': createBattleGridRect(FIELD_SLOT_GRID_CELLS['enemy:BR']),
+  'enemy:BC': createBattleGridRect(FIELD_SLOT_GRID_CELLS['enemy:BC']),
+  'enemy:BL': createBattleGridRect(FIELD_SLOT_GRID_CELLS['enemy:BL']),
+  'enemy:FR': createBattleGridRect(FIELD_SLOT_GRID_CELLS['enemy:FR']),
+  'enemy:FC': createBattleGridRect(FIELD_SLOT_GRID_CELLS['enemy:FC']),
+  'enemy:FL': createBattleGridRect(FIELD_SLOT_GRID_CELLS['enemy:FL']),
+  'player:FR': createBattleGridRect(FIELD_SLOT_GRID_CELLS['player:FR']),
+  'player:FC': createBattleGridRect(FIELD_SLOT_GRID_CELLS['player:FC']),
+  'player:FL': createBattleGridRect(FIELD_SLOT_GRID_CELLS['player:FL']),
+  'player:BR': createBattleGridRect(FIELD_SLOT_GRID_CELLS['player:BR']),
+  'player:BC': createBattleGridRect(FIELD_SLOT_GRID_CELLS['player:BC']),
+  'player:BL': createBattleGridRect(FIELD_SLOT_GRID_CELLS['player:BL']),
 };
 const SLOT_ORDER: readonly BattleSlotId[] = [
   'enemy:BR',
@@ -283,14 +278,31 @@ const SLOT_ORDER: readonly BattleSlotId[] = [
   'player:BC',
   'player:BL',
 ];
-const PILE_RECTS = {
-  enemyDrop: createCenteredRect(1040, SLOT_ROWS.enemyFront, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
-  enemyExile: createCenteredRect(1040, SLOT_ROWS.enemyBack, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
-  enemyDeck: createCenteredRect(160, SLOT_ROWS.enemyFront, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
-  playerDrop: createCenteredRect(160, SLOT_ROWS.playerFront, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
-  playerExile: createCenteredRect(160, SLOT_ROWS.playerBack, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
-  playerDeck: createCenteredRect(1040, SLOT_ROWS.playerFront, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT),
-} as const satisfies Record<string, Rect>;
+const PILE_GRID_CELLS = {
+  enemyDrop: { column: 'rightPile', row: 'enemyFront' },
+  enemyExile: { column: 'rightPile', row: 'enemyBack' },
+  enemyDeck: { column: 'leftPile', row: 'enemyFront' },
+  playerDrop: { column: 'leftPile', row: 'playerFront' },
+  playerExile: { column: 'leftPile', row: 'playerBack' },
+  playerDeck: { column: 'rightPile', row: 'playerFront' },
+} as const satisfies Record<string, BattleGridCell>;
+type BattlePileKey = keyof typeof PILE_GRID_CELLS;
+const PILE_ORDER: readonly BattlePileKey[] = [
+  'enemyDeck',
+  'enemyDrop',
+  'enemyExile',
+  'playerDrop',
+  'playerDeck',
+  'playerExile',
+];
+const PILE_RECTS: Record<BattlePileKey, Rect> = {
+  enemyDrop: createBattleGridRect(PILE_GRID_CELLS.enemyDrop),
+  enemyExile: createBattleGridRect(PILE_GRID_CELLS.enemyExile),
+  enemyDeck: createBattleGridRect(PILE_GRID_CELLS.enemyDeck),
+  playerDrop: createBattleGridRect(PILE_GRID_CELLS.playerDrop),
+  playerExile: createBattleGridRect(PILE_GRID_CELLS.playerExile),
+  playerDeck: createBattleGridRect(PILE_GRID_CELLS.playerDeck),
+};
 
 /**
  * 저장 슬롯의 전투 런타임을 1200x1920 단순 전장 레이아웃으로 표시하는 씬이다.
@@ -377,10 +389,9 @@ export class BattlefieldScene extends Phaser.Scene {
     this.highlightGraphics.clear();
     this.fieldCardDragPreview = null;
 
-    this.addTopHud();
+    this.addLeftHud();
     this.addBoard();
-    this.addFieldSlots();
-    this.addPileSlots();
+    this.addBattleGridSlots();
     this.addBattlefieldCards();
     this.addHandDeckContainer();
     this.addUtilityButtons();
@@ -416,8 +427,8 @@ export class BattlefieldScene extends Phaser.Scene {
     );
   }
 
-  private addTopHud(): void {
-    this.addInfoPanel({ x: 44, y: 52, width: 320, height: 138 }, [
+  private addLeftHud(): void {
+    this.addInfoPanel({ x: HUD_X, y: HUD_Y, width: HUD_WIDTH, height: HUD_HEIGHT }, [
       `ENEMY ${this.runtime.enemy.leader.card.definition.name}`,
       `HP ${getEffectiveHp(this.runtime, this.runtime.enemy.leader)}  ATK ${getEffectiveAttack(
         this.runtime,
@@ -425,21 +436,27 @@ export class BattlefieldScene extends Phaser.Scene {
       )}`,
       `Deck ${this.runtime.enemy.deck.length}  Drop ${this.runtime.enemy.drop.length}`,
     ]);
-    this.addInfoPanel({ x: 440, y: 52, width: 320, height: 138 }, [
-      `${formatSideLabel(this.runtime.currentSide)} TURN`,
-      `Round ${this.runtime.turnNumber}`,
-      this.runtime.outcome
-        ? `${formatSideLabel(this.runtime.outcome.winner)} WINS`
-        : this.runtime.phase,
-    ]);
-    this.addInfoPanel({ x: 836, y: 52, width: 320, height: 138 }, [
-      `PLAYER ${this.runtime.player.leader.card.definition.name}`,
-      `HP ${getEffectiveHp(this.runtime, this.runtime.player.leader)}  ATK ${getEffectiveAttack(
-        this.runtime,
-        this.runtime.player.leader,
-      )}`,
-      `Deck ${this.runtime.player.deck.length}  Hand ${this.runtime.player.hand.length}`,
-    ]);
+    this.addInfoPanel(
+      { x: HUD_X, y: HUD_Y + HUD_HEIGHT + HUD_GAP, width: HUD_WIDTH, height: HUD_HEIGHT },
+      [
+        `${formatSideLabel(this.runtime.currentSide)} TURN`,
+        `Round ${this.runtime.turnNumber}`,
+        this.runtime.outcome
+          ? `${formatSideLabel(this.runtime.outcome.winner)} WINS`
+          : this.runtime.phase,
+      ],
+    );
+    this.addInfoPanel(
+      { x: HUD_X, y: HUD_Y + (HUD_HEIGHT + HUD_GAP) * 2, width: HUD_WIDTH, height: HUD_HEIGHT },
+      [
+        `PLAYER ${this.runtime.player.leader.card.definition.name}`,
+        `HP ${getEffectiveHp(this.runtime, this.runtime.player.leader)}  ATK ${getEffectiveAttack(
+          this.runtime,
+          this.runtime.player.leader,
+        )}`,
+        `Deck ${this.runtime.player.deck.length}  Hand ${this.runtime.player.hand.length}`,
+      ],
+    );
   }
 
   private addInfoPanel(rect: Rect, lines: [string, string, string]): void {
@@ -454,21 +471,34 @@ export class BattlefieldScene extends Phaser.Scene {
     panel.setStrokeStyle(2, 0xbfeec5, 0.72);
     this.layers.hudLayer.add(panel);
 
-    const ys = [rect.y + 28, rect.y + 68, rect.y + 108] as const;
-    const sizes = ['18px', '24px', '17px'] as const;
+    const ys = [rect.y + 24, rect.y + 52, rect.y + 78] as const;
+    const sizes = [16, 20, 15] as const;
+    const minimumSizes = [12, 15, 12] as const;
     const colors = ['#a8c7af', '#fff7d2', '#d5e7d1'] as const;
     for (let index = 0; index < lines.length; index += 1) {
-      this.layers.hudLayer.add(
-        this.add
-          .text(rect.x + rect.width / 2, ys[index]!, lines[index]!, {
-            fontFamily: DEFAULT_FONT_FAMILY,
-            fontSize: sizes[index]!,
-            color: colors[index]!,
-            align: 'center',
-            wordWrap: { width: rect.width - 28 },
-          })
-          .setOrigin(0.5),
-      );
+      const text = this.add
+        .text(rect.x + 18, ys[index]!, lines[index]!, {
+          fontFamily: DEFAULT_FONT_FAMILY,
+          fontSize: `${sizes[index]!}px`,
+          color: colors[index]!,
+          align: 'left',
+        })
+        .setOrigin(0, 0.5);
+      this.fitTextToWidth(text, rect.width - 36, sizes[index]!, minimumSizes[index]!);
+      this.layers.hudLayer.add(text);
+    }
+  }
+
+  private fitTextToWidth(
+    text: Phaser.GameObjects.Text,
+    maxWidth: number,
+    startFontSize: number,
+    minimumFontSize: number,
+  ): void {
+    let fontSize = startFontSize;
+    while (text.width > maxWidth && fontSize > minimumFontSize) {
+      fontSize -= 1;
+      text.setFontSize(fontSize);
     }
   }
 
@@ -485,9 +515,9 @@ export class BattlefieldScene extends Phaser.Scene {
     this.layers.boardLayer.add(board);
 
     const divider = this.add.rectangle(
-      GAME_WIDTH / 2,
-      (SLOT_ROWS.enemyFront + SLOT_ROWS.playerFront) / 2,
-      BOARD_RECT.width - 48,
+      BATTLE_GRID_CENTER_X,
+      BATTLE_GRID_SIDE_DIVIDER_Y,
+      BATTLE_GRID_WIDTH - 24,
       3,
       0xcde7cb,
       0.35,
@@ -496,7 +526,7 @@ export class BattlefieldScene extends Phaser.Scene {
 
     this.layers.boardLayer.add(
       this.add
-        .text(GAME_WIDTH / 2, BOARD_RECT.y + 34, 'BATTLEFIELD', {
+        .text(BATTLE_GRID_CENTER_X, BOARD_RECT.y + 34, 'BATTLEFIELD', {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSize: '24px',
           color: '#9fd2ba',
@@ -507,21 +537,51 @@ export class BattlefieldScene extends Phaser.Scene {
     );
   }
 
-  private addFieldSlots(): void {
-    for (const slotId of SLOT_ORDER) {
-      this.addSlotRect(slotId, FIELD_SLOT_RECTS[slotId], formatSlotLabel(slotId));
+  private addBattleGridSlots(): void {
+    const grid = this.rexUI.add.gridSizer(
+      BATTLE_GRID_X,
+      BATTLE_GRID_Y,
+      BATTLE_GRID_WIDTH,
+      BATTLE_GRID_HEIGHT,
+      BATTLE_GRID_COLUMNS.length,
+      BATTLE_GRID_ROWS.length,
+      {
+        origin: 0,
+        space: {
+          column: BATTLE_GRID_COLUMN_GAP,
+          row: BATTLE_GRID_ROW_GAPS,
+        },
+      },
+    );
+    this.layers.boardLayer.add(grid);
+
+    for (const pileKey of PILE_ORDER) {
+      const cell = PILE_GRID_CELLS[pileKey];
+      grid.add(this.createPilePanelForKey(pileKey, PILE_RECTS[pileKey]), {
+        column: BATTLE_GRID_COLUMNS.indexOf(cell.column),
+        row: BATTLE_GRID_ROWS.indexOf(cell.row),
+        align: 'center',
+        expand: false,
+      });
     }
+
+    for (const slotId of SLOT_ORDER) {
+      const cell = FIELD_SLOT_GRID_CELLS[slotId];
+      grid.add(this.createSlotPanel(slotId, formatSlotLabel(slotId)), {
+        column: BATTLE_GRID_COLUMNS.indexOf(cell.column),
+        row: BATTLE_GRID_ROWS.indexOf(cell.row),
+        align: 'center',
+        expand: false,
+      });
+    }
+
+    grid.layout();
   }
 
-  private addSlotRect(slotId: BattleSlotId, rect: Rect, label: string): void {
-    const slot = this.add.rectangle(
-      rect.x + rect.width / 2,
-      rect.y + rect.height / 2,
-      rect.width,
-      rect.height,
-      0x173b34,
-      0.58,
-    );
+  private createSlotPanel(slotId: BattleSlotId, label: string): Phaser.GameObjects.Container {
+    const container = this.add.container(0, 0);
+    container.setSize(FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT);
+    const slot = this.add.rectangle(0, 0, FIELD_SLOT_WIDTH, FIELD_SLOT_HEIGHT, 0x173b34, 0.58);
     slot.setStrokeStyle(
       slotId.endsWith(':BC') ? 3 : 2,
       slotId.endsWith(':BC') ? 0xffe4a8 : 0x93b9a9,
@@ -531,11 +591,11 @@ export class BattlefieldScene extends Phaser.Scene {
     slot.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
       this.selectSlot(slotId);
     });
-    this.layers.boardLayer.add(slot);
+    container.add(slot);
 
-    this.layers.boardLayer.add(
+    container.add(
       this.add
-        .text(rect.x + 10, rect.y + 14, label, {
+        .text(-FIELD_SLOT_WIDTH / 2 + 10, -FIELD_SLOT_HEIGHT / 2 + 14, label, {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSize: '17px',
           color: '#a9c9b6',
@@ -544,31 +604,36 @@ export class BattlefieldScene extends Phaser.Scene {
         .setOrigin(0, 0.5)
         .setAlpha(0.84),
     );
+
+    return container;
   }
 
-  private addPileSlots(): void {
-    this.addPilePanel(PILE_RECTS.enemyDrop, `Enemy Drop\n${this.runtime.enemy.drop.length}`);
-    this.addDeckPilePanel(PILE_RECTS.enemyDeck, 'Enemy Deck', this.runtime.enemy.deck.length);
-    this.addPilePanel(PILE_RECTS.enemyExile, `Enemy Exile\n${this.runtime.enemy.exile.length}`);
-    this.addPilePanel(PILE_RECTS.playerDrop, `Player Drop\n${this.runtime.player.drop.length}`);
-    this.addDeckPilePanel(PILE_RECTS.playerDeck, 'Player Deck', this.runtime.player.deck.length);
-    this.addPilePanel(PILE_RECTS.playerExile, `Player Exile\n${this.runtime.player.exile.length}`);
+  private createPilePanelForKey(pileKey: BattlePileKey, rect: Rect): Phaser.GameObjects.Container {
+    if (pileKey === 'enemyDeck') {
+      return this.createDeckPilePanel('Enemy Deck', this.runtime.enemy.deck.length, rect);
+    }
+    if (pileKey === 'playerDeck') {
+      return this.createDeckPilePanel('Player Deck', this.runtime.player.deck.length, rect);
+    }
+
+    const labels: Record<Exclude<BattlePileKey, 'enemyDeck' | 'playerDeck'>, string> = {
+      enemyDrop: `Enemy Drop\n${this.runtime.enemy.drop.length}`,
+      enemyExile: `Enemy Exile\n${this.runtime.enemy.exile.length}`,
+      playerDrop: `Player Drop\n${this.runtime.player.drop.length}`,
+      playerExile: `Player Exile\n${this.runtime.player.exile.length}`,
+    };
+    return this.createPilePanel(labels[pileKey], rect);
   }
 
-  private addPilePanel(rect: Rect, label: string): void {
-    const panel = this.add.rectangle(
-      rect.x + rect.width / 2,
-      rect.y + rect.height / 2,
-      rect.width,
-      rect.height,
-      0x14231f,
-      0.9,
-    );
+  private createPilePanel(label: string, rect: Rect): Phaser.GameObjects.Container {
+    const container = this.add.container(0, 0);
+    container.setSize(rect.width, rect.height);
+    const panel = this.add.rectangle(0, 0, rect.width, rect.height, 0x14231f, 0.9);
     panel.setStrokeStyle(2, 0x91ab9f, 0.58);
-    this.layers.boardLayer.add(panel);
-    this.layers.boardLayer.add(
+    container.add(panel);
+    container.add(
       this.add
-        .text(rect.x + rect.width / 2, rect.y + rect.height / 2, label, {
+        .text(0, 0, label, {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSize: '17px',
           color: '#d9ead9',
@@ -576,28 +641,32 @@ export class BattlefieldScene extends Phaser.Scene {
         })
         .setOrigin(0.5),
     );
+    return container;
   }
 
-  private addDeckPilePanel(rect: Rect, label: string, cardCount: number): void {
+  private createDeckPilePanel(
+    label: string,
+    cardCount: number,
+    rect: Rect,
+  ): Phaser.GameObjects.Container {
     if (cardCount <= 0 || !this.textures.exists(CARD_BACK_TEXTURE_KEY)) {
-      this.addPilePanel(rect, `${label}\n${cardCount}`);
-      return;
+      return this.createPilePanel(`${label}\n${cardCount}`, rect);
     }
 
-    const centerX = rect.x + rect.width / 2;
-    const centerY = rect.y + rect.height / 2;
-    const panel = this.add.rectangle(centerX, centerY, rect.width, rect.height, 0x14231f, 0.9);
+    const container = this.add.container(0, 0);
+    container.setSize(rect.width, rect.height);
+    const panel = this.add.rectangle(0, 0, rect.width, rect.height, 0x14231f, 0.9);
     panel.setStrokeStyle(2, 0x91ab9f, 0.58);
-    this.layers.boardLayer.add(panel);
-    this.layers.boardLayer.add(
+    container.add(panel);
+    container.add(
       this.add
-        .image(centerX, centerY, CARD_BACK_TEXTURE_KEY)
+        .image(0, 0, CARD_BACK_TEXTURE_KEY)
         .setDisplaySize(rect.width - 14, rect.height - 20)
         .setAlpha(0.96),
     );
-    this.layers.boardLayer.add(
+    container.add(
       this.add
-        .text(centerX, rect.y + rect.height - 28, `${label} ${cardCount}`, {
+        .text(0, rect.height / 2 - 28, `${label} ${cardCount}`, {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSize: '17px',
           color: '#f8ffe9',
@@ -607,6 +676,7 @@ export class BattlefieldScene extends Phaser.Scene {
         })
         .setOrigin(0.5),
     );
+    return container;
   }
 
   private addBattlefieldCards(): void {
@@ -2169,14 +2239,14 @@ export class BattlefieldScene extends Phaser.Scene {
 }
 
 /**
- * 중심 좌표와 2:3 슬롯 크기를 Phaser rectangle 배치에 쓰는 좌상단 rect로 변환한다.
+ * 전장 grid의 cell 정의를 카드 배치, 드롭 판정, 하이라이트가 공유하는 rect로 변환한다.
  */
-function createCenteredRect(x: number, y: number, width: number, height: number): Rect {
+function createBattleGridRect(cell: BattleGridCell): Rect {
   return {
-    x: x - width / 2,
-    y: y - height / 2,
-    width,
-    height,
+    x: BATTLE_GRID_COLUMN_X[cell.column],
+    y: BATTLE_GRID_ROW_Y[cell.row],
+    width: FIELD_SLOT_WIDTH,
+    height: FIELD_SLOT_HEIGHT,
   };
 }
 
