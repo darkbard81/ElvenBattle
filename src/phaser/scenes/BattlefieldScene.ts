@@ -107,6 +107,11 @@ type ActiveSkillActionGroup = {
 
 type CardInfoPanelSide = 'left' | 'right';
 
+type CardInfoDetailRow = {
+  label: string;
+  value: string;
+};
+
 type CardViewOptions = {
   highlightColor?: number;
   onClick?: () => void;
@@ -146,13 +151,23 @@ const SKILL_HIGHLIGHT_COLOR = 0xf4c95d;
 const BLOCK_HIGHLIGHT_COLOR = 0xc8f47a;
 const SELECTED_HIGHLIGHT_COLOR = 0xfff1a3;
 const CARD_BACK_TEXTURE_KEY = 'cards.webp.card_back';
-const CARD_INFO_PANEL_WIDTH = 420;
-const CARD_INFO_PANEL_HEIGHT = 980;
+const CARD_INFO_PANEL_WIDTH = 944;
+const CARD_INFO_PANEL_HEIGHT = 816;
 const CARD_INFO_PANEL_MARGIN_X = 28;
 const CARD_INFO_PANEL_Y = 40;
-const CARD_INFO_PANEL_PADDING = 18;
-const CARD_INFO_PREVIEW_WIDTH = 300;
-const CARD_INFO_PREVIEW_HEIGHT = 450;
+const CARD_INFO_PANEL_PADDING = 24;
+const CARD_INFO_CONTENT_GAP = 24;
+const CARD_INFO_PREVIEW_WIDTH = 512;
+const CARD_INFO_PREVIEW_HEIGHT = 768;
+const CARD_INFO_DETAILS_WIDTH = 360;
+const CARD_INFO_DETAILS_INNER_PADDING = 18;
+const CARD_INFO_DETAILS_INNER_WIDTH = CARD_INFO_DETAILS_WIDTH - CARD_INFO_DETAILS_INNER_PADDING * 2;
+const CARD_INFO_DETAIL_LABEL_WIDTH = 112;
+const CARD_INFO_DETAIL_COLUMN_GAP = 14;
+const CARD_INFO_DETAIL_VALUE_WIDTH =
+  CARD_INFO_DETAILS_INNER_WIDTH - CARD_INFO_DETAIL_LABEL_WIDTH - CARD_INFO_DETAIL_COLUMN_GAP;
+const CARD_INFO_DETAIL_ROW_HEIGHT = 42;
+const CARD_INFO_DETAIL_ROW_GAP = 8;
 const HUD_X = 36;
 const HUD_Y = 36;
 const HUD_WIDTH = 380;
@@ -339,7 +354,7 @@ export class BattlefieldScene extends Phaser.Scene {
   private selectedSlotId: BattleSlotId | null = null;
   private selection: BattleSelection | null = null;
   private fieldCardDragPreview: Phaser.GameObjects.Container | null = null;
-  private cardInfoContainer: Phaser.GameObjects.Container | null = null;
+  private cardInfoContainer: Phaser.GameObjects.GameObject | null = null;
   private hoveredCardInstanceId: string | null = null;
   private statusMessage = 'Select a hand card or battlefield card.';
 
@@ -885,148 +900,313 @@ export class BattlefieldScene extends Phaser.Scene {
   private createCardInfoPanel(
     card: BattleCardRuntimeState,
     side: CardInfoPanelSide,
-  ): Phaser.GameObjects.Container {
+  ): Phaser.GameObjects.GameObject {
     const x =
       side === 'left'
         ? CARD_INFO_PANEL_MARGIN_X
         : GAME_WIDTH - CARD_INFO_PANEL_MARGIN_X - CARD_INFO_PANEL_WIDTH;
-    const container = this.add.container(x, CARD_INFO_PANEL_Y);
+    const panel = this.rexUI.add.gridSizer(
+      x,
+      CARD_INFO_PANEL_Y,
+      CARD_INFO_PANEL_WIDTH,
+      CARD_INFO_PANEL_HEIGHT,
+      2,
+      1,
+      {
+        origin: 0,
+        columnProportions: [0, 0],
+        space: {
+          left: CARD_INFO_PANEL_PADDING,
+          right: CARD_INFO_PANEL_PADDING,
+          top: CARD_INFO_PANEL_PADDING,
+          bottom: CARD_INFO_PANEL_PADDING,
+          column: CARD_INFO_CONTENT_GAP,
+        },
+      },
+    );
     const background = this.add
       .rectangle(0, 0, CARD_INFO_PANEL_WIDTH, CARD_INFO_PANEL_HEIGHT, 0x10211b, 0.96)
       .setOrigin(0, 0);
     background.setStrokeStyle(3, 0xd8efcd, 0.86);
-    container.add(background);
+    panel.addBackground(background);
 
-    const previewX = CARD_INFO_PANEL_WIDTH / 2;
-    const previewY = CARD_INFO_PANEL_PADDING + CARD_INFO_PREVIEW_HEIGHT / 2;
-    const previewBackground = this.add.rectangle(
-      previewX,
-      previewY,
-      CARD_INFO_PREVIEW_WIDTH + 16,
-      CARD_INFO_PREVIEW_HEIGHT + 16,
-      card.side === 'enemy' ? 0x281c2c : 0x132c25,
-      0.94,
+    panel.add(this.createCardInfoPreviewPanel(card), {
+      column: 0,
+      row: 0,
+      align: 'left-top',
+    });
+    panel.add(this.createCardInfoDetailsPanel(card), {
+      column: 1,
+      row: 0,
+      align: 'center',
+    });
+    panel.layout();
+
+    return panel;
+  }
+
+  private createCardInfoPreviewPanel(card: BattleCardRuntimeState): Phaser.GameObjects.GameObject {
+    const panel = this.rexUI.add.overlapSizer(
+      0,
+      0,
+      CARD_INFO_PREVIEW_WIDTH,
+      CARD_INFO_PREVIEW_HEIGHT,
+      {
+        origin: 0,
+      },
     );
-    previewBackground.setStrokeStyle(2, 0xf5ffe9, 0.64);
-    container.add(previewBackground);
+    panel.addBackground(
+      this.add
+        .rectangle(
+          0,
+          0,
+          CARD_INFO_PREVIEW_WIDTH,
+          CARD_INFO_PREVIEW_HEIGHT,
+          card.side === 'enemy' ? 0x281c2c : 0x132c25,
+          0.94,
+        )
+        .setOrigin(0, 0),
+    );
 
     const textureKey = `cards.webp.${card.card.instance.id}`;
     if (this.textures.exists(textureKey)) {
-      const preview = this.add.image(previewX, previewY, textureKey);
-      const previewScale = Math.min(
-        CARD_INFO_PREVIEW_WIDTH / Math.max(1, preview.width),
-        CARD_INFO_PREVIEW_HEIGHT / Math.max(1, preview.height),
-      );
-      preview.setDisplaySize(
-        Math.round(preview.width * previewScale),
-        Math.round(preview.height * previewScale),
-      );
-      container.add(preview);
+      panel.add(this.add.image(0, 0, textureKey).setOrigin(0, 0), {
+        align: 'left-top',
+        expand: false,
+      });
     } else {
-      const fallback = this.add.rectangle(
-        previewX,
-        previewY,
-        CARD_INFO_PREVIEW_WIDTH,
-        CARD_INFO_PREVIEW_HEIGHT,
-        card.side === 'enemy' ? 0x42233c : 0x1c4238,
-        0.98,
-      );
-      fallback.setStrokeStyle(2, 0xf6ffe3, 0.86);
-      container.add(fallback);
-      container.add(
+      const fallback = this.add
+        .rectangle(
+          0,
+          0,
+          CARD_INFO_PREVIEW_WIDTH,
+          CARD_INFO_PREVIEW_HEIGHT,
+          card.side === 'enemy' ? 0x42233c : 0x1c4238,
+          0.98,
+        )
+        .setOrigin(0, 0);
+      panel.add(fallback, {
+        align: 'left-top',
+        expand: false,
+      });
+      panel.add(
         this.add
-          .text(previewX, previewY, card.card.instance.name, {
+          .text(32, 344, card.card.instance.name, {
             fontFamily: DEFAULT_FONT_FAMILY,
-            fontSize: '26px',
+            fontSize: '30px',
             color: '#ffffff',
             stroke: '#000000',
             strokeThickness: 5,
             align: 'center',
-            wordWrap: { width: CARD_INFO_PREVIEW_WIDTH - 36 },
+            wordWrap: { width: CARD_INFO_PREVIEW_WIDTH - 40 },
           })
-          .setOrigin(0.5),
+          .setOrigin(0, 0),
+        {
+          align: 'left-top',
+          expand: false,
+        },
       );
     }
 
-    const textY = CARD_INFO_PANEL_PADDING * 2 + CARD_INFO_PREVIEW_HEIGHT;
-    const infoText = this.add
-      .text(CARD_INFO_PANEL_PADDING, textY, this.formatCardInfoLines(card).join('\n'), {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '16px',
-        color: '#edf7e8',
-        stroke: '#07100d',
-        strokeThickness: 2,
-        align: 'left',
-        lineSpacing: 4,
-        wordWrap: {
-          width: CARD_INFO_PANEL_WIDTH - CARD_INFO_PANEL_PADDING * 2,
-          useAdvancedWrap: true,
-        },
-      })
+    const frame = this.add
+      .rectangle(0, 0, CARD_INFO_PREVIEW_WIDTH, CARD_INFO_PREVIEW_HEIGHT, 0x000000, 0)
       .setOrigin(0, 0);
+    frame.setStrokeStyle(3, 0xf5ffe9, 0.72);
+    panel.add(frame, {
+      align: 'left-top',
+      expand: false,
+    });
+    panel.layout();
 
-    const maxTextHeight = CARD_INFO_PANEL_HEIGHT - textY - CARD_INFO_PANEL_PADDING;
-    if (infoText.height > maxTextHeight) {
-      infoText.setFontSize('14px');
-      infoText.setLineSpacing(2);
-    }
-    container.add(infoText);
-
-    return container;
+    return panel;
   }
 
-  private formatCardInfoLines(card: BattleCardRuntimeState): string[] {
+  private createCardInfoDetailsPanel(card: BattleCardRuntimeState): Phaser.GameObjects.GameObject {
+    const panel = this.rexUI.add.overlapSizer(
+      0,
+      0,
+      CARD_INFO_DETAILS_WIDTH,
+      CARD_INFO_PREVIEW_HEIGHT,
+      {
+        origin: 0,
+      },
+    );
+    const background = this.add
+      .rectangle(0, 0, CARD_INFO_DETAILS_WIDTH, CARD_INFO_PREVIEW_HEIGHT, 0x132620, 0.94)
+      .setOrigin(0, 0);
+    background.setStrokeStyle(2, card.side === 'enemy' ? 0xcaa6df : 0xbfeec5, 0.62);
+    panel.addBackground(background);
+
+    const content = this.rexUI.add.sizer(
+      0,
+      0,
+      CARD_INFO_DETAILS_INNER_WIDTH,
+      CARD_INFO_PREVIEW_HEIGHT - CARD_INFO_DETAILS_INNER_PADDING * 2,
+      'y',
+      {
+        origin: 0,
+        space: { item: 14 },
+      },
+    );
+    const instance = card.card.instance;
+    const title = this.createCardInfoText(`[b]${instance.name}[/b]`, 32, {
+      color: '#f8fff1',
+      fixedWidth: CARD_INFO_DETAILS_INNER_WIDTH,
+      fixedHeight: 48,
+      lineSpacing: 2,
+      wrapWidth: CARD_INFO_DETAILS_INNER_WIDTH,
+    });
+    const subtitle = this.createCardInfoText(
+      `[color=#bfeec5]${instance.rarity} / ${instance.type}[/color]`,
+      22,
+      {
+        color: '#cfe6d0',
+        fixedWidth: CARD_INFO_DETAILS_INNER_WIDTH,
+        fixedHeight: 30,
+        lineSpacing: 0,
+        wrapWidth: CARD_INFO_DETAILS_INNER_WIDTH,
+      },
+    );
+
+    content.add(title, { align: 'left', expand: false });
+    content.add(subtitle, { align: 'left', expand: false });
+    content.add(this.createCardInfoDetailsGrid(card), { align: 'left', expand: false });
+
+    panel.add(content, {
+      align: 'left-top',
+      padding: CARD_INFO_DETAILS_INNER_PADDING,
+      expand: false,
+    });
+    panel.layout();
+
+    return panel;
+  }
+
+  private createCardInfoDetailsGrid(card: BattleCardRuntimeState): Phaser.GameObjects.GameObject {
+    const rows = this.createCardInfoDetailRows(card);
+    const gridHeight =
+      rows.length * CARD_INFO_DETAIL_ROW_HEIGHT + (rows.length - 1) * CARD_INFO_DETAIL_ROW_GAP;
+    const grid = this.rexUI.add.gridSizer(
+      0,
+      0,
+      CARD_INFO_DETAILS_INNER_WIDTH,
+      gridHeight,
+      2,
+      rows.length,
+      {
+        origin: 0,
+        columnProportions: [0, 1],
+        rowProportions: 0,
+        space: {
+          column: CARD_INFO_DETAIL_COLUMN_GAP,
+          row: CARD_INFO_DETAIL_ROW_GAP,
+        },
+      },
+    );
+
+    rows.forEach((row, rowIndex) => {
+      grid.add(
+        this.createCardInfoText(`[color=#95afa3]${row.label}[/color]`, 21, {
+          color: '#95afa3',
+          fixedWidth: CARD_INFO_DETAIL_LABEL_WIDTH,
+          fixedHeight: CARD_INFO_DETAIL_ROW_HEIGHT,
+          lineSpacing: 0,
+          wrapWidth: CARD_INFO_DETAIL_LABEL_WIDTH,
+        }),
+        {
+          column: 0,
+          row: rowIndex,
+          align: 'left',
+        },
+      );
+      grid.add(
+        this.createCardInfoText(row.value, 23, {
+          color: '#edf7e8',
+          fixedWidth: CARD_INFO_DETAIL_VALUE_WIDTH,
+          fixedHeight: CARD_INFO_DETAIL_ROW_HEIGHT,
+          lineSpacing: 0,
+          wrapWidth: CARD_INFO_DETAIL_VALUE_WIDTH,
+        }),
+        {
+          column: 1,
+          row: rowIndex,
+          align: 'left',
+        },
+      );
+    });
+    grid.layout();
+
+    return grid;
+  }
+
+  private createCardInfoText(
+    content: string,
+    fontSize: number,
+    options: {
+      color: string;
+      fixedWidth: number;
+      fixedHeight: number;
+      lineSpacing: number;
+      wrapWidth: number;
+    },
+  ): Phaser.GameObjects.GameObject {
+    return this.rexUI.add.BBCodeText(0, 0, content, {
+      fontFamily: DEFAULT_FONT_FAMILY,
+      fontSize: `${fontSize}px`,
+      color: options.color,
+      stroke: '#07100d',
+      strokeThickness: 2,
+      align: 'left',
+      fixedWidth: options.fixedWidth,
+      fixedHeight: options.fixedHeight,
+      lineSpacing: options.lineSpacing,
+      wrap: {
+        mode: 'word',
+        width: options.wrapWidth,
+      },
+    });
+  }
+
+  private createCardInfoDetailRows(card: BattleCardRuntimeState): CardInfoDetailRow[] {
     const instance = card.card.instance;
     const definition = card.card.definition;
     const traitTexts = instance.traits
       .map((trait) => trait.text.trim() || trait.key.trim())
       .filter((trait) => trait.length > 0);
-    const lines = [
-      instance.name,
-      `${instance.rarity} / ${instance.type}`,
-      traitTexts.length > 0 ? `Trait ${traitTexts.join(', ')}` : null,
-      '',
-      `Cost ${instance.cost ?? 0}`,
-      this.formatCardInfoStat(
-        'Dominance',
-        getEffectiveDominance(this.runtime, card),
-        definition.dominance,
-      ),
-      this.formatCardInfoStat(
-        instance.type === 'LEADER' ? 'LP' : 'HP',
-        getEffectiveHp(this.runtime, card),
-        definition.hp,
-      ),
-      this.formatCardInfoStat('ATK', getEffectiveAttack(this.runtime, card), definition.attack),
-      `Slot ${instance.slot ?? '-'}`,
-    ].filter((line): line is string => line !== null);
 
-    if (instance.abilities.length > 0) {
-      lines.push('');
-      for (const ability of instance.abilities) {
-        lines.push(`${ability.category} ${ability.name}: ${ability.text}`);
-      }
-    }
-
-    const description = instance.description.trim();
-    if (description.length > 0) {
-      lines.push('', `Description: ${description}`);
-    }
-
-    const note = instance.note.trim();
-    if (note.length > 0) {
-      lines.push(`Note: ${note}`);
-    }
-
-    return lines;
+    return [
+      { label: 'Trait', value: traitTexts.length > 0 ? traitTexts.join(', ') : '-' },
+      { label: 'Cost', value: this.formatCardInfoValue(instance.cost ?? 0) },
+      {
+        label: 'Dominance',
+        value: this.formatCardInfoStatValue(
+          getEffectiveDominance(this.runtime, card),
+          definition.dominance,
+        ),
+      },
+      {
+        label: instance.type === 'LEADER' ? 'LP' : 'HP',
+        value: this.formatCardInfoStatValue(getEffectiveHp(this.runtime, card), definition.hp),
+      },
+      {
+        label: 'ATK',
+        value: this.formatCardInfoStatValue(getEffectiveAttack(this.runtime, card), definition.attack),
+      },
+      { label: 'Slot', value: this.formatCardInfoValue(instance.slot ?? '-') },
+    ];
   }
 
-  private formatCardInfoStat(label: string, effectiveValue: number, baseValue?: number): string {
+  private formatCardInfoValue(value: number | string): string {
+    return `[b][color=#fff3c2]${value}[/color][/b]`;
+  }
+
+  private formatCardInfoStatValue(effectiveValue: number, baseValue?: number): string {
+    const value = this.formatCardInfoValue(effectiveValue);
     if (baseValue !== undefined && effectiveValue !== baseValue) {
-      return `${label} ${effectiveValue} (base ${baseValue})`;
+      return `${value} [size=18][color=#9fb8ad](base ${baseValue})[/color][/size]`;
     }
 
-    return `${label} ${effectiveValue}`;
+    return value;
   }
 
   private addHandDeckContainer(): void {
