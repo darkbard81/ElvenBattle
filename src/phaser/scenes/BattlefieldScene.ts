@@ -43,6 +43,8 @@ import { requireStageDefinition } from '../../game/stage/stage-definitions';
 import type { StageBattleResult, StageDefinition } from '../../game/stage/types';
 import { DEFAULT_FONT_FAMILY } from '../../theme';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
+import { SequencePlugin } from '../plugins/sequence/SequencePlugin';
+import type { SequenceStep } from '../plugins/sequence/sequence-types';
 import { createMenuButton } from '../ui/menu-button';
 import type { BattlefieldSceneData, StageSceneData } from './scene-data';
 
@@ -130,6 +132,7 @@ type BattlePopupEvent = {
   kind: 'PLACE' | 'MOVE' | 'ATTACK' | 'SKILL' | 'BLOCK';
   slotId: BattleSlotId;
   text: string;
+  shakeTargetInstanceId?: string;
 };
 
 type BottomButtonDefinition = {
@@ -353,6 +356,8 @@ export class BattlefieldScene extends Phaser.Scene {
   private resultReturnStatusMessage: string | null = null;
   private selectedSlotId: BattleSlotId | null = null;
   private selection: BattleSelection | null = null;
+  private sequencePlugin: SequencePlugin | null = null;
+  private readonly fieldCardViews = new Map<string, Phaser.GameObjects.Container>();
   private fieldCardDragPreview: Phaser.GameObjects.Container | null = null;
   private cardInfoContainer: Phaser.GameObjects.GameObject | null = null;
   private hoveredCardInstanceId: string | null = null;
@@ -384,8 +389,15 @@ export class BattlefieldScene extends Phaser.Scene {
     this.handDeckTargetY = null;
 
     this.layers = this.createLayers();
+    this.sequencePlugin?.destroy();
+    this.sequencePlugin = new SequencePlugin({ scene: this, layer: this.layers.effectLayer });
     this.highlightGraphics = this.add.graphics();
     this.layers.effectLayer.add(this.highlightGraphics);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.sequencePlugin?.destroy();
+      this.sequencePlugin = null;
+      this.fieldCardViews.clear();
+    });
 
     this.addBackground();
     this.renderBattleState();
@@ -409,6 +421,7 @@ export class BattlefieldScene extends Phaser.Scene {
     this.cardInfoContainer?.destroy();
     this.cardInfoContainer = null;
     this.hoveredCardInstanceId = null;
+    this.fieldCardViews.clear();
 
     this.layers.boardLayer.removeAll(true);
     this.layers.cardLayer.removeAll(true);
@@ -722,9 +735,16 @@ export class BattlefieldScene extends Phaser.Scene {
             this.finishFieldCardDrag(pointer.worldX, pointer.worldY);
           };
         }
-        this.addCardView(this.layers.cardLayer, FIELD_SLOT_RECTS[slotId], card, 'field', {
-          ...cardViewOptions,
-        });
+        const cardView = this.addCardView(
+          this.layers.cardLayer,
+          FIELD_SLOT_RECTS[slotId],
+          card,
+          'field',
+          {
+            ...cardViewOptions,
+          },
+        );
+        this.fieldCardViews.set(card.card.instance.instanceId, cardView);
       }
     }
   }
@@ -735,26 +755,26 @@ export class BattlefieldScene extends Phaser.Scene {
     card: BattleCardRuntimeState,
     mode: 'field' | 'hand',
     options: CardViewOptions = {},
-  ): void {
+  ): Phaser.GameObjects.Container {
     const centerX = rect.x + rect.width / 2;
     const centerY = rect.y + rect.height / 2;
+    const container = this.add.container(centerX, centerY);
+    container.setSize(rect.width, rect.height);
     const textureKey = `cards.webp.${card.card.instance.id}`;
 
     if (this.textures.exists(textureKey)) {
-      parent.add(
-        this.add.image(centerX, centerY, textureKey).setDisplaySize(rect.width, rect.height),
-      );
+      container.add(this.add.image(0, 0, textureKey).setDisplaySize(rect.width, rect.height));
     } else {
       const fallback = this.add.rectangle(
-        centerX,
-        centerY,
+        0,
+        0,
         rect.width,
         rect.height,
         card.side === 'enemy' ? 0x42233c : 0x1c4238,
         0.98,
       );
       fallback.setStrokeStyle(2, 0xf6ffe3, 0.86);
-      parent.add(fallback);
+      container.add(fallback);
     }
 
     const paddingX = mode === 'field' ? 21 : 16;
@@ -763,53 +783,46 @@ export class BattlefieldScene extends Phaser.Scene {
     const fontSize = mode === 'field' ? '18px' : '16px';
 
     this.addCardCornerStat(
-      parent,
-      rect.x + paddingX,
-      rect.y + paddingY,
+      container,
+      -rect.width / 2 + paddingX,
+      -rect.height / 2 + paddingY,
       String(getEffectiveDominance(this.runtime, card)),
       badgeSize,
       fontSize,
     );
     this.addCardCornerStat(
-      parent,
-      rect.x + rect.width - paddingX - 4,
-      rect.y + paddingY,
+      container,
+      rect.width / 2 - paddingX - 4,
+      -rect.height / 2 + paddingY,
       String(card.card.instance.cost ?? 0),
       badgeSize,
       fontSize,
     );
     this.addCardCornerStat(
-      parent,
-      rect.x + paddingX,
-      rect.y + rect.height - paddingY - 8,
+      container,
+      -rect.width / 2 + paddingX,
+      rect.height / 2 - paddingY - 8,
       String(getEffectiveHp(this.runtime, card)),
       badgeSize,
       fontSize,
     );
     this.addCardCornerStat(
-      parent,
-      rect.x + rect.width - paddingX - 4,
-      rect.y + rect.height - paddingY - 8,
+      container,
+      rect.width / 2 - paddingX - 4,
+      rect.height / 2 - paddingY - 8,
       String(getEffectiveAttack(this.runtime, card)),
       badgeSize,
       fontSize,
     );
 
     if (options.highlightColor !== undefined) {
-      const highlight = this.add.rectangle(
-        centerX,
-        centerY,
-        rect.width + 8,
-        rect.height + 8,
-        0x000000,
-        0,
-      );
+      const highlight = this.add.rectangle(0, 0, rect.width + 8, rect.height + 8, 0x000000, 0);
       highlight.setStrokeStyle(5, options.highlightColor, 0.92);
-      parent.add(highlight);
+      container.add(highlight);
     }
 
     if (options.onClick) {
-      const hitArea = this.add.zone(centerX, centerY, rect.width, rect.height);
+      const hitArea = this.add.zone(0, 0, rect.width, rect.height);
       hitArea.setInteractive({
         useHandCursor: true,
         draggable: options.onFieldDragStart !== undefined,
@@ -824,32 +837,27 @@ export class BattlefieldScene extends Phaser.Scene {
       });
       if (options.onFieldDragStart) {
         let isFieldDragActive = false;
-        hitArea.on(
-          Phaser.Input.Events.GAMEOBJECT_DRAG_START,
-          (pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => {
-            isFieldDragActive = options.onFieldDragStart?.(pointer, dragX, dragY) ?? false;
-          },
-        );
-        hitArea.on(
-          Phaser.Input.Events.GAMEOBJECT_DRAG,
-          (pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => {
-            if (isFieldDragActive) {
-              options.onFieldDrag?.(pointer, dragX, dragY);
-            }
-          },
-        );
-        hitArea.on(
-          Phaser.Input.Events.GAMEOBJECT_DRAG_END,
-          (pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => {
-            if (isFieldDragActive) {
-              options.onFieldDragEnd?.(pointer, dragX, dragY);
-            }
-            isFieldDragActive = false;
-          },
-        );
+        hitArea.on(Phaser.Input.Events.GAMEOBJECT_DRAG_START, (pointer: Phaser.Input.Pointer) => {
+          isFieldDragActive =
+            options.onFieldDragStart?.(pointer, pointer.worldX, pointer.worldY) ?? false;
+        });
+        hitArea.on(Phaser.Input.Events.GAMEOBJECT_DRAG, (pointer: Phaser.Input.Pointer) => {
+          if (isFieldDragActive) {
+            options.onFieldDrag?.(pointer, pointer.worldX, pointer.worldY);
+          }
+        });
+        hitArea.on(Phaser.Input.Events.GAMEOBJECT_DRAG_END, (pointer: Phaser.Input.Pointer) => {
+          if (isFieldDragActive) {
+            options.onFieldDragEnd?.(pointer, pointer.worldX, pointer.worldY);
+          }
+          isFieldDragActive = false;
+        });
       }
-      parent.add(hitArea);
+      container.add(hitArea);
     }
+
+    parent.add(container);
+    return container;
   }
 
   private addCardCornerStat(
@@ -1190,7 +1198,10 @@ export class BattlefieldScene extends Phaser.Scene {
       },
       {
         label: 'ATK',
-        value: this.formatCardInfoStatValue(getEffectiveAttack(this.runtime, card), definition.attack),
+        value: this.formatCardInfoStatValue(
+          getEffectiveAttack(this.runtime, card),
+          definition.attack,
+        ),
       },
       { label: 'Slot', value: this.formatCardInfoValue(instance.slot ?? '-') },
     ];
@@ -2362,6 +2373,7 @@ export class BattlefieldScene extends Phaser.Scene {
       kind: 'ATTACK',
       slotId: action.toSlotId,
       text: `ATTACK -${action.attack}`,
+      shakeTargetInstanceId: action.targetInstanceId,
     };
   }
 
@@ -2370,6 +2382,7 @@ export class BattlefieldScene extends Phaser.Scene {
       kind: 'BLOCK',
       slotId: action.blockerSlotId,
       text: `BLOCK -${action.attackAction.attack}`,
+      shakeTargetInstanceId: action.blockerInstanceId,
     };
   }
 
@@ -2390,6 +2403,7 @@ export class BattlefieldScene extends Phaser.Scene {
         kind: 'SKILL',
         slotId: action.targetSlotId,
         text: `${skillName} -${action.value}`,
+        shakeTargetInstanceId: action.targetInstanceId,
       };
     }
 
@@ -2401,16 +2415,66 @@ export class BattlefieldScene extends Phaser.Scene {
   }
 
   private async playBattlePopupEvents(events: readonly BattlePopupEvent[]): Promise<void> {
-    for (const event of events) {
-      if (!this.scene.isActive()) {
-        return;
-      }
-
-      await this.playBattlePopupEvent(event);
+    const sequence = this.sequencePlugin?.createSequence();
+    if (!sequence) {
+      this.isAnimatingBattleEvents = false;
+      this.renderBattleState();
+      return;
     }
 
-    this.isAnimatingBattleEvents = false;
-    this.renderBattleState();
+    for (let index = 0; index < events.length; index += 1) {
+      const event = events[index]!;
+      const timer = index * BATTLE_POPUP_DURATION_MS;
+      const shakeStep = this.createDamageShakeStep(event, timer);
+      if (shakeStep) {
+        sequence.add(shakeStep);
+      }
+
+      sequence.add({
+        timer,
+        action: 'custom',
+        duration: BATTLE_POPUP_DURATION_MS,
+        mode: 'blocking',
+        run: () => {
+          if (!this.scene.isActive()) {
+            return undefined;
+          }
+
+          return this.playBattlePopupEvent(event);
+        },
+      });
+    }
+
+    await sequence.play({
+      lockInput: true,
+      onLockChange: (locked) => {
+        this.isAnimatingBattleEvents = locked;
+        if (!locked && this.scene.isActive()) {
+          this.renderBattleState();
+        }
+      },
+    });
+  }
+
+  private createDamageShakeStep(event: BattlePopupEvent, timer: number): SequenceStep | null {
+    if (!event.shakeTargetInstanceId) {
+      return null;
+    }
+
+    const target = this.fieldCardViews.get(event.shakeTargetInstanceId);
+    if (!target) {
+      return null;
+    }
+
+    return {
+      timer,
+      action: 'shake',
+      target,
+      duration: 180,
+      intensity: 8,
+      repeat: 3,
+      mode: 'blocking',
+    };
   }
 
   private playBattlePopupEvent(event: BattlePopupEvent): Promise<void> {
@@ -2438,6 +2502,17 @@ export class BattlefieldScene extends Phaser.Scene {
     this.layers.effectLayer.add(container);
 
     return new Promise((resolve) => {
+      let settled = false;
+      const settle = () => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        container.destroy();
+        resolve();
+      };
+
       this.tweens.add({
         targets: container,
         y: y - 44,
@@ -2445,10 +2520,8 @@ export class BattlefieldScene extends Phaser.Scene {
         scale: 1.08,
         duration: BATTLE_POPUP_DURATION_MS,
         ease: 'Cubic.easeOut',
-        onComplete: () => {
-          container.destroy();
-          resolve();
-        },
+        onComplete: settle,
+        onStop: settle,
       });
     });
   }
