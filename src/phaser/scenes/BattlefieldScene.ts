@@ -32,7 +32,7 @@ import {
   type MoveBattleAction,
   type PlaceBattleAction,
 } from '../../game/battle/types';
-import { fetchSaveSlot, saveSlotState } from '../../game/save/client-api';
+import { saveSlotState } from '../../game/save/client-api';
 import {
   createGameSession,
   createSaveSlotStateFromGameSession,
@@ -351,13 +351,13 @@ export class BattlefieldScene extends Phaser.Scene {
   private stageBattleResult: StageBattleResult | null = null;
   private statusText: Phaser.GameObjects.Text | null = null;
   private isAnimatingBattleEvents = false;
-  private isSaving = false;
   private isReturningToStage = false;
   private resultReturnStatusMessage: string | null = null;
   private selectedSlotId: BattleSlotId | null = null;
   private selection: BattleSelection | null = null;
   private sequencePlugin: SequencePlugin | null = null;
   private readonly fieldCardViews = new Map<string, Phaser.GameObjects.Container>();
+  private readonly retainedFieldCardViews = new Map<string, Phaser.GameObjects.Container>();
   private fieldCardDragPreview: Phaser.GameObjects.Container | null = null;
   private cardInfoContainer: Phaser.GameObjects.GameObject | null = null;
   private hoveredCardInstanceId: string | null = null;
@@ -376,7 +376,6 @@ export class BattlefieldScene extends Phaser.Scene {
     this.runtime = createInitialBattleRuntime(this.session, this.stageDefinition);
     this.stageBattleResult = null;
     this.isAnimatingBattleEvents = false;
-    this.isSaving = false;
     this.isReturningToStage = false;
     this.resultReturnStatusMessage = null;
     this.selectedSlotId = null;
@@ -396,6 +395,7 @@ export class BattlefieldScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.sequencePlugin?.destroy();
       this.sequencePlugin = null;
+      this.destroyRetainedFieldCardViews();
       this.fieldCardViews.clear();
     });
 
@@ -645,11 +645,18 @@ export class BattlefieldScene extends Phaser.Scene {
     if (pileKey === 'playerDeck') {
       return this.createDeckPilePanel('Player Deck', this.runtime.player.deck.length, rect);
     }
+    if (pileKey === 'enemyDrop') {
+      return this.createDropPilePanel('Enemy Drop', this.runtime.enemy.drop, rect);
+    }
+    if (pileKey === 'playerDrop') {
+      return this.createDropPilePanel('Player Drop', this.runtime.player.drop, rect);
+    }
 
-    const labels: Record<Exclude<BattlePileKey, 'enemyDeck' | 'playerDeck'>, string> = {
-      enemyDrop: `Enemy Drop\n${this.runtime.enemy.drop.length}`,
+    const labels: Record<
+      Exclude<BattlePileKey, 'enemyDeck' | 'playerDeck' | 'enemyDrop' | 'playerDrop'>,
+      string
+    > = {
       enemyExile: `Enemy Exile\n${this.runtime.enemy.exile.length}`,
-      playerDrop: `Player Drop\n${this.runtime.player.drop.length}`,
       playerExile: `Player Exile\n${this.runtime.player.exile.length}`,
     };
     return this.createPilePanel(labels[pileKey], rect);
@@ -667,6 +674,69 @@ export class BattlefieldScene extends Phaser.Scene {
           fontFamily: DEFAULT_FONT_FAMILY,
           fontSize: '17px',
           color: '#d9ead9',
+          align: 'center',
+        })
+        .setOrigin(0.5),
+    );
+    return container;
+  }
+
+  private createDropPilePanel(
+    label: string,
+    droppedCards: readonly BattleCardRuntimeState[],
+    rect: Rect,
+  ): Phaser.GameObjects.Container {
+    const latestCard = droppedCards.at(-1) ?? null;
+    if (!latestCard) {
+      return this.createPilePanel(`${label}\n0`, rect);
+    }
+
+    const container = this.add.container(0, 0);
+    container.setSize(rect.width, rect.height);
+    const panel = this.add.rectangle(0, 0, rect.width, rect.height, 0x101815, 0.96);
+    panel.setStrokeStyle(2, 0x91ab9f, 0.58);
+    container.add(panel);
+
+    const cardWidth = rect.width - 14;
+    const cardHeight = rect.height - 20;
+    const textureKey = `cards.webp.${latestCard.card.instance.id}`;
+    if (this.textures.exists(textureKey)) {
+      container.add(
+        this.add
+          .image(0, -4, textureKey)
+          .setDisplaySize(cardWidth, cardHeight)
+          .setAlpha(0.66)
+          .setTint(0x7b837d),
+      );
+      container.add(this.add.rectangle(0, -4, cardWidth, cardHeight, 0x000000, 0.34));
+    } else {
+      const fallback = this.add.rectangle(0, -4, cardWidth, cardHeight, 0x1b2723, 0.9);
+      fallback.setStrokeStyle(2, 0x5f6f67, 0.76);
+      container.add(fallback);
+      container.add(
+        this.add
+          .text(0, -4, latestCard.card.instance.name, {
+            fontFamily: DEFAULT_FONT_FAMILY,
+            fontSize: '15px',
+            color: '#aeb8b1',
+            stroke: '#07100d',
+            strokeThickness: 4,
+            align: 'center',
+            wordWrap: { width: cardWidth - 18 },
+          })
+          .setOrigin(0.5)
+          .setAlpha(0.8),
+      );
+    }
+
+    container.add(
+      this.add
+        .text(0, rect.height / 2 - 28, `${label} ${droppedCards.length}`, {
+          fontFamily: DEFAULT_FONT_FAMILY,
+          fontSize: '17px',
+          color: '#eef7ed',
+          stroke: '#07100d',
+          strokeThickness: 5,
           align: 'center',
         })
         .setOrigin(0.5),
@@ -1348,23 +1418,13 @@ export class BattlefieldScene extends Phaser.Scene {
         },
       },
       {
-        label: 'Save',
-        width: 132,
-        height: 52,
-        enabled: !this.isBattleEnded() && !this.isReturningToStage,
-        onClick: () => {
-          void this.saveCurrentSession();
-        },
-      },
-    ];
-    const rightButtons: BottomButtonDefinition[] = [
-      {
         label: 'Auto',
         width: 132,
         height: 52,
         enabled: false,
       },
     ];
+    const rightButtons: BottomButtonDefinition[] = [];
 
     if (this.selection?.kind === 'BLOCK_DECISION') {
       rightButtons.push(
@@ -2167,6 +2227,7 @@ export class BattlefieldScene extends Phaser.Scene {
     this.selectedSlotId = null;
     this.statusMessage = messages.join(' ');
     this.isAnimatingBattleEvents = popupEvents.length > 0;
+    this.retainRemovedDamageTargetViews(popupEvents);
     this.renderBattleState();
 
     if (popupEvents.length > 0) {
@@ -2418,6 +2479,7 @@ export class BattlefieldScene extends Phaser.Scene {
     const sequence = this.sequencePlugin?.createSequence();
     if (!sequence) {
       this.isAnimatingBattleEvents = false;
+      this.destroyRetainedFieldCardViews();
       this.renderBattleState();
       return;
     }
@@ -2461,7 +2523,9 @@ export class BattlefieldScene extends Phaser.Scene {
       return null;
     }
 
-    const target = this.fieldCardViews.get(event.shakeTargetInstanceId);
+    const target =
+      this.retainedFieldCardViews.get(event.shakeTargetInstanceId) ??
+      this.fieldCardViews.get(event.shakeTargetInstanceId);
     if (!target) {
       return null;
     }
@@ -2510,6 +2574,7 @@ export class BattlefieldScene extends Phaser.Scene {
 
         settled = true;
         container.destroy();
+        this.destroyRetainedFieldCardView(event.shakeTargetInstanceId);
         resolve();
       };
 
@@ -2526,26 +2591,51 @@ export class BattlefieldScene extends Phaser.Scene {
     });
   }
 
-  private async saveCurrentSession(): Promise<void> {
-    if (this.isSaving) {
+  private retainRemovedDamageTargetViews(events: readonly BattlePopupEvent[]): void {
+    const battlefieldInstanceIds = new Set(
+      this.runtime.battlefield.map((card) => card.card.instance.instanceId),
+    );
+
+    for (const event of events) {
+      if (!event.shakeTargetInstanceId || battlefieldInstanceIds.has(event.shakeTargetInstanceId)) {
+        continue;
+      }
+
+      if (this.retainedFieldCardViews.has(event.shakeTargetInstanceId)) {
+        continue;
+      }
+
+      const cardView = this.fieldCardViews.get(event.shakeTargetInstanceId);
+      if (!cardView?.active) {
+        continue;
+      }
+
+      const rect = FIELD_SLOT_RECTS[event.slotId];
+      cardView.setPosition(rect.x + rect.width / 2, rect.y + rect.height / 2);
+      this.layers.effectLayer.add(cardView);
+      this.retainedFieldCardViews.set(event.shakeTargetInstanceId, cardView);
+    }
+  }
+
+  private destroyRetainedFieldCardView(instanceId?: string): void {
+    if (!instanceId) {
       return;
     }
 
-    this.isSaving = true;
-    this.setStatus(`Saving Slot ${this.session.slotId}...`);
-
-    try {
-      const state = createSaveSlotStateFromGameSession(this.session);
-      await saveSlotState(state);
-      const reloadedState = await fetchSaveSlot(state.slotId);
-      this.session = createGameSession(reloadedState);
-      this.setStatus(`Saved ${formatSaveStatusDate(reloadedState.updatedAt)}`);
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.setStatus(`Save failed: ${message}`);
-    } finally {
-      this.isSaving = false;
+    const cardView = this.retainedFieldCardViews.get(instanceId);
+    if (!cardView) {
+      return;
     }
+
+    this.retainedFieldCardViews.delete(instanceId);
+    cardView.destroy();
+  }
+
+  private destroyRetainedFieldCardViews(): void {
+    for (const cardView of this.retainedFieldCardViews.values()) {
+      cardView.destroy();
+    }
+    this.retainedFieldCardViews.clear();
   }
 
   private setStatus(message: string): void {
@@ -2683,21 +2773,6 @@ function formatActiveSkillEffect(action: ActiveSkillBattleAction): string {
   }
 
   return `Attack +${action.value}`;
-}
-
-/**
- * 저장 완료 상태에 표시할 갱신 시각을 한국어 로케일 문자열로 변환한다.
- */
-function formatSaveStatusDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  return new Intl.DateTimeFormat('ko-KR', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(date);
 }
 
 function formatStageBattleResultReason(result: StageBattleResult): string {
