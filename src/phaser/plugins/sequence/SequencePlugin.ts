@@ -13,6 +13,10 @@ const DEFAULT_SHAKE = {
   repeat: 3,
   ease: 'Sine.easeInOut',
 } as const;
+const DEFAULT_VIDEO_TIMEOUT_MS = 1600;
+const DEFAULT_SEQUENCE_PLAYBACK_RATE = 1;
+const VIDEO_COMPLETE_EVENT = 'complete';
+const VIDEO_ERROR_EVENT = 'error';
 
 type TimedSequenceStepGroup = {
   timer: number;
@@ -28,6 +32,7 @@ export class SequencePlugin {
   private readonly timers = new Set<Phaser.Time.TimerEvent>();
   private readonly timerResolvers = new Set<() => void>();
   private readonly tweens = new Set<Phaser.Tweens.Tween>();
+  private sequencePlaybackRate = DEFAULT_SEQUENCE_PLAYBACK_RATE;
   private destroyed = false;
 
   constructor(private readonly context: SequenceRuntimeContext) {}
@@ -40,9 +45,45 @@ export class SequencePlugin {
   }
 
   /**
+   * 이 plugin 인스턴스가 생성하는 시퀀스 연출의 전역 재생속도를 읽는다.
+   */
+  getSequencePlaybackRate(): number {
+    return this.sequencePlaybackRate;
+  }
+
+  /**
+   * 이 plugin 인스턴스가 생성하는 시퀀스 연출의 전역 재생속도를 설정한다.
+   *
+   * `1`은 기본속도이며, 0보다 큰 유한한 숫자만 허용한다. 값은 이후 시작되는 시퀀스에 적용된다.
+   */
+  setSequencePlaybackRate(rate: number): void {
+    if (!isPositiveFiniteNumber(rate)) {
+      throw new RangeError('Sequence playback rate must be a positive finite number.');
+    }
+
+    this.sequencePlaybackRate = rate;
+  }
+
+  /**
+   * 기존 비디오 전용 호출과의 호환을 위해 시퀀스 전역 재생속도를 읽는다.
+   */
+  getVideoPlaybackRate(): number {
+    return this.getSequencePlaybackRate();
+  }
+
+  /**
+   * 기존 비디오 전용 호출과의 호환을 위해 시퀀스 전역 재생속도를 설정한다.
+   */
+  setVideoPlaybackRate(rate: number): void {
+    this.setSequencePlaybackRate(rate);
+  }
+
+  /**
    * 전달된 step들을 timer 기준으로 정렬해 재생한다.
    *
-   * 같은 timer의 step은 동시에 시작하고, blocking step은 다음 timer 그룹 진행을 막는다.
+   * 같은 timer의 step은 기본적으로 동시에 시작한다.
+   * `playback: 'sequential'` step은 같은 timer 그룹 안에서도 앞뒤 step과 순차 실행한다.
+   * blocking step은 다음 timer 그룹 진행을 막는다.
    * detached step은 다음 그룹 진행을 막지 않지만 시퀀스 종료 전 allSettled로 정리한다.
    */
   async play(steps: readonly SequenceStep[], options: SequencePlayOptions = {}): Promise<void> {
@@ -53,6 +94,7 @@ export class SequencePlugin {
     const groups = groupStepsByTimer(steps);
     const detached: Array<Promise<void>> = [];
     const startedAt = readNow();
+    const playbackRate = this.sequencePlaybackRate;
 
     if (options.lockInput) {
       options.onLockChange?.(true);
@@ -65,23 +107,14 @@ export class SequencePlugin {
         }
 
         const elapsed = readNow() - startedAt;
-        await this.delay(Math.max(0, group.timer - elapsed));
+        const scaledTimer = this.scaleDuration(group.timer, playbackRate);
+        await this.delay(Math.max(0, scaledTimer - elapsed));
 
         if (!this.canRun()) {
           break;
         }
 
-        const blocking: Array<Promise<void>> = [];
-        for (const step of group.steps) {
-          const runningStep = this.runStep(step);
-          if ((step.mode ?? 'blocking') === 'detached') {
-            detached.push(runningStep);
-          } else {
-            blocking.push(runningStep);
-          }
-        }
-
-        await Promise.all(blocking);
+        await this.runStepGroup(group.steps, detached, playbackRate);
       }
 
       await Promise.allSettled(detached);
@@ -118,20 +151,67 @@ export class SequencePlugin {
     this.tweens.clear();
   }
 
-  private runStep(step: SequenceStep): Promise<void> {
+  private runStep(step: SequenceStep, playbackRate: number): Promise<void> {
     if (!this.canRun()) {
       return Promise.resolve();
     }
 
     if (step.action === 'wait') {
-      return this.delay(step.duration ?? 0);
+      return this.delay(this.scaleDuration(step.duration ?? 0, playbackRate));
+    }
+
+    if (step.action === 'video') {
+      return this.playVideo(step, playbackRate);
     }
 
     if (step.action === 'custom') {
       return Promise.resolve(step.run?.(this.context));
     }
 
-    return this.playShake(step);
+    return this.playShake(step, playbackRate);
+  }
+
+  private runStepBatch(
+    steps: readonly SequenceStep[],
+    detached: Array<Promise<void>>,
+    playbackRate: number,
+  ): Promise<void> {
+    const blocking: Array<Promise<void>> = [];
+    for (const step of steps) {
+      const runningStep = this.runStep(step, playbackRate);
+      if ((step.mode ?? 'blocking') === 'detached') {
+        detached.push(runningStep);
+      } else {
+        blocking.push(runningStep);
+      }
+    }
+
+    return Promise.all(blocking).then(() => undefined);
+  }
+
+  private async runStepGroup(
+    steps: readonly SequenceStep[],
+    detached: Array<Promise<void>>,
+    playbackRate: number,
+  ): Promise<void> {
+    let parallelBatch: SequenceStep[] = [];
+
+    for (const step of steps) {
+      if (step.playback !== 'sequential') {
+        parallelBatch.push(step);
+        continue;
+      }
+
+      if (parallelBatch.length > 0) {
+        await this.runStepBatch(parallelBatch, detached, playbackRate);
+        parallelBatch = [];
+      }
+      await this.runStepBatch([step], detached, playbackRate);
+    }
+
+    if (parallelBatch.length > 0) {
+      await this.runStepBatch(parallelBatch, detached, playbackRate);
+    }
   }
 
   private delay(durationMs: number): Promise<void> {
@@ -161,13 +241,16 @@ export class SequencePlugin {
     });
   }
 
-  private playShake(step: SequenceStep): Promise<void> {
+  private playShake(step: SequenceStep, playbackRate: number): Promise<void> {
     const target = step.target;
     if (!target || !this.canUseTarget(target)) {
       return Promise.resolve();
     }
 
-    const duration = Math.max(0, step.duration ?? DEFAULT_SHAKE.durationMs);
+    const duration = this.scaleDuration(
+      Math.max(0, step.duration ?? DEFAULT_SHAKE.durationMs),
+      playbackRate,
+    );
     const intensity = Math.max(0, step.intensity ?? DEFAULT_SHAKE.intensity);
     const repeat = Math.max(0, step.repeat ?? DEFAULT_SHAKE.repeat);
     if (duration === 0 || intensity === 0 || repeat === 0) {
@@ -223,6 +306,58 @@ export class SequencePlugin {
     });
   }
 
+  private playVideo(step: SequenceStep, playbackRate: number): Promise<void> {
+    const assetId = step.assetId;
+    if (!assetId || !this.context.scene.cache.video.exists(assetId)) {
+      return Promise.resolve();
+    }
+
+    const scene = this.context.scene;
+    const video = scene.add.video(step.x ?? 0, step.y ?? 0, assetId).setOrigin(0.5);
+    if (isPositiveFiniteNumber(step.width) && isPositiveFiniteNumber(step.height)) {
+      video.setDisplaySize(step.width, step.height);
+    }
+    this.context.layer?.add(video);
+
+    return new Promise((resolve) => {
+      let settled = false;
+      let timer: Phaser.Time.TimerEvent | null = null;
+      const settle = () => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        if (timer) {
+          this.timers.delete(timer);
+        }
+        this.timerResolvers.delete(settle);
+        video.off(VIDEO_COMPLETE_EVENT, settle);
+        video.off(VIDEO_ERROR_EVENT, settle);
+        if (video.active) {
+          video.stop();
+          video.destroy();
+        }
+        resolve();
+      };
+
+      this.timerResolvers.add(settle);
+      video.once(VIDEO_COMPLETE_EVENT, settle);
+      video.once(VIDEO_ERROR_EVENT, settle);
+      timer = scene.time.delayedCall(
+        this.scaleDuration(Math.max(0, step.duration ?? DEFAULT_VIDEO_TIMEOUT_MS), playbackRate),
+        settle,
+      );
+      this.timers.add(timer);
+      video.setPlaybackRate(playbackRate);
+      video.play(false);
+    });
+  }
+
+  private scaleDuration(durationMs: number, playbackRate: number): number {
+    return Math.max(0, durationMs / playbackRate);
+  }
+
   private canRun(): boolean {
     return !this.destroyed && this.context.scene.scene.isActive();
   }
@@ -265,4 +400,8 @@ function groupStepsByTimer(steps: readonly SequenceStep[]): TimedSequenceStepGro
  */
 function readNow(): number {
   return globalThis.performance?.now() ?? Date.now();
+}
+
+function isPositiveFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0;
 }

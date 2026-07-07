@@ -8,11 +8,20 @@ import { appConfig } from '../config';
 const assetsRoot = path.resolve('assets');
 const outputFile = path.join(assetsRoot, 'assets.json');
 const manifestBase = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   revisionAlgorithm: 'sha256-12hex',
   assetBaseUrl: appConfig.assets.assetBaseUrl,
 };
 const textureExtensions = new Set(['.png', '.webp']);
+const videoExtensions = new Set(['.webm']);
+const excludedAssetRoots = new Set(['JB2A_DnD5e']);
+const attackMotionPathPrefix = 'motion/attack/';
+
+type AssetManifestEntry = {
+  key: string;
+  path: string;
+  revision: string;
+};
 
 async function walk(dir: string): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true });
@@ -48,11 +57,47 @@ function buildKey(filePath: string): string {
 }
 
 /**
- * `assets/`를 순회해 텍스처 manifest를 다시 생성한다.
+ * manifest에 기록할 상대 경로와 revision을 계산한다.
+ */
+async function buildManifestEntry(filePath: string): Promise<AssetManifestEntry> {
+  const buffer = await readFile(filePath);
+  const hash = createHash('sha256').update(buffer).digest('hex').slice(0, 12);
+  const relativePath = path.relative(assetsRoot, filePath).split(path.sep).join('/');
+
+  return {
+    key: buildKey(filePath),
+    path: relativePath,
+    revision: hash,
+  };
+}
+
+/**
+ * 로컬 원본 패키지처럼 manifest에 올리지 않을 자산 루트를 판별한다.
+ */
+function isExcludedAsset(filePath: string): boolean {
+  const relativePath = path.relative(assetsRoot, filePath).split(path.sep).join('/');
+  const rootName = relativePath.split('/')[0] ?? '';
+  return excludedAssetRoots.has(rootName);
+}
+
+/**
+ * 일반공격 모션으로 사용할 `motion/attack` webm만 video manifest 대상으로 판별한다.
+ */
+function isAttackMotionVideo(filePath: string): boolean {
+  const relativePath = path.relative(assetsRoot, filePath).split(path.sep).join('/');
+  return (
+    relativePath.startsWith(attackMotionPathPrefix) &&
+    videoExtensions.has(path.extname(filePath).toLowerCase())
+  );
+}
+
+/**
+ * `assets/`를 순회해 텍스처와 전투 모션 manifest를 다시 생성한다.
  * 실제 파일 해시와 경로를 함께 넣어 런타임 캐시 무결성을 유지한다.
  */
 async function main(): Promise<void> {
-  const textures: Array<{ key: string; path: string; revision: string }> = [];
+  const textures: AssetManifestEntry[] = [];
+  const videos: AssetManifestEntry[] = [];
   const files = await walk(assetsRoot);
 
   for (const filePath of files) {
@@ -60,26 +105,25 @@ async function main(): Promise<void> {
       continue;
     }
 
-    if (!textureExtensions.has(path.extname(filePath).toLowerCase())) {
+    if (isAttackMotionVideo(filePath)) {
+      videos.push(await buildManifestEntry(filePath));
       continue;
     }
 
-    const buffer = await readFile(filePath);
-    const hash = createHash('sha256').update(buffer).digest('hex').slice(0, 12);
-    const relativePath = path.relative(assetsRoot, filePath).split(path.sep).join('/');
+    if (isExcludedAsset(filePath) || !textureExtensions.has(path.extname(filePath).toLowerCase())) {
+      continue;
+    }
 
-    textures.push({
-      key: buildKey(filePath),
-      path: relativePath,
-      revision: hash,
-    });
+    textures.push(await buildManifestEntry(filePath));
   }
 
   textures.sort((left, right) => left.key.localeCompare(right.key));
+  videos.sort((left, right) => left.key.localeCompare(right.key));
 
   const manifestBody = {
     ...manifestBase,
     textures,
+    videos,
   };
   const manifestRevision = createHash('sha256')
     .update(`${JSON.stringify(manifestBody, null, 2)}\n`)

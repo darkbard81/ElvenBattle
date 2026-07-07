@@ -133,6 +133,7 @@ type BattlePopupEvent = {
   slotId: BattleSlotId;
   text: string;
   shakeTargetInstanceId?: string;
+  attackMotionCardId?: string;
 };
 
 type BottomButtonDefinition = {
@@ -147,6 +148,10 @@ const FIELD_SLOT_WIDTH = 174;
 const FIELD_SLOT_HEIGHT = 261;
 const HAND_CARD_WIDTH = 128;
 const BATTLE_POPUP_DURATION_MS = 500;
+const ATTACK_MOTION_FALLBACK_KEY = 'motion.attack.fallback';
+const ATTACK_MOTION_WIDTH = Math.round(FIELD_SLOT_WIDTH * 2.2);
+const ATTACK_MOTION_HEIGHT = Math.round(ATTACK_MOTION_WIDTH * 0.75);
+const ATTACK_MOTION_TIMEOUT_MS = 1600;
 const PLACE_HIGHLIGHT_COLOR = 0x71d879;
 const MOVE_HIGHLIGHT_COLOR = 0x79b8ff;
 const ATTACK_HIGHLIGHT_COLOR = 0xff6f6f;
@@ -2336,6 +2341,10 @@ export class BattlefieldScene extends Phaser.Scene {
   }
 
   private getCardName(instanceId: string): string {
+    return this.findRuntimeCardByInstanceId(instanceId)?.card.instance.name ?? instanceId;
+  }
+
+  private findRuntimeCardByInstanceId(instanceId: string): BattleCardRuntimeState | null {
     const card = [
       ...this.runtime.battlefield,
       ...this.runtime.player.hand,
@@ -2348,7 +2357,7 @@ export class BattlefieldScene extends Phaser.Scene {
       ...this.runtime.enemy.exile,
     ].find((entry) => entry.card.instance.instanceId === instanceId);
 
-    return card?.card.instance.name ?? instanceId;
+    return card ?? null;
   }
 
   private formatTurnEvents(events: readonly BattleTurnEvent[]): string[] {
@@ -2430,12 +2439,16 @@ export class BattlefieldScene extends Phaser.Scene {
       };
     }
 
-    return {
+    const attackEvent: BattlePopupEvent = {
       kind: 'ATTACK',
       slotId: action.toSlotId,
       text: `ATTACK -${action.attack}`,
       shakeTargetInstanceId: action.targetInstanceId,
     };
+    const attackerCardId = this.findRuntimeCardByInstanceId(action.attackerInstanceId)?.card
+      .instance.id;
+
+    return attackerCardId ? { ...attackEvent, attackMotionCardId: attackerCardId } : attackEvent;
   }
 
   private createBlockPopupEvent(action: BlockBattleAction): BattlePopupEvent {
@@ -2487,6 +2500,11 @@ export class BattlefieldScene extends Phaser.Scene {
     for (let index = 0; index < events.length; index += 1) {
       const event = events[index]!;
       const timer = index * BATTLE_POPUP_DURATION_MS;
+      const attackMotionStep = this.createAttackMotionStep(event, timer);
+      if (attackMotionStep) {
+        sequence.add(attackMotionStep);
+      }
+
       const shakeStep = this.createDamageShakeStep(event, timer);
       if (shakeStep) {
         sequence.add(shakeStep);
@@ -2538,6 +2556,31 @@ export class BattlefieldScene extends Phaser.Scene {
       intensity: 8,
       repeat: 3,
       mode: 'blocking',
+    };
+  }
+
+  private createAttackMotionStep(event: BattlePopupEvent, timer: number): SequenceStep | null {
+    if (event.kind !== 'ATTACK') {
+      return null;
+    }
+
+    const assetId = this.selectAttackMotionKey(event.attackMotionCardId);
+    if (!assetId) {
+      return null;
+    }
+
+    const rect = FIELD_SLOT_RECTS[event.slotId];
+    return {
+      timer,
+      action: 'video',
+      assetId,
+      x: rect.x + rect.width / 2,
+      y: rect.y + rect.height / 2,
+      width: ATTACK_MOTION_WIDTH,
+      height: ATTACK_MOTION_HEIGHT,
+      duration: ATTACK_MOTION_TIMEOUT_MS,
+      mode: 'blocking',
+      playback: 'sequential',
     };
   }
 
@@ -2641,6 +2684,17 @@ export class BattlefieldScene extends Phaser.Scene {
   private setStatus(message: string): void {
     this.statusMessage = message;
     this.statusText?.setText(message);
+  }
+
+  private selectAttackMotionKey(cardId: string | undefined): string | null {
+    if (cardId) {
+      const motionKey = `motion.attack.${cardId}`;
+      if (this.cache.video.exists(motionKey)) {
+        return motionKey;
+      }
+    }
+
+    return this.cache.video.exists(ATTACK_MOTION_FALLBACK_KEY) ? ATTACK_MOTION_FALLBACK_KEY : null;
   }
 }
 

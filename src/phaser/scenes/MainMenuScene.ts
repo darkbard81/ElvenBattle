@@ -216,8 +216,8 @@ export class MainMenuScene extends Phaser.Scene {
   private createStatusGroup(data: MainMenuSceneData): Phaser.GameObjects.Container {
     const statusText =
       data.failedCount > 0
-        ? `Loaded ${data.loadedCount} textures, skipped ${data.failedCount}`
-        : `Loaded ${data.loadedCount} textures`;
+        ? `Loaded ${data.loadedCount} assets, skipped ${data.failedCount}`
+        : `Loaded ${data.loadedCount} assets`;
 
     const group = this.add.container(0, 0);
     group.setSize(GAME_WIDTH, STATUS_HEIGHT);

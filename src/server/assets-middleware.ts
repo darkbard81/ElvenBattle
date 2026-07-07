@@ -6,14 +6,17 @@ import { appConfig } from '../config';
 
 type AssetsManifest = {
   assetBaseUrl: string;
-  textures: Array<{
-    key: string;
-    path: string;
-    revision: string;
-  }>;
+  textures: AssetManifestEntry[];
+  videos: AssetManifestEntry[];
   manifestRevision: string;
   schemaVersion: number;
   revisionAlgorithm: string;
+};
+
+type AssetManifestEntry = {
+  key: string;
+  path: string;
+  revision: string;
 };
 
 const projectRoot = fileURLToPath(new URL('../..', import.meta.url));
@@ -107,6 +110,8 @@ function getMimeType(filePath: string): string {
       return 'image/png';
     case '.webp':
       return 'image/webp';
+    case '.webm':
+      return 'video/webm';
     case '.jpg':
     case '.jpeg':
       return 'image/jpeg';

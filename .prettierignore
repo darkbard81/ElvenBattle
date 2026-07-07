@@ -2,6 +2,7 @@ node_modules
 dist
 coverage
 generated
+assets
 package-lock.json
 .old_version
 *.md

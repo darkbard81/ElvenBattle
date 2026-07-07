@@ -2,7 +2,9 @@ import type Phaser from 'phaser';
 
 export type SequencePlayMode = 'blocking' | 'detached';
 
-export type SequenceStepAction = 'wait' | 'shake' | 'custom';
+export type SequencePlaybackMode = 'parallel' | 'sequential';
+
+export type SequenceStepAction = 'wait' | 'shake' | 'video' | 'custom';
 
 export type SequencePoint = {
   x: number;
@@ -29,6 +31,9 @@ export type SequenceStep = {
   /** blocking은 완료 대기, detached는 자율 재생한다. */
   mode?: SequencePlayMode;
 
+  /** 같은 timer 그룹 안에서 병렬 실행할지, 앞뒤 step과 순차 실행할지 정한다. */
+  playback?: SequencePlaybackMode;
+
   /** 기존 GameObject 대상이다. 1차 구현의 shake는 이 값을 사용한다. */
   target?: SequenceTarget;
 
@@ -36,11 +41,15 @@ export type SequenceStep = {
   x?: number;
   y?: number;
 
+  /** 생성형 이펙트 GameObject를 표시할 크기다. */
+  width?: number;
+  height?: number;
+
   /** 추후 이동형 이펙트의 시작/종료 좌표로 사용할 값이다. */
   from?: SequencePoint;
   to?: SequencePoint;
 
-  /** 추후 texture, atlas frame, prefab성 연출 식별자에 사용한다. */
+  /** texture, video, atlas frame, prefab성 연출 식별자에 사용한다. */
   assetId?: string;
 
   /** 흔들림 강도(px)다. shake action에서 사용한다. */

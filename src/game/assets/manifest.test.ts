@@ -13,5 +13,8 @@ describe('asset manifest helpers', () => {
     expect(joinAssetUrl('/tcg', 'assets.json')).toBe('/tcg/assets.json');
     expect(joinAssetUrl('/tcg/', '/images/card.webp')).toBe('/tcg/images/card.webp');
     expect(joinAssetUrl('tcg', 'fonts/CookieRun.ttf')).toBe('/tcg/fonts/CookieRun.ttf');
+    expect(joinAssetUrl('/tcg', 'motion/attack/fallback.webm')).toBe(
+      '/tcg/motion/attack/fallback.webm',
+    );
   });
 });

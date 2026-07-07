@@ -1,21 +1,27 @@
 /**
+ * `assets.json`의 최소 manifest entry 구조를 표현한다.
+ */
+export type AssetManifestEntry = {
+  key: string;
+  path: string;
+  revision: string;
+};
+
+/**
  * `assets.json`의 최소 manifest 구조를 표현한다.
- * 씬에서는 이 manifest를 읽어 webp 텍스처를 우선적으로 로딩한다.
+ * 씬에서는 이 manifest를 읽어 webp 텍스처와 webm 모션을 로딩한다.
  */
 export type AssetsManifest = {
   assetBaseUrl: string;
-  textures: Array<{
-    key: string;
-    path: string;
-    revision: string;
-  }>;
+  textures: AssetManifestEntry[];
+  videos: AssetManifestEntry[];
   manifestRevision: string;
   schemaVersion: number;
   revisionAlgorithm: string;
 };
 
 /**
- * 서버가 제공하는 `assets.json`을 읽어 텍스처 로딩용 manifest로 해석한다.
+ * 서버가 제공하는 `assets.json`을 읽어 런타임 자산 manifest로 해석한다.
  * 응답 실패는 로딩 씬에서 처리하고, 여기서는 유효한 manifest만 돌려준다.
  */
 export async function fetchAssetsManifest(assetBaseUrl: string): Promise<AssetsManifest> {
