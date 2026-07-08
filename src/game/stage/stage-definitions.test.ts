@@ -35,12 +35,13 @@ describe('stage definitions', () => {
   it('lists the test stage as data-driven stage content', () => {
     const stages = listStageDefinitions();
 
-    expect(stages).toHaveLength(4);
+    expect(stages).toHaveLength(5);
     expect(stages.map((stage) => stage.id)).toEqual([
       'test-stage-dark',
       'test-stage-dark1',
       'test-stage-dark2',
       'test-stage-dark3',
+      'test-stage-dark4',
     ]);
     expect(stages[0]).toMatchObject({
       id: 'test-stage-dark',
