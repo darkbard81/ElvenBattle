@@ -1,22 +1,32 @@
 /**
+ * `assets.json`의 최소 manifest entry 구조를 표현한다.
+ */
+export type AssetManifestEntry = {
+  key: string;
+  path: string;
+  revision: string;
+};
+
+/**
  * `assets.json`의 최소 manifest 구조를 표현한다.
- * 씬에서는 이 manifest를 읽어 webp 텍스처를 우선적으로 로딩한다.
+ * 씬에서는 이 manifest를 읽어 webp 텍스처와 webm 모션을 로딩한다.
  */
 export type AssetsManifest = {
   assetBaseUrl: string;
-  textures: Array<{
-    key: string;
-    path: string;
-    revision: string;
-  }>;
+  textures: AssetManifestEntry[];
+  videos: AssetManifestEntry[];
   manifestRevision: string;
   schemaVersion: number;
   revisionAlgorithm: string;
 };
 
+type AssetsManifestResponse = Omit<AssetsManifest, 'videos'> & {
+  videos?: AssetManifestEntry[];
+};
+
 /**
- * 서버가 제공하는 `assets.json`을 읽어 텍스처 로딩용 manifest로 해석한다.
- * 응답 실패는 로딩 씬에서 처리하고, 여기서는 유효한 manifest만 돌려준다.
+ * 서버가 제공하는 `assets.json`을 읽어 런타임 자산 manifest로 해석한다.
+ * 응답 실패는 로딩 씬에서 처리하고, 여기서는 Scene이 바로 사용할 수 있는 manifest로 정규화한다.
  */
 export async function fetchAssetsManifest(assetBaseUrl: string): Promise<AssetsManifest> {
   const response = await fetch(joinAssetUrl(assetBaseUrl, 'assets.json'));
@@ -24,7 +34,17 @@ export async function fetchAssetsManifest(assetBaseUrl: string): Promise<AssetsM
     throw new Error(`Failed to load assets.json: ${response.status} ${response.statusText}`);
   }
 
-  return (await response.json()) as AssetsManifest;
+  return normalizeAssetsManifest((await response.json()) as AssetsManifestResponse);
+}
+
+/**
+ * 구버전 `assets.json`처럼 videos 필드가 없는 manifest를 현재 런타임 구조로 맞춘다.
+ */
+export function normalizeAssetsManifest(manifest: AssetsManifestResponse): AssetsManifest {
+  return {
+    ...manifest,
+    videos: Array.isArray(manifest.videos) ? manifest.videos : [],
+  };
 }
 
 /**

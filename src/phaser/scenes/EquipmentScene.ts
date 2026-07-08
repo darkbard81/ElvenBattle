@@ -23,6 +23,7 @@ const PANEL_GAP = 56;
 const PANEL_BODY_WIDTH = PANEL_WIDTH * 2 + PANEL_GAP;
 const PANEL_BODY_X = (GAME_WIDTH - PANEL_BODY_WIDTH) / 2;
 const PANEL_INNER_WIDTH = PANEL_WIDTH - 56;
+const CARD_ROW_TEXT_WIDTH = PANEL_WIDTH - 104;
 const PANEL_HEADER_HEIGHT = 104;
 const PANEL_BOTTOM_PADDING = 28;
 const PANEL_SCROLLBAR_WIDTH = 10;
@@ -216,7 +217,7 @@ export class EquipmentScene extends Phaser.Scene {
       space: { item: CARD_ROW_GAP },
     });
 
-    let focusedRow: Phaser.GameObjects.Container | null = null;
+    let focusedRow: Phaser.GameObjects.GameObject | null = null;
     entries.forEach((entry) => {
       const selected = entry.card.instance.instanceId === this.selectedTargetCardInstanceId;
       const row = this.createUnitRow({
@@ -231,8 +232,6 @@ export class EquipmentScene extends Phaser.Scene {
         align: 'left-top',
         minWidth: PANEL_INNER_WIDTH,
         minHeight: CARD_ROW_HEIGHT,
-        offsetOriginX: -0.5,
-        offsetOriginY: -0.5,
       });
     });
     rowLayout.layout();
@@ -268,7 +267,7 @@ export class EquipmentScene extends Phaser.Scene {
       space: { item: CARD_ROW_GAP },
     });
 
-    let focusedRow: Phaser.GameObjects.Container | null = null;
+    let focusedRow: Phaser.GameObjects.GameObject | null = null;
     entries.forEach((entry) => {
       const row = this.createEquipmentRow({
         entry,
@@ -284,8 +283,6 @@ export class EquipmentScene extends Phaser.Scene {
         align: 'left-top',
         minWidth: PANEL_INNER_WIDTH,
         minHeight: CARD_ROW_HEIGHT,
-        offsetOriginX: -0.5,
-        offsetOriginY: -0.5,
       });
     });
     rowLayout.layout();
@@ -413,9 +410,10 @@ export class EquipmentScene extends Phaser.Scene {
   private createUnitRow(config: {
     entry: EquipmentUnitEntry;
     selected: boolean;
-  }): Phaser.GameObjects.Container {
-    const container = this.add.container(0, 0);
-    container.setSize(PANEL_INNER_WIDTH, CARD_ROW_HEIGHT);
+  }): Phaser.GameObjects.GameObject {
+    const row = this.rexUI.add.overlapSizer(0, 0, PANEL_INNER_WIDTH, CARD_ROW_HEIGHT, {
+      origin: 0,
+    });
     const card = config.entry.card;
     const fillColor = config.selected ? 0x31543d : 0x17352d;
     const strokeColor = config.selected ? 0xffe4a8 : 0x78a98d;
@@ -424,41 +422,69 @@ export class EquipmentScene extends Phaser.Scene {
       .setOrigin(0, 0);
     background.setStrokeStyle(config.selected ? 3 : 1, strokeColor, config.selected ? 0.95 : 0.5);
     background.setInteractive({ useHandCursor: true });
-    container.add(background);
+    row.addBackground(background);
 
-    container.add(
-      this.add
-        .text(18, 24, `${config.entry.index + 1}. ${card.instance.name}`, {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '22px',
-          color: '#f5fff0',
-          align: 'left',
-          wordWrap: { width: PANEL_WIDTH - 104 },
-        })
-        .setOrigin(0, 0.5),
-    );
-    container.add(
-      this.add
-        .text(18, 64, formatUnitStats(config.entry), {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '17px',
-          color: '#d7ead4',
-          align: 'left',
-          wordWrap: { width: PANEL_WIDTH - 104 },
-        })
-        .setOrigin(0, 0.5),
-    );
-    container.add(
-      this.add
-        .text(18, 94, formatEquippedNames(config.entry), {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '14px',
-          color: '#92aa9e',
-          align: 'left',
-          wordWrap: { width: PANEL_WIDTH - 104 },
-        })
-        .setOrigin(0, 0.5),
-    );
+    const textLayout = this.rexUI.add.sizer(0, 0, CARD_ROW_TEXT_WIDTH, CARD_ROW_HEIGHT - 24, 'y', {
+      origin: 0,
+    });
+    const titleText = this.add
+      .text(0, 0, `${config.entry.index + 1}. ${card.instance.name}`, {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '22px',
+        color: '#f5fff0',
+        align: 'left',
+        fixedWidth: CARD_ROW_TEXT_WIDTH,
+        fixedHeight: 24,
+        wordWrap: { width: CARD_ROW_TEXT_WIDTH },
+      })
+      .setOrigin(0, 0.5);
+    const statsText = this.add
+      .text(0, 0, formatUnitStats(config.entry), {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '17px',
+        color: '#d7ead4',
+        align: 'left',
+        fixedWidth: CARD_ROW_TEXT_WIDTH,
+        fixedHeight: 24,
+        wordWrap: { width: CARD_ROW_TEXT_WIDTH },
+      })
+      .setOrigin(0, 0.5);
+    const equippedText = this.add
+      .text(0, 0, formatEquippedNames(config.entry), {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '14px',
+        color: '#92aa9e',
+        align: 'left',
+        fixedWidth: CARD_ROW_TEXT_WIDTH,
+        fixedHeight: 18,
+        wordWrap: { width: CARD_ROW_TEXT_WIDTH },
+      })
+      .setOrigin(0, 0.5);
+    textLayout.add(titleText, {
+      align: 'left-center',
+      minWidth: CARD_ROW_TEXT_WIDTH,
+      minHeight: 24,
+      expand: true,
+    });
+    textLayout.add(statsText, {
+      align: 'left-center',
+      minWidth: CARD_ROW_TEXT_WIDTH,
+      minHeight: 24,
+      padding: { top: 16, bottom: 4 },
+      expand: true,
+    });
+    textLayout.add(equippedText, {
+      align: 'left-center',
+      minWidth: CARD_ROW_TEXT_WIDTH,
+      minHeight: 18,
+      padding: { top: 5 },
+      expand: true,
+    });
+    row.add(textLayout, {
+      align: 'left-top',
+      padding: { left: 18, top: 12, right: 30, bottom: 12 },
+      expand: true,
+    });
 
     background.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OVER, () => {
       background.setFillStyle(config.selected ? 0x3c684a : 0x24513d, 0.98);
@@ -473,12 +499,14 @@ export class EquipmentScene extends Phaser.Scene {
       this.renderLists();
       this.renderHud();
     });
-    return container;
+    row.layout();
+    return row;
   }
 
-  private createEquipmentRow(config: { entry: EquipmentListEntry }): Phaser.GameObjects.Container {
-    const container = this.add.container(0, 0);
-    container.setSize(PANEL_INNER_WIDTH, CARD_ROW_HEIGHT);
+  private createEquipmentRow(config: { entry: EquipmentListEntry }): Phaser.GameObjects.GameObject {
+    const row = this.rexUI.add.overlapSizer(0, 0, PANEL_INNER_WIDTH, CARD_ROW_HEIGHT, {
+      origin: 0,
+    });
     const card = config.entry.card;
     const fillColor = config.entry.equippedToSelected ? 0x31543d : 0x17352d;
     const strokeColor = config.entry.equippedToSelected
@@ -491,41 +519,69 @@ export class EquipmentScene extends Phaser.Scene {
       .setOrigin(0, 0);
     background.setStrokeStyle(config.entry.equippedToSelected ? 3 : 1, strokeColor, 0.75);
     background.setInteractive({ useHandCursor: true });
-    container.add(background);
+    row.addBackground(background);
 
-    container.add(
-      this.add
-        .text(18, 24, `${config.entry.index + 1}. ${card.instance.name}`, {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '22px',
-          color: '#f5fff0',
-          align: 'left',
-          wordWrap: { width: PANEL_WIDTH - 104 },
-        })
-        .setOrigin(0, 0.5),
-    );
-    container.add(
-      this.add
-        .text(18, 64, formatEquipmentStats(card), {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '17px',
-          color: '#d7ead4',
-          align: 'left',
-          wordWrap: { width: PANEL_WIDTH - 104 },
-        })
-        .setOrigin(0, 0.5),
-    );
-    container.add(
-      this.add
-        .text(18, 94, formatEquipmentAssignment(config.entry), {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '14px',
-          color: config.entry.equippedToSelected ? '#fff3c2' : '#92aa9e',
-          align: 'left',
-          wordWrap: { width: PANEL_WIDTH - 104 },
-        })
-        .setOrigin(0, 0.5),
-    );
+    const textLayout = this.rexUI.add.sizer(0, 0, CARD_ROW_TEXT_WIDTH, CARD_ROW_HEIGHT - 24, 'y', {
+      origin: 0,
+    });
+    const titleText = this.add
+      .text(0, 0, `${config.entry.index + 1}. ${card.instance.name}`, {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '22px',
+        color: '#f5fff0',
+        align: 'left',
+        fixedWidth: CARD_ROW_TEXT_WIDTH,
+        fixedHeight: 24,
+        wordWrap: { width: CARD_ROW_TEXT_WIDTH },
+      })
+      .setOrigin(0, 0.5);
+    const statsText = this.add
+      .text(0, 0, formatEquipmentStats(card), {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '17px',
+        color: '#d7ead4',
+        align: 'left',
+        fixedWidth: CARD_ROW_TEXT_WIDTH,
+        fixedHeight: 24,
+        wordWrap: { width: CARD_ROW_TEXT_WIDTH },
+      })
+      .setOrigin(0, 0.5);
+    const assignmentText = this.add
+      .text(0, 0, formatEquipmentAssignment(config.entry), {
+        fontFamily: DEFAULT_FONT_FAMILY,
+        fontSize: '14px',
+        color: config.entry.equippedToSelected ? '#fff3c2' : '#92aa9e',
+        align: 'left',
+        fixedWidth: CARD_ROW_TEXT_WIDTH,
+        fixedHeight: 18,
+        wordWrap: { width: CARD_ROW_TEXT_WIDTH },
+      })
+      .setOrigin(0, 0.5);
+    textLayout.add(titleText, {
+      align: 'left-center',
+      minWidth: CARD_ROW_TEXT_WIDTH,
+      minHeight: 24,
+      expand: true,
+    });
+    textLayout.add(statsText, {
+      align: 'left-center',
+      minWidth: CARD_ROW_TEXT_WIDTH,
+      minHeight: 24,
+      padding: { top: 16, bottom: 4 },
+      expand: true,
+    });
+    textLayout.add(assignmentText, {
+      align: 'left-center',
+      minWidth: CARD_ROW_TEXT_WIDTH,
+      minHeight: 18,
+      padding: { top: 5 },
+      expand: true,
+    });
+    row.add(textLayout, {
+      align: 'left-top',
+      padding: { left: 18, top: 12, right: 30, bottom: 12 },
+      expand: true,
+    });
 
     background.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OVER, () => {
       background.setFillStyle(config.entry.equippedToSelected ? 0x3c684a : 0x24513d, 0.98);
@@ -536,7 +592,8 @@ export class EquipmentScene extends Phaser.Scene {
     background.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
       this.handleToggleEquipment(card.instance.instanceId);
     });
-    return container;
+    row.layout();
+    return row;
   }
 
   private renderHud(): void {

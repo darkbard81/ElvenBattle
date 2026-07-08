@@ -1,3 +1,4 @@
+import type BBCodeText from 'phaser4-rex-plugins/templates/ui/bbcodetext/BBCodeText';
 import type GridSizer from 'phaser4-rex-plugins/templates/ui/gridsizer/GridSizer';
 import type OverlapSizer from 'phaser4-rex-plugins/templates/ui/overlapsizer/OverlapSizer';
 import type ScrollablePanel from 'phaser4-rex-plugins/templates/ui/scrollablepanel/ScrollablePanel';
@@ -9,6 +10,12 @@ declare module 'phaser4-rex-plugins/templates/ui/ui-plugin.js' {
 }
 
 type RexUIObjectFactory = {
+  BBCodeText: (
+    x?: number,
+    y?: number,
+    content?: string,
+    style?: BBCodeText.TextStyle,
+  ) => BBCodeText;
   sizer: (
     ...args:
       | [config?: Sizer.IConfig]

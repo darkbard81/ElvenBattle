@@ -221,7 +221,7 @@ export class StageScene extends Phaser.Scene {
       origin: 0,
       space: { item: STAGE_CARD_GAP },
     });
-    let selectedStageCard: Phaser.GameObjects.Container | null = null;
+    let selectedStageCard: Phaser.GameObjects.GameObject | null = null;
     this.stageDefinitions.forEach((stageDefinition) => {
       const stageCard = this.createStageCard(stageDefinition);
       if (stageDefinition.id === this.selectedStageId) {
@@ -232,8 +232,6 @@ export class StageScene extends Phaser.Scene {
         align: 'left-top',
         minWidth: STAGE_CARD_WIDTH,
         minHeight: STAGE_CARD_HEIGHT,
-        offsetOriginX: -0.5,
-        offsetOriginY: -0.5,
       });
     });
 
@@ -286,9 +284,10 @@ export class StageScene extends Phaser.Scene {
     return container;
   }
 
-  private createStageCard(stageDefinition: StageDefinition): Phaser.GameObjects.Container {
-    const container = this.add.container(0, 0);
-    container.setSize(STAGE_CARD_WIDTH, STAGE_CARD_HEIGHT);
+  private createStageCard(stageDefinition: StageDefinition): Phaser.GameObjects.GameObject {
+    const stageCard = this.rexUI.add.overlapSizer(0, 0, STAGE_CARD_WIDTH, STAGE_CARD_HEIGHT, {
+      origin: 0,
+    });
     const unlocked = isStageUnlocked(stageDefinition, this.session.stageProgress);
     const cleared = this.session.stageProgress.clearedStageIds.includes(stageDefinition.id);
     const selected = stageDefinition.id === this.selectedStageId;
@@ -302,37 +301,69 @@ export class StageScene extends Phaser.Scene {
       .setOrigin(0, 0);
     background.setStrokeStyle(selected ? 4 : 2, strokeColor, selected ? 0.96 : 0.7);
     background.setInteractive({ useHandCursor: true });
-    container.add(background);
+    stageCard.addBackground(background);
 
+    const cardTextWidth = STAGE_CARD_WIDTH - 44;
+    const textLayout = this.rexUI.add.sizer(0, 0, cardTextWidth, STAGE_CARD_HEIGHT - 24, 'y', {
+      origin: 0,
+    });
     const orderText = this.add
-      .text(22, 20, `Stage ${stageDefinition.order}`, {
+      .text(0, 0, `Stage ${stageDefinition.order}`, {
         fontFamily: DEFAULT_FONT_FAMILY,
         fontSize: '14px',
         color: selected ? '#fff3c2' : detailColor,
         align: 'left',
+        fixedWidth: cardTextWidth,
+        fixedHeight: 16,
       })
       .setOrigin(0, 0.5);
     const titleText = this.add
-      .text(22, 48, stageDefinition.name, {
+      .text(0, 0, stageDefinition.name, {
         fontFamily: DEFAULT_FONT_FAMILY,
         fontSize: '23px',
         color: titleColor,
         align: 'left',
-        fixedWidth: STAGE_CARD_WIDTH - 44,
+        fixedWidth: cardTextWidth,
         fixedHeight: 32,
         maxLines: 1,
-        wordWrap: { width: STAGE_CARD_WIDTH - 44 },
+        wordWrap: { width: cardTextWidth },
       })
       .setOrigin(0, 0.5);
     const stateText = this.add
-      .text(22, 82, cleared ? 'CLEARED' : unlocked ? 'Unlocked' : 'Locked', {
+      .text(0, 0, cleared ? 'CLEARED' : unlocked ? 'Unlocked' : 'Locked', {
         fontFamily: DEFAULT_FONT_FAMILY,
         fontSize: '14px',
         color: cleared ? '#fff3c2' : detailColor,
         align: 'left',
+        fixedWidth: cardTextWidth,
+        fixedHeight: 16,
       })
       .setOrigin(0, 0.5);
-    container.add([orderText, titleText, stateText]);
+    textLayout.add(orderText, {
+      align: 'left-center',
+      minWidth: cardTextWidth,
+      minHeight: 16,
+      expand: true,
+    });
+    textLayout.add(titleText, {
+      align: 'left-center',
+      minWidth: cardTextWidth,
+      minHeight: 32,
+      padding: { top: 4, bottom: 4 },
+      expand: true,
+    });
+    textLayout.add(stateText, {
+      align: 'left-center',
+      minWidth: cardTextWidth,
+      minHeight: 16,
+      padding: { top: 6 },
+      expand: true,
+    });
+    stageCard.add(textLayout, {
+      align: 'left-top',
+      padding: { left: 22, top: 12, right: 22, bottom: 12 },
+      expand: true,
+    });
 
     background.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OVER, () => {
       background.setFillStyle(unlocked ? 0x24513d : 0x1d2a26, 0.98);
@@ -344,7 +375,8 @@ export class StageScene extends Phaser.Scene {
       this.selectStage(stageDefinition.id);
     });
 
-    return container;
+    stageCard.layout();
+    return stageCard;
   }
 
   private createStageDetailPanel(): Phaser.GameObjects.Container {

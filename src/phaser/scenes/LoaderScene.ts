@@ -12,7 +12,7 @@ const PROGRESS_GROUP_TOP = 394;
 const PROGRESS_GROUP_LEFT = (GAME_WIDTH - PROGRESS_BAR_WIDTH) / 2;
 
 /**
- * `assets.json`을 읽고 필요한 `webp` 텍스처만 순차적으로 로딩하는 씬이다.
+ * `assets.json`을 읽고 필요한 `webp` 텍스처와 `webm` 모션을 순차적으로 로딩하는 씬이다.
  * 로딩 실패는 치명적으로 끊지 않고, 가능한 자산만 살려서 메뉴로 넘긴다.
  */
 export class LoaderScene extends Phaser.Scene {
@@ -25,13 +25,13 @@ export class LoaderScene extends Phaser.Scene {
   }
 
   /**
-   * manifest를 읽고 webp 텍스처를 로딩하는 동안 진행률과 상태 메시지를 갱신한다.
+   * manifest를 읽고 런타임 자산을 로딩하는 동안 진행률과 상태 메시지를 갱신한다.
    */
   create(data: LoaderSceneData): void {
     this.addBackground();
     this.addForegroundUi();
 
-    void this.preloadWebpTextures(data.assetBaseUrl).catch((error: unknown) => {
+    void this.preloadManifestAssets(data.assetBaseUrl).catch((error: unknown) => {
       this.statusText.setText(formatError(error));
       this.progressText.setText('0%');
       this.time.delayedCall(1200, () => {
@@ -144,18 +144,22 @@ export class LoaderScene extends Phaser.Scene {
     return group;
   }
 
-  private async preloadWebpTextures(assetBaseUrl: string): Promise<void> {
+  private async preloadManifestAssets(assetBaseUrl: string): Promise<void> {
     const manifest = await fetchAssetsManifest(assetBaseUrl);
     const webpTextures = manifest.textures.filter((texture) =>
       texture.path.toLowerCase().endsWith('.webp'),
     );
+    const webmVideos = manifest.videos.filter((video) =>
+      video.path.toLowerCase().endsWith('.webm'),
+    );
+    const totalAssets = webpTextures.length + webmVideos.length;
     const failedKeys = new Set<string>();
 
-    this.statusText.setText(`Preloading ${webpTextures.length} webp textures`);
+    this.statusText.setText(`Preloading ${totalAssets} assets`);
 
-    if (webpTextures.length === 0) {
+    if (totalAssets === 0) {
       this.updateProgress(1);
-      this.statusText.setText('No webp textures found, opening menu');
+      this.statusText.setText('No preload assets found, opening menu');
       this.time.delayedCall(200, () => {
         this.scene.start('MainMenuScene', {
           loadedCount: 0,
@@ -170,10 +174,10 @@ export class LoaderScene extends Phaser.Scene {
     });
     this.load.on(Phaser.Loader.Events.FILE_LOAD_ERROR, (file: Phaser.Loader.File) => {
       failedKeys.add(file.key);
-      this.statusText.setText(`Skipping failed texture: ${file.key}`);
+      this.statusText.setText(`Skipping failed asset: ${file.key}`);
     });
     this.load.once(Phaser.Loader.Events.COMPLETE, () => {
-      const loadedCount = webpTextures.length - failedKeys.size;
+      const loadedCount = totalAssets - failedKeys.size;
       this.scene.start('MainMenuScene', {
         loadedCount,
         failedCount: failedKeys.size,
@@ -182,6 +186,9 @@ export class LoaderScene extends Phaser.Scene {
 
     for (const texture of webpTextures) {
       this.load.image(texture.key, joinAssetUrl(manifest.assetBaseUrl, texture.path));
+    }
+    for (const video of webmVideos) {
+      this.load.video(video.key, joinAssetUrl(manifest.assetBaseUrl, video.path), true);
     }
 
     this.load.start();
