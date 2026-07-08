@@ -413,6 +413,33 @@ describe('SequencePlugin', () => {
     expect(video?.destroyed).toBe(true);
   });
 
+  it.each(['complete', 'error'] as const)(
+    'removes the pending video timeout timer when video emits %s',
+    async (event) => {
+      const scene = new FakeScene(['motion.attack.fallback']);
+      const plugin = new SequencePlugin({ scene: scene.asPhaserScene() });
+
+      const promise = plugin.play([
+        {
+          timer: 0,
+          action: 'video',
+          assetId: 'motion.attack.fallback',
+          duration: 1600,
+        },
+      ]);
+      await flushPromises();
+
+      const timeoutTimer = scene.time.timers[0];
+      expect(timeoutTimer).toBeDefined();
+
+      scene.videos[0]?.emit(event);
+      await promise;
+
+      expect(scene.time.removedTimers).toEqual([timeoutTimer]);
+      expect(timeoutTimer?.removed).toBe(true);
+    },
+  );
+
   it('applies the configured global sequence playback rate to videos', async () => {
     const scene = new FakeScene(['motion.attack.fallback']);
     const plugin = new SequencePlugin({ scene: scene.asPhaserScene() });
@@ -567,6 +594,80 @@ describe('SequencePlugin', () => {
     await promise;
 
     expect(order).toEqual(['same-timer-custom']);
+  });
+
+  it('runs detached video before delayed popup and shake without delaying later timers', async () => {
+    const scene = new FakeScene(['motion.attack.unit_elf_guardian_001']);
+    const plugin = new SequencePlugin({ scene: scene.asPhaserScene() });
+    const target = scene.createTarget(10, 20);
+    const order: string[] = [];
+    let completed = false;
+
+    const promise = plugin.play([
+      {
+        timer: 0,
+        action: 'video',
+        assetId: 'motion.attack.unit_elf_guardian_001',
+        duration: 1600,
+        mode: 'detached',
+      },
+      {
+        timer: 180,
+        action: 'shake',
+        target: target as Phaser.GameObjects.GameObject & { x: number; y: number },
+        duration: 180,
+      },
+      {
+        timer: 180,
+        action: 'custom',
+        run: () => {
+          order.push('popup');
+        },
+      },
+      {
+        timer: 500,
+        action: 'custom',
+        run: () => {
+          order.push('next-popup');
+        },
+      },
+    ]);
+    promise.then(() => {
+      completed = true;
+    });
+    await flushPromises();
+
+    expect(order).toEqual([]);
+    expect(scene.tweens.tweens).toHaveLength(0);
+    expect(scene.videos[0]?.destroyed).toBe(false);
+
+    const impactTimer = scene.time.timers.find(
+      (timer) => !timer.fired && !timer.removed && timer.delay > 0 && timer.delay < 1000,
+    );
+    expect(impactTimer).toBeDefined();
+
+    impactTimer?.fire();
+    await flushPromises();
+
+    expect(order).toEqual(['popup']);
+    expect(scene.tweens.tweens).toHaveLength(1);
+    expect(scene.videos[0]?.destroyed).toBe(false);
+
+    const nextPopupTimer = scene.time.timers.find(
+      (timer) => !timer.fired && !timer.removed && timer.delay > 0 && timer.delay < 1000,
+    );
+    expect(nextPopupTimer).toBeDefined();
+
+    nextPopupTimer?.fire();
+    await flushPromises();
+
+    expect(order).toEqual(['popup', 'next-popup']);
+    expect(completed).toBe(false);
+
+    scene.videos[0]?.emit('complete');
+    await promise;
+
+    expect(completed).toBe(true);
   });
 
   it('removes pending timers and stops tweens on destroy', async () => {

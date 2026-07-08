@@ -152,6 +152,7 @@ const ATTACK_MOTION_FALLBACK_KEY = 'motion.attack.fallback';
 const ATTACK_MOTION_WIDTH = Math.round(FIELD_SLOT_WIDTH * 2.2);
 const ATTACK_MOTION_HEIGHT = Math.round(ATTACK_MOTION_WIDTH * 0.75);
 const ATTACK_MOTION_TIMEOUT_MS = 1600;
+const ATTACK_IMPACT_DELAY_MS = 1180;
 const PLACE_HIGHLIGHT_COLOR = 0x71d879;
 const MOVE_HIGHLIGHT_COLOR = 0x79b8ff;
 const ATTACK_HIGHLIGHT_COLOR = 0xff6f6f;
@@ -2499,19 +2500,20 @@ export class BattlefieldScene extends Phaser.Scene {
 
     for (let index = 0; index < events.length; index += 1) {
       const event = events[index]!;
-      const timer = index * BATTLE_POPUP_DURATION_MS;
-      const attackMotionStep = this.createAttackMotionStep(event, timer);
+      const effectTimers = this.createBattleEffectTimers(index);
+      const attackMotionStep = this.createAttackMotionStep(event, effectTimers.motionTimer);
       if (attackMotionStep) {
         sequence.add(attackMotionStep);
       }
+      const impactTimer = attackMotionStep ? effectTimers.impactTimer : effectTimers.motionTimer;
 
-      const shakeStep = this.createDamageShakeStep(event, timer);
+      const shakeStep = this.createDamageShakeStep(event, impactTimer);
       if (shakeStep) {
         sequence.add(shakeStep);
       }
 
       sequence.add({
-        timer,
+        timer: impactTimer,
         action: 'custom',
         duration: BATTLE_POPUP_DURATION_MS,
         mode: 'blocking',
@@ -2534,6 +2536,14 @@ export class BattlefieldScene extends Phaser.Scene {
         }
       },
     });
+  }
+
+  private createBattleEffectTimers(index: number): { motionTimer: number; impactTimer: number } {
+    const motionTimer = index * BATTLE_POPUP_DURATION_MS;
+    return {
+      motionTimer,
+      impactTimer: motionTimer + ATTACK_IMPACT_DELAY_MS,
+    };
   }
 
   private createDamageShakeStep(event: BattlePopupEvent, timer: number): SequenceStep | null {
@@ -2579,8 +2589,7 @@ export class BattlefieldScene extends Phaser.Scene {
       width: ATTACK_MOTION_WIDTH,
       height: ATTACK_MOTION_HEIGHT,
       duration: ATTACK_MOTION_TIMEOUT_MS,
-      mode: 'blocking',
-      playback: 'sequential',
+      mode: 'detached',
     };
   }
 

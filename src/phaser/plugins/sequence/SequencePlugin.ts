@@ -329,7 +329,9 @@ export class SequencePlugin {
 
         settled = true;
         if (timer) {
+          scene.time.removeEvent(timer);
           this.timers.delete(timer);
+          timer = null;
         }
         this.timerResolvers.delete(settle);
         video.off(VIDEO_COMPLETE_EVENT, settle);

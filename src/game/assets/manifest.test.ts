@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { joinAssetUrl, normalizeAssetBaseUrl } from './manifest';
+import { joinAssetUrl, normalizeAssetBaseUrl, normalizeAssetsManifest } from './manifest';
 
 describe('asset manifest helpers', () => {
   it('normalizes asset base urls', () => {
@@ -16,5 +16,17 @@ describe('asset manifest helpers', () => {
     expect(joinAssetUrl('/tcg', 'motion/attack/fallback.webm')).toBe(
       '/tcg/motion/attack/fallback.webm',
     );
+  });
+
+  it('normalizes legacy manifests without videos to an empty video list', () => {
+    const normalized = normalizeAssetsManifest({
+      assetBaseUrl: '/tcg',
+      textures: [],
+      manifestRevision: 'legacy',
+      schemaVersion: 1,
+      revisionAlgorithm: 'sha256-12hex',
+    });
+
+    expect(normalized.videos).toEqual([]);
   });
 });

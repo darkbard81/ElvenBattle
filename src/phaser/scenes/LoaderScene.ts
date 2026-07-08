@@ -2,7 +2,6 @@ import Phaser from 'phaser';
 import { DEFAULT_FONT_FAMILY } from '../../theme';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
 import { fetchAssetsManifest, joinAssetUrl } from '../../game/assets/manifest';
-import type { AssetManifestEntry } from '../../game/assets/manifest';
 import type { MainMenuSceneData, LoaderSceneData } from './scene-data';
 
 const PROGRESS_BAR_WIDTH = 560;
@@ -150,7 +149,7 @@ export class LoaderScene extends Phaser.Scene {
     const webpTextures = manifest.textures.filter((texture) =>
       texture.path.toLowerCase().endsWith('.webp'),
     );
-    const webmVideos = readManifestVideos(manifest).filter((video) =>
+    const webmVideos = manifest.videos.filter((video) =>
       video.path.toLowerCase().endsWith('.webm'),
     );
     const totalAssets = webpTextures.length + webmVideos.length;
@@ -210,8 +209,4 @@ function formatError(error: unknown): string {
   }
 
   return String(error);
-}
-
-function readManifestVideos(manifest: { videos?: AssetManifestEntry[] }): AssetManifestEntry[] {
-  return Array.isArray(manifest.videos) ? manifest.videos : [];
 }
