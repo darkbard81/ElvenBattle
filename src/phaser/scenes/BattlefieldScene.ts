@@ -128,6 +128,8 @@ type BattleFlowResult = {
   pendingBlockSelection: Extract<BattleSelection, { kind: 'BLOCK_DECISION' }> | null;
 };
 
+type BattleStateContinuation = () => boolean;
+
 type BattlePopupEvent = {
   kind: 'PLACE' | 'MOVE' | 'ATTACK' | 'SKILL' | 'BLOCK';
   slotId: BattleSlotId;
@@ -362,6 +364,7 @@ export class BattlefieldScene extends Phaser.Scene {
   private selectedSlotId: BattleSlotId | null = null;
   private selection: BattleSelection | null = null;
   private sequencePlugin: SequencePlugin | null = null;
+  private battleAnimationRunId = 0;
   private readonly fieldCardViews = new Map<string, Phaser.GameObjects.Container>();
   private readonly retainedFieldCardViews = new Map<string, Phaser.GameObjects.Container>();
   private fieldCardDragPreview: Phaser.GameObjects.Container | null = null;
@@ -386,6 +389,7 @@ export class BattlefieldScene extends Phaser.Scene {
     this.resultReturnStatusMessage = null;
     this.selectedSlotId = null;
     this.selection = null;
+    this.battleAnimationRunId = 0;
     this.fieldCardDragPreview = null;
     this.cardInfoContainer = null;
     this.hoveredCardInstanceId = null;
@@ -2157,13 +2161,15 @@ export class BattlefieldScene extends Phaser.Scene {
   }
 
   private finishBattleAction(message: string, popupEvents: BattlePopupEvent[]): void {
-    const flow = this.settleTurnFlow();
-    const messages = [message, ...flow.messages];
+    const messages = [message];
     if (this.runtime.outcome) {
       messages.push(`${formatSideLabel(this.runtime.outcome.winner)} wins.`);
     }
-    this.commitBattleStateUpdate(messages, [...popupEvents, ...flow.popupEvents], {
-      selection: flow.pendingBlockSelection,
+
+    this.commitBattleStateUpdate(messages, popupEvents, {
+      afterAnimation: this.runtime.outcome
+        ? undefined
+        : () => this.commitSettledTurnFlow([message]),
     });
   }
 
@@ -2212,13 +2218,15 @@ export class BattlefieldScene extends Phaser.Scene {
       )}.`;
     }
 
-    const flow = this.settleTurnFlow([], selection.automatedActionCount + 1);
-    const messages = [message, ...flow.messages];
+    const messages = [message];
     if (this.runtime.outcome) {
       messages.push(`${formatSideLabel(this.runtime.outcome.winner)} wins.`);
     }
-    this.commitBattleStateUpdate(messages, [...popupEvents, ...flow.popupEvents], {
-      selection: flow.pendingBlockSelection,
+
+    this.commitBattleStateUpdate(messages, popupEvents, {
+      afterAnimation: this.runtime.outcome
+        ? undefined
+        : () => this.commitSettledTurnFlow([message], [], selection.automatedActionCount + 1),
     });
   }
 
@@ -2227,8 +2235,10 @@ export class BattlefieldScene extends Phaser.Scene {
     popupEvents: BattlePopupEvent[],
     options: {
       selection?: BattleSelection | null;
+      afterAnimation?: BattleStateContinuation | undefined;
     } = {},
   ): void {
+    const animationRunId = (this.battleAnimationRunId += 1);
     this.selection = options.selection ?? null;
     this.selectedSlotId = null;
     this.statusMessage = messages.join(' ');
@@ -2237,8 +2247,38 @@ export class BattlefieldScene extends Phaser.Scene {
     this.renderBattleState();
 
     if (popupEvents.length > 0) {
-      void this.playBattlePopupEvents(popupEvents);
+      void this.playBattlePopupEvents(popupEvents, animationRunId, options.afterAnimation);
+      return;
     }
+
+    if (options.afterAnimation?.()) {
+      return;
+    }
+  }
+
+  private commitSettledTurnFlow(
+    prefixMessages: readonly string[],
+    initialEvents: readonly BattleTurnEvent[] = [],
+    initialAutomatedActionCount = 0,
+  ): boolean {
+    const flow = this.settleTurnFlow(initialEvents, initialAutomatedActionCount);
+    if (
+      flow.messages.length === 0 &&
+      flow.popupEvents.length === 0 &&
+      flow.pendingBlockSelection === null &&
+      !this.runtime.outcome
+    ) {
+      return false;
+    }
+
+    const messages = [...prefixMessages, ...flow.messages];
+    if (this.runtime.outcome) {
+      messages.push(`${formatSideLabel(this.runtime.outcome.winner)} wins.`);
+    }
+    this.commitBattleStateUpdate(messages, flow.popupEvents, {
+      selection: flow.pendingBlockSelection,
+    });
+    return true;
   }
 
   private settleTurnFlow(
@@ -2489,11 +2529,22 @@ export class BattlefieldScene extends Phaser.Scene {
     };
   }
 
-  private async playBattlePopupEvents(events: readonly BattlePopupEvent[]): Promise<void> {
+  private async playBattlePopupEvents(
+    events: readonly BattlePopupEvent[],
+    animationRunId: number,
+    afterAnimation: BattleStateContinuation | undefined,
+  ): Promise<void> {
     const sequence = this.sequencePlugin?.createSequence();
     if (!sequence) {
+      if (this.battleAnimationRunId !== animationRunId) {
+        return;
+      }
+
       this.isAnimatingBattleEvents = false;
       this.destroyRetainedFieldCardViews();
+      if (afterAnimation?.()) {
+        return;
+      }
       this.renderBattleState();
       return;
     }
@@ -2530,12 +2581,23 @@ export class BattlefieldScene extends Phaser.Scene {
     await sequence.play({
       lockInput: true,
       onLockChange: (locked) => {
-        this.isAnimatingBattleEvents = locked;
-        if (!locked && this.scene.isActive()) {
-          this.renderBattleState();
+        if (this.battleAnimationRunId !== animationRunId) {
+          return;
         }
+
+        this.isAnimatingBattleEvents = locked;
       },
     });
+
+    if (this.battleAnimationRunId !== animationRunId || !this.scene.isActive()) {
+      return;
+    }
+
+    if (afterAnimation?.()) {
+      return;
+    }
+
+    this.renderBattleState();
   }
 
   private createBattleEffectTimers(index: number): { motionTimer: number; impactTimer: number } {
