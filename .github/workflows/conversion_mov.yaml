@@ -33,7 +33,7 @@ jobs:
 
             echo "Converting $f -> $out"
 
-            ffmpeg -c:v libvpx-vp9 -i "$f" \
+            ffmpeg -analyzeduration 100M -probesize 100M -i "$f" \
               -vf format=bgra \
               -c:v hevc_videotoolbox \
               -allow_sw 1 \
@@ -41,6 +41,7 @@ jobs:
               -tag:v hvc1 \
               -movflags +faststart \
               -an "$out"
+
           done
 
       - name: Upload all results
