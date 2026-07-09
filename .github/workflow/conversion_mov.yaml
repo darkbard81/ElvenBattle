@@ -1,0 +1,50 @@
+name: Convert All WebM Alpha to MOV
+
+on:
+  workflow_dispatch:
+
+jobs:
+  convert:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install ffmpeg
+        run: |
+          brew update
+          brew install ffmpeg
+
+      - name: Convert all WebM files
+        run: |
+          mkdir -p output
+
+          shopt -s nullglob
+          files=(input/*.webm)
+
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No .webm files found in input/"
+            exit 1
+          fi
+
+          for f in "${files[@]}"; do
+            base="$(basename "$f" .webm)"
+            out="output/${base}.mov"
+
+            echo "Converting $f -> $out"
+
+            ffmpeg -c:v libvpx-vp9 -i "$f" \
+              -vf format=bgra \
+              -c:v hevc_videotoolbox \
+              -allow_sw 1 \
+              -alpha_quality 0.85 \
+              -tag:v hvc1 \
+              -movflags +faststart \
+              -an "$out"
+          done
+
+      - name: Upload all results
+        uses: actions/upload-artifact@v4
+        with:
+          name: converted-mov-files
+          path: output/*.mov
