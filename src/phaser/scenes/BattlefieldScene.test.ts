@@ -47,6 +47,22 @@ type FakeSequence = {
   play: () => Promise<void>;
 };
 
+type FakeTimerEvent = {
+  removed: boolean;
+};
+
+type FakeCardInfoRuntime = {
+  card: {
+    instance: {
+      instanceId: string;
+    };
+  };
+};
+
+type FakeCardInfoPanel = {
+  destroy: ReturnType<typeof vi.fn>;
+};
+
 type BattlefieldSceneHarness = {
   runtime: FakeRuntime;
   statusMessage: string;
@@ -63,7 +79,25 @@ type BattlefieldSceneHarness = {
   retainRemovedDamageTargetViews: () => void;
 };
 
-describe('BattlefieldScene battle animation flow', () => {
+type BattlefieldHoverHarness = {
+  cardInfoContainer: FakeCardInfoPanel | null;
+  hoveredCardInstanceId: string | null;
+  pendingCardInfoInstanceId: string | null;
+  time: {
+    delayedCall: (delay: number, callback: () => void) => FakeTimerEvent;
+    removeEvent: (timer: FakeTimerEvent) => void;
+  };
+  layers: {
+    hudLayer: {
+      add: (child: FakeCardInfoPanel) => void;
+    };
+  };
+  createCardInfoPanel: () => FakeCardInfoPanel;
+  scheduleCardInfo: (card: FakeCardInfoRuntime, anchorWorldX: number) => void;
+  hideCardInfo: (cardInstanceId?: string) => void;
+};
+
+describe('BattlefieldScene', () => {
   it('defers stalled turn flow until the action popup sequence completes', async () => {
     const { BattlefieldScene } = await import('./BattlefieldScene');
     const scene = new BattlefieldScene() as unknown as BattlefieldSceneHarness;
@@ -132,6 +166,55 @@ describe('BattlefieldScene battle animation flow', () => {
       'Player attacked Enemy. Player had no actions and ended automatically.',
     );
     expect(renderCalls).toBeGreaterThanOrEqual(2);
+  });
+
+  it('shows hover card info only after two seconds and cancels it on pointer out', async () => {
+    const { BattlefieldScene } = await import('./BattlefieldScene');
+    const scene = new BattlefieldScene() as unknown as BattlefieldHoverHarness;
+    const card: FakeCardInfoRuntime = {
+      card: { instance: { instanceId: 'hover-card' } },
+    };
+    const scheduled: Array<{ delay: number; callback: () => void; timer: FakeTimerEvent }> = [];
+    const addedPanels: FakeCardInfoPanel[] = [];
+    const panel: FakeCardInfoPanel = { destroy: vi.fn() };
+
+    scene.time = {
+      delayedCall: (delay, callback) => {
+        const timer = { removed: false };
+        scheduled.push({ delay, callback, timer });
+        return timer;
+      },
+      removeEvent: (timer) => {
+        timer.removed = true;
+      },
+    };
+    scene.layers = {
+      hudLayer: {
+        add: (child) => addedPanels.push(child),
+      },
+    };
+    scene.createCardInfoPanel = () => panel;
+    scene.cardInfoContainer = null;
+    scene.hoveredCardInstanceId = null;
+    scene.pendingCardInfoInstanceId = null;
+
+    scene.scheduleCardInfo(card, 100);
+    expect(scheduled).toHaveLength(1);
+    expect(scheduled[0]!.delay).toBe(2000);
+    expect(addedPanels).toHaveLength(0);
+
+    scheduled[0]!.callback();
+    expect(addedPanels).toEqual([panel]);
+    expect(scene.hoveredCardInstanceId).toBe('hover-card');
+
+    scene.hideCardInfo('hover-card');
+    scene.scheduleCardInfo(card, 100);
+    const pending = scheduled[1]!;
+    scene.hideCardInfo('hover-card');
+    expect(pending.timer.removed).toBe(true);
+
+    pending.callback();
+    expect(addedPanels).toEqual([panel]);
   });
 });
 

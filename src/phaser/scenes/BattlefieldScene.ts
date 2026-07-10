@@ -179,6 +179,7 @@ const CARD_INFO_DETAIL_VALUE_WIDTH =
   CARD_INFO_DETAILS_INNER_WIDTH - CARD_INFO_DETAIL_LABEL_WIDTH - CARD_INFO_DETAIL_COLUMN_GAP;
 const CARD_INFO_DETAIL_ROW_HEIGHT = 42;
 const CARD_INFO_DETAIL_ROW_GAP = 8;
+const CARD_INFO_HOVER_DELAY_MS = 1500;
 const HUD_X = 36;
 const HUD_Y = 36;
 const HUD_WIDTH = 380;
@@ -370,6 +371,8 @@ export class BattlefieldScene extends Phaser.Scene {
   private readonly retainedFieldCardViews = new Map<string, Phaser.GameObjects.Container>();
   private fieldCardDragPreview: Phaser.GameObjects.Container | null = null;
   private cardInfoContainer: Phaser.GameObjects.GameObject | null = null;
+  private cardInfoHoverTimer: Phaser.Time.TimerEvent | null = null;
+  private pendingCardInfoInstanceId: string | null = null;
   private hoveredCardInstanceId: string | null = null;
   private statusMessage = 'Select a hand card or battlefield card.';
 
@@ -393,6 +396,8 @@ export class BattlefieldScene extends Phaser.Scene {
     this.battleAnimationRunId = 0;
     this.fieldCardDragPreview = null;
     this.cardInfoContainer = null;
+    this.cardInfoHoverTimer = null;
+    this.pendingCardInfoInstanceId = null;
     this.hoveredCardInstanceId = null;
     this.statusMessage = 'Select a hand card or battlefield card.';
     this.handDeckContainer = null;
@@ -404,6 +409,7 @@ export class BattlefieldScene extends Phaser.Scene {
     this.highlightGraphics = this.add.graphics();
     this.layers.effectLayer.add(this.highlightGraphics);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.cancelPendingCardInfo();
       this.sequencePlugin?.destroy();
       this.sequencePlugin = null;
       this.destroyRetainedFieldCardViews();
@@ -429,9 +435,7 @@ export class BattlefieldScene extends Phaser.Scene {
     this.handDeckContainer = null;
     this.handDeckTargetY = null;
     this.statusText = null;
-    this.cardInfoContainer?.destroy();
-    this.cardInfoContainer = null;
-    this.hoveredCardInstanceId = null;
+    this.hideCardInfo();
     this.fieldCardViews.clear();
 
     this.layers.boardLayer.removeAll(true);
@@ -902,7 +906,7 @@ export class BattlefieldScene extends Phaser.Scene {
       hitArea.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, options.onClick);
       hitArea.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OVER, () => {
         const worldCenter = hitArea.getWorldTransformMatrix().transformPoint(0, 0);
-        this.showCardInfo(card, worldCenter.x);
+        this.scheduleCardInfo(card, worldCenter.x);
       });
       hitArea.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OUT, () => {
         this.hideCardInfo(card.card.instance.instanceId);
@@ -951,13 +955,30 @@ export class BattlefieldScene extends Phaser.Scene {
     );
   }
 
-  private showCardInfo(card: BattleCardRuntimeState, anchorWorldX: number): void {
+  private scheduleCardInfo(card: BattleCardRuntimeState, anchorWorldX: number): void {
     const cardInstanceId = card.card.instance.instanceId;
-    if (this.cardInfoContainer && this.hoveredCardInstanceId === cardInstanceId) {
+    if (
+      this.hoveredCardInstanceId === cardInstanceId ||
+      this.pendingCardInfoInstanceId === cardInstanceId
+    ) {
       return;
     }
 
     this.hideCardInfo();
+    this.pendingCardInfoInstanceId = cardInstanceId;
+    this.cardInfoHoverTimer = this.time.delayedCall(CARD_INFO_HOVER_DELAY_MS, () => {
+      this.cardInfoHoverTimer = null;
+      if (this.pendingCardInfoInstanceId !== cardInstanceId) {
+        return;
+      }
+
+      this.pendingCardInfoInstanceId = null;
+      this.showCardInfo(card, anchorWorldX);
+    });
+  }
+
+  private showCardInfo(card: BattleCardRuntimeState, anchorWorldX: number): void {
+    const cardInstanceId = card.card.instance.instanceId;
     const side: CardInfoPanelSide = anchorWorldX < GAME_WIDTH / 2 ? 'right' : 'left';
     this.cardInfoContainer = this.createCardInfoPanel(card, side);
     this.hoveredCardInstanceId = cardInstanceId;
@@ -965,13 +986,30 @@ export class BattlefieldScene extends Phaser.Scene {
   }
 
   private hideCardInfo(cardInstanceId?: string): void {
-    if (cardInstanceId !== undefined && this.hoveredCardInstanceId !== cardInstanceId) {
+    const matchesPending =
+      cardInstanceId === undefined || this.pendingCardInfoInstanceId === cardInstanceId;
+    const matchesVisible =
+      cardInstanceId === undefined || this.hoveredCardInstanceId === cardInstanceId;
+    if (!matchesPending && !matchesVisible) {
       return;
     }
 
-    this.cardInfoContainer?.destroy();
-    this.cardInfoContainer = null;
-    this.hoveredCardInstanceId = null;
+    if (matchesPending) {
+      this.cancelPendingCardInfo();
+    }
+    if (matchesVisible) {
+      this.cardInfoContainer?.destroy();
+      this.cardInfoContainer = null;
+      this.hoveredCardInstanceId = null;
+    }
+  }
+
+  private cancelPendingCardInfo(): void {
+    if (this.cardInfoHoverTimer) {
+      this.time.removeEvent(this.cardInfoHoverTimer);
+      this.cardInfoHoverTimer = null;
+    }
+    this.pendingCardInfoInstanceId = null;
   }
 
   private createCardInfoPanel(
