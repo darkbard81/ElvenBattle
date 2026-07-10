@@ -44,7 +44,7 @@ export type UiLayoutChild = Readonly<{
   rowSpan?: number;
 }>;
 
-export type CanvasTextConfig = Readonly<{
+type CanvasBaseTextConfig = Readonly<{
   x: number;
   y: number;
   text: string;
@@ -58,8 +58,16 @@ export type CanvasTextConfig = Readonly<{
   maxLines?: number;
   lineSpacing?: number;
   wordWrapWidth?: number;
-  useAdvancedWrap?: boolean;
 }>;
+
+/** Phaser Text 생성 시 지원하는 공통 설정과 고급 줄바꿈 옵션이다. */
+export type CanvasTextConfig = CanvasBaseTextConfig &
+  Readonly<{
+    useAdvancedWrap?: boolean;
+  }>;
+
+/** rexUI BBCodeText가 실제로 지원하는 Canvas 텍스트 설정이다. */
+export type CanvasRichTextConfig = CanvasBaseTextConfig;
 
 export type CanvasPanelConfig = Readonly<{
   x: number;
@@ -182,26 +190,39 @@ export class CanvasUiFactory {
   }
 
   /** rexUI BBCodeText를 공통 폰트와 variant로 만든다. */
-  richText(config: CanvasTextConfig): BBCodeText {
+  richText(config: CanvasRichTextConfig): BBCodeText {
     const token = UI_THEME.text[config.variant];
     const style = {
       fontFamily: UI_THEME.fontFamily,
       fontSize: token.fontSize,
       color: config.color?.css ?? token.color.css,
+      ...('fontStyle' in token ? { fontStyle: token.fontStyle } : {}),
       ...('stroke' in token ? { stroke: token.stroke.css } : {}),
       ...('strokeThickness' in token ? { strokeThickness: token.strokeThickness } : {}),
       ...(config.align === undefined ? {} : { align: config.align as 'left' | 'center' | 'right' }),
       ...(config.fixedWidth === undefined ? {} : { fixedWidth: config.fixedWidth }),
       ...(config.fixedHeight === undefined ? {} : { fixedHeight: config.fixedHeight }),
+      ...(config.maxLines === undefined ? {} : { maxLines: config.maxLines }),
       ...(config.lineSpacing === undefined ? {} : { lineSpacing: config.lineSpacing }),
       ...(config.wordWrapWidth === undefined ? {} : { wrap: { width: config.wordWrapWidth } }),
     };
     const text = this.scene.rexUI.add.BBCodeText(config.x, config.y, config.text, style);
+    if ('shadow' in token) {
+      text.setShadow(
+        token.shadow.x,
+        token.shadow.y,
+        token.shadow.color.css,
+        token.shadow.blur,
+        token.shadow.shadowStroke,
+        token.shadow.shadowFill,
+      );
+    }
     if (typeof config.origin === 'number') {
       text.setOrigin(config.origin);
     } else if (config.origin) {
       text.setOrigin(config.origin.x, config.origin.y);
     }
+    if (config.alpha !== undefined) text.setAlpha(config.alpha);
     return text;
   }
 

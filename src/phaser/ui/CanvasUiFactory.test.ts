@@ -63,6 +63,40 @@ class FakeText extends FakeGameObject {
   }
 }
 
+class FakeRichText extends FakeGameObject {
+  public shadow:
+    | {
+        x: number;
+        y: number;
+        color: string | number | null;
+        blur: number;
+        shadowStroke: boolean;
+        shadowFill: boolean;
+      }
+    | undefined;
+
+  constructor(
+    x: number,
+    y: number,
+    public readonly text: string,
+    public readonly style: Record<string, unknown>,
+  ) {
+    super(x, y, 0, 0);
+  }
+
+  setShadow(
+    x = 0,
+    y = 0,
+    color: string | number | null = null,
+    blur = 0,
+    shadowStroke = false,
+    shadowFill = false,
+  ): this {
+    this.shadow = { x, y, color, blur, shadowStroke, shadowFill };
+    return this;
+  }
+}
+
 class FakeRectangle extends FakeGameObject {
   public interactive = false;
   public fillColor: number;
@@ -160,6 +194,7 @@ class FakeScrollablePanel extends FakeSizer {
 
 class FakeScene {
   public readonly texts: FakeText[] = [];
+  public readonly richTexts: FakeRichText[] = [];
   public readonly rectangles: FakeRectangle[] = [];
   public readonly sizers: FakeSizer[] = [];
   public readonly scrollPanels: FakeScrollablePanel[] = [];
@@ -192,6 +227,11 @@ class FakeScene {
 
   public readonly rexUI = {
     add: {
+      BBCodeText: (x: number, y: number, content: string, style: Record<string, unknown>) => {
+        const text = new FakeRichText(x, y, content, style);
+        this.richTexts.push(text);
+        return text;
+      },
       sizer: (x: number, y: number, width: number, height: number) => {
         const sizer = new FakeSizer(x, y);
         sizer.setSize(width, height);
@@ -233,6 +273,43 @@ describe('CanvasUiFactory', () => {
     expect(text.style.fontSize).toBe(UI_THEME.text.status.fontSize);
     expect(text.color).toBe(UI_THEME.text.status.color.css);
     expect(scene.texts).toContain(text);
+  });
+
+  it('applies the supported semantic style contract to rich text', () => {
+    const { factory, scene } = createFactory();
+    const token = UI_THEME.text.heroTitle;
+
+    const text = factory.richText({
+      x: 10,
+      y: 20,
+      text: '[b]Status[/b]',
+      variant: 'heroTitle',
+      origin: { x: 0, y: 0.5 },
+      alpha: 0.42,
+      fixedWidth: 320,
+      maxLines: 2,
+      wordWrapWidth: 300,
+    }) as unknown as FakeRichText;
+
+    expect(text.style).toMatchObject({
+      fontFamily: UI_THEME.fontFamily,
+      fontSize: token.fontSize,
+      fontStyle: token.fontStyle,
+      maxLines: 2,
+      wrap: { width: 300 },
+    });
+    expect(text.shadow).toEqual({
+      x: token.shadow.x,
+      y: token.shadow.y,
+      color: token.shadow.color.css,
+      blur: token.shadow.blur,
+      shadowStroke: token.shadow.shadowStroke,
+      shadowFill: token.shadow.shadowFill,
+    });
+    expect(text.originX).toBe(0);
+    expect(text.originY).toBe(0.5);
+    expect(text.alpha).toBe(0.42);
+    expect(scene.richTexts).toContain(text);
   });
 
   it('owns button hover, disabled, and click behavior', () => {
