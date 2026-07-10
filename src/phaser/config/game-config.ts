@@ -14,7 +14,7 @@ import { GAME_HEIGHT, GAME_WIDTH } from './constants';
 
 /**
  * 현재 화면 정책에 맞는 Phaser 게임 설정을 만든다.
- * 이 프로젝트는 1200x1920 가상 해상도를 FIT 스케일로 유지한다.
+ * 이 프로젝트는 1920x1280 가상 해상도를 FIT 스케일로 유지한다.
  */
 export function createGameConfig(parent: HTMLElement): Phaser.Types.Core.GameConfig {
   return {

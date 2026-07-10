@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
-import { DEFAULT_FONT_FAMILY } from '../../theme';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
+import { CanvasUiFactory } from '../ui/CanvasUiFactory';
 import { fetchAssetsManifest, joinAssetUrl } from '../../game/assets/manifest';
 import type { MainMenuSceneData, LoaderSceneData } from './scene-data';
 
@@ -16,6 +16,7 @@ const PROGRESS_GROUP_LEFT = (GAME_WIDTH - PROGRESS_BAR_WIDTH) / 2;
  * 로딩 실패는 치명적으로 끊지 않고, 가능한 자산만 살려서 메뉴로 넘긴다.
  */
 export class LoaderScene extends Phaser.Scene {
+  private readonly ui = new CanvasUiFactory(this);
   private progressFill!: Phaser.GameObjects.Rectangle;
   private progressText!: Phaser.GameObjects.Text;
   private statusText!: Phaser.GameObjects.Text;
@@ -44,17 +45,39 @@ export class LoaderScene extends Phaser.Scene {
   }
 
   private addBackground(): void {
-    this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x041018, 1).setOrigin(0, 0);
-    this.add
-      .image(0, 0, 'title-background')
-      .setOrigin(0, 0)
-      .setDisplaySize(GAME_WIDTH, GAME_HEIGHT)
-      .setAlpha(0.22);
-    this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.45).setOrigin(0, 0);
+    this.ui.panel({
+      x: 0,
+      y: 0,
+      width: GAME_WIDTH,
+      height: GAME_HEIGHT,
+      variant: 'loaderBackground',
+      origin: 0,
+    });
+    this.ui.image({
+      x: 0,
+      y: 0,
+      key: 'title-background',
+      origin: { x: 0, y: 0 },
+      width: GAME_WIDTH,
+      height: GAME_HEIGHT,
+      alpha: 0.22,
+    });
+    this.ui.panel({
+      x: 0,
+      y: 0,
+      width: GAME_WIDTH,
+      height: GAME_HEIGHT,
+      variant: 'loaderShade',
+      origin: 0,
+    });
   }
 
   private addForegroundUi(): void {
-    const root = this.rexUI.add.overlapSizer(0, 0, GAME_WIDTH, GAME_HEIGHT, {
+    this.ui.overlay({
+      x: 0,
+      y: 0,
+      width: GAME_WIDTH,
+      height: GAME_HEIGHT,
       origin: 0,
       anchor: {
         left: 'left',
@@ -62,83 +85,78 @@ export class LoaderScene extends Phaser.Scene {
         width: '100%',
         height: '100%',
       },
+      children: [
+        {
+          gameObject: this.createTitleGroup(),
+          align: 'left-top',
+          minWidth: GAME_WIDTH,
+          minHeight: TITLE_GROUP_HEIGHT,
+          offsetOriginX: -0.5,
+          offsetOriginY: -0.5,
+        },
+        {
+          gameObject: this.createProgressGroup(),
+          align: 'left-top',
+          minWidth: PROGRESS_BAR_WIDTH,
+          minHeight: PROGRESS_GROUP_HEIGHT,
+          offsetX: PROGRESS_GROUP_LEFT,
+          offsetY: PROGRESS_GROUP_TOP,
+          offsetOriginX: -0.5,
+          offsetOriginY: -0.5,
+        },
+      ],
     });
-    const titleGroup = this.createTitleGroup();
-    const progressGroup = this.createProgressGroup();
-
-    root.add(titleGroup, {
-      align: 'left-top',
-      minWidth: GAME_WIDTH,
-      minHeight: TITLE_GROUP_HEIGHT,
-      offsetOriginX: -0.5,
-      offsetOriginY: -0.5,
-    });
-    root.add(progressGroup, {
-      align: 'left-top',
-      minWidth: PROGRESS_BAR_WIDTH,
-      minHeight: PROGRESS_GROUP_HEIGHT,
-      offsetX: PROGRESS_GROUP_LEFT,
-      offsetY: PROGRESS_GROUP_TOP,
-      offsetOriginX: -0.5,
-      offsetOriginY: -0.5,
-    });
-    root.layout();
   }
 
   private createTitleGroup(): Phaser.GameObjects.Container {
-    const group = this.add.container(0, 0);
-    group.setSize(GAME_WIDTH, TITLE_GROUP_HEIGHT);
-    const title = this.add
-      .text(GAME_WIDTH / 2, 146, 'Loading archive', {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '54px',
-        color: '#f0f7eb',
-        align: 'center',
-      })
-      .setOrigin(0.5);
+    const group = this.ui.container({ width: GAME_WIDTH, height: TITLE_GROUP_HEIGHT });
+    const title = this.ui.text({
+      x: GAME_WIDTH / 2,
+      y: 146,
+      text: 'Loading archive',
+      variant: 'loaderTitle',
+      align: 'center',
+      origin: 0.5,
+    });
 
     group.add(title);
     return group;
   }
 
   private createProgressGroup(): Phaser.GameObjects.Container {
-    const group = this.add.container(0, 0);
-    group.setSize(PROGRESS_BAR_WIDTH, PROGRESS_GROUP_HEIGHT);
-    const progressTrack = this.add
-      .rectangle(
-        PROGRESS_BAR_WIDTH / 2,
-        PROGRESS_BAR_HEIGHT / 2,
-        PROGRESS_BAR_WIDTH,
-        PROGRESS_BAR_HEIGHT,
-        0x13221d,
-        0.95,
-      )
-      .setOrigin(0.5);
+    const group = this.ui.container({ width: PROGRESS_BAR_WIDTH, height: PROGRESS_GROUP_HEIGHT });
+    const progressTrack = this.ui.panel({
+      x: PROGRESS_BAR_WIDTH / 2,
+      y: PROGRESS_BAR_HEIGHT / 2,
+      width: PROGRESS_BAR_WIDTH,
+      height: PROGRESS_BAR_HEIGHT,
+      variant: 'progressTrack',
+      origin: 0.5,
+    });
 
-    this.progressFill = this.add.rectangle(
-      0,
-      PROGRESS_BAR_HEIGHT / 2,
-      0,
-      PROGRESS_BAR_HEIGHT,
-      0xa8e6b2,
-      0.95,
-    );
-    this.statusText = this.add
-      .text(PROGRESS_BAR_WIDTH / 2, 64, 'Requesting assets.json', {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '18px',
-        color: '#d0e2d2',
-        align: 'center',
-      })
-      .setOrigin(0.5);
-    this.progressText = this.add
-      .text(PROGRESS_BAR_WIDTH / 2, 96, '0%', {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '20px',
-        color: '#eef7ed',
-        align: 'center',
-      })
-      .setOrigin(0.5);
+    this.progressFill = this.ui.panel({
+      x: 0,
+      y: PROGRESS_BAR_HEIGHT / 2,
+      width: 0,
+      height: PROGRESS_BAR_HEIGHT,
+      variant: 'progressFill',
+    });
+    this.statusText = this.ui.text({
+      x: PROGRESS_BAR_WIDTH / 2,
+      y: 64,
+      text: 'Requesting assets.json',
+      variant: 'loaderStatus',
+      align: 'center',
+      origin: 0.5,
+    });
+    this.progressText = this.ui.text({
+      x: PROGRESS_BAR_WIDTH / 2,
+      y: 96,
+      text: '0%',
+      variant: 'loaderPercent',
+      align: 'center',
+      origin: 0.5,
+    });
 
     group.add([progressTrack, this.progressFill, this.statusText, this.progressText]);
     return group;

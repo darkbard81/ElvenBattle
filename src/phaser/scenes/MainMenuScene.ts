@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
-import { DEFAULT_FONT_FAMILY } from '../../theme';
+import { UI_THEME } from '../../theme';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
-import { createMenuButton } from '../ui/menu-button';
+import { CanvasUiFactory } from '../ui/CanvasUiFactory';
 import type { MainMenuSceneData } from './scene-data';
 
 const MENU_TOP = 88;
@@ -69,6 +69,7 @@ const LICENSE_INTRO_TEXT =
  * 현재 단계에서는 저장 슬롯, 카드 텍스트 툴, 라이선스 링크 진입을 제공한다.
  */
 export class MainMenuScene extends Phaser.Scene {
+  private readonly ui = new CanvasUiFactory(this);
   private licenseOverlay: HTMLDivElement | null = null;
   private licenseEscapeHandler: ((event: KeyboardEvent) => void) | null = null;
 
@@ -88,121 +89,138 @@ export class MainMenuScene extends Phaser.Scene {
   }
 
   private addBackground(): void {
-    this.add
-      .image(0, 0, 'title-background')
-      .setOrigin(0, 0)
-      .setDisplaySize(GAME_WIDTH, GAME_HEIGHT);
-    this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x071018, 0.48).setOrigin(0, 0);
-    this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.12).setOrigin(0, 0);
+    this.ui.image({
+      x: 0,
+      y: 0,
+      key: 'title-background',
+      origin: { x: 0, y: 0 },
+      width: GAME_WIDTH,
+      height: GAME_HEIGHT,
+    });
+    this.ui.panel({
+      x: 0,
+      y: 0,
+      width: GAME_WIDTH,
+      height: GAME_HEIGHT,
+      variant: 'menuBackdrop',
+      origin: 0,
+    });
+    this.ui.panel({
+      x: 0,
+      y: 0,
+      width: GAME_WIDTH,
+      height: GAME_HEIGHT,
+      variant: 'menuShade',
+      origin: 0,
+    });
   }
 
   private addForegroundUi(data: MainMenuSceneData): void {
-    const root = this.rexUI.add.sizer(0, 0, GAME_WIDTH, MENU_HEIGHT, 'y', {
+    this.ui.stack({
+      x: 0,
+      y: 0,
+      width: GAME_WIDTH,
+      height: MENU_HEIGHT,
+      orientation: 'y',
       origin: 0,
       anchor: {
         left: 'left',
         top: `top+${MENU_TOP}`,
         width: '100%',
       },
+      children: [
+        {
+          gameObject: this.createTitleGroup(),
+          align: 'left-top',
+          minWidth: GAME_WIDTH,
+          minHeight: TITLE_HEIGHT,
+          offsetOriginX: -0.5,
+          offsetOriginY: -0.5,
+        },
+        {
+          gameObject: this.createButtonLayout(),
+          align: 'center-top',
+          minWidth: BUTTON_WIDTH,
+          minHeight: BUTTON_STACK_HEIGHT,
+          padding: { top: BUTTON_TOP_PADDING },
+        },
+        {
+          gameObject: this.createStatusGroup(data),
+          align: 'left-top',
+          minWidth: GAME_WIDTH,
+          minHeight: STATUS_HEIGHT,
+          offsetOriginX: -0.5,
+          offsetOriginY: -0.5,
+          padding: { top: STATUS_TOP_PADDING },
+        },
+      ],
     });
-
-    root.add(this.createTitleGroup(), {
-      align: 'left-top',
-      minWidth: GAME_WIDTH,
-      minHeight: TITLE_HEIGHT,
-      offsetOriginX: -0.5,
-      offsetOriginY: -0.5,
-    });
-    root.add(this.createButtonLayout(), {
-      align: 'center-top',
-      minWidth: BUTTON_WIDTH,
-      minHeight: BUTTON_STACK_HEIGHT,
-      padding: { top: BUTTON_TOP_PADDING },
-    });
-    root.add(this.createStatusGroup(data), {
-      align: 'left-top',
-      minWidth: GAME_WIDTH,
-      minHeight: STATUS_HEIGHT,
-      offsetOriginX: -0.5,
-      offsetOriginY: -0.5,
-      padding: { top: STATUS_TOP_PADDING },
-    });
-    root.layout();
   }
 
   private createTitleGroup(): Phaser.GameObjects.Container {
-    const group = this.add.container(0, 0);
-    group.setSize(GAME_WIDTH, TITLE_HEIGHT);
-    const title = this.add
-      .text(GAME_WIDTH / 2, 30, 'ELVENBATTLE', {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '58px',
-        fontStyle: '700',
-        color: '#f5faf0',
-        stroke: '#182e27',
-        strokeThickness: 7,
-        align: 'center',
-      })
-      .setOrigin(0.5);
-
-    const subtitle = this.add
-      .text(GAME_WIDTH / 2, 96, 'main menu', {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '26px',
-        color: '#d9ebd1',
-        align: 'center',
-      })
-      .setOrigin(0.5)
-      .setAlpha(0.88);
+    const group = this.ui.container({ width: GAME_WIDTH, height: TITLE_HEIGHT });
+    const title = this.ui.text({
+      x: GAME_WIDTH / 2,
+      y: 30,
+      text: 'ELVENBATTLE',
+      variant: 'menuTitle',
+      align: 'center',
+      origin: 0.5,
+    });
+    const subtitle = this.ui.text({
+      x: GAME_WIDTH / 2,
+      y: 96,
+      text: 'main menu',
+      variant: 'menuSubtitle',
+      align: 'center',
+      origin: 0.5,
+      alpha: 0.88,
+    });
 
     group.add([title, subtitle]);
     return group;
   }
 
   private createButtonLayout(): Phaser.GameObjects.GameObject {
-    const buttonLayout = this.rexUI.add.sizer(0, 0, BUTTON_WIDTH, BUTTON_STACK_HEIGHT, 'y', {
+    return this.ui.stack({
+      x: 0,
+      y: 0,
+      width: BUTTON_WIDTH,
+      height: BUTTON_STACK_HEIGHT,
+      orientation: 'y',
       origin: 0,
-      space: { item: BUTTON_GAP },
+      gap: BUTTON_GAP,
+      children: [
+        {
+          gameObject: this.createButton('Start Game', () => {
+            this.scene.start('SaveSlotScene');
+          }),
+          align: 'center',
+          minWidth: BUTTON_WIDTH,
+          minHeight: BUTTON_HEIGHT,
+        },
+        {
+          gameObject: this.createButton('Card Text Tool', () => {
+            window.location.assign('/tools/card-text/');
+          }),
+          align: 'center',
+          minWidth: BUTTON_WIDTH,
+          minHeight: BUTTON_HEIGHT,
+        },
+        {
+          gameObject: this.createButton('License', () => {
+            this.showLicenseOverlay();
+          }),
+          align: 'center',
+          minWidth: BUTTON_WIDTH,
+          minHeight: BUTTON_HEIGHT,
+        },
+      ],
     });
-
-    buttonLayout.add(
-      this.createButton('Start Game', () => {
-        this.scene.start('SaveSlotScene');
-      }),
-      {
-        align: 'center',
-        minWidth: BUTTON_WIDTH,
-        minHeight: BUTTON_HEIGHT,
-      },
-    );
-
-    buttonLayout.add(
-      this.createButton('Card Text Tool', () => {
-        window.location.assign('/tools/card-text/');
-      }),
-      {
-        align: 'center',
-        minWidth: BUTTON_WIDTH,
-        minHeight: BUTTON_HEIGHT,
-      },
-    );
-
-    buttonLayout.add(
-      this.createButton('License', () => {
-        this.showLicenseOverlay();
-      }),
-      {
-        align: 'center',
-        minWidth: BUTTON_WIDTH,
-        minHeight: BUTTON_HEIGHT,
-      },
-    );
-
-    return buttonLayout;
   }
 
   private createButton(label: string, onClick: () => void): Phaser.GameObjects.Container {
-    return createMenuButton(this, {
+    return this.ui.button({
       x: 0,
       y: 0,
       width: BUTTON_WIDTH,
@@ -219,27 +237,25 @@ export class MainMenuScene extends Phaser.Scene {
         ? `Loaded ${data.loadedCount} assets, skipped ${data.failedCount}`
         : `Loaded ${data.loadedCount} assets`;
 
-    const group = this.add.container(0, 0);
-    group.setSize(GAME_WIDTH, STATUS_HEIGHT);
-    const status = this.add
-      .text(GAME_WIDTH / 2, 44, statusText, {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '18px',
-        color: '#d5e7d1',
-        align: 'center',
-      })
-      .setOrigin(0.5)
-      .setAlpha(0.92);
-
-    const helper = this.add
-      .text(GAME_WIDTH / 2, 76, 'Start Game opens the save slot screen in this phase.', {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '16px',
-        color: '#b7c9ba',
-        align: 'center',
-      })
-      .setOrigin(0.5)
-      .setAlpha(0.9);
+    const group = this.ui.container({ width: GAME_WIDTH, height: STATUS_HEIGHT });
+    const status = this.ui.text({
+      x: GAME_WIDTH / 2,
+      y: 44,
+      text: statusText,
+      variant: 'menuStatus',
+      align: 'center',
+      origin: 0.5,
+      alpha: 0.92,
+    });
+    const helper = this.ui.text({
+      x: GAME_WIDTH / 2,
+      y: 76,
+      text: 'Start Game opens the save slot screen in this phase.',
+      variant: 'helper',
+      align: 'center',
+      origin: 0.5,
+      alpha: 0.9,
+    });
 
     group.add([status, helper]);
     return group;
@@ -269,6 +285,7 @@ export class MainMenuScene extends Phaser.Scene {
   }
 
   private createLicenseOverlay(): HTMLDivElement {
+    const theme = UI_THEME.dom.licenseDialog;
     const overlay = document.createElement('div');
     overlay.tabIndex = -1;
     overlay.setAttribute('role', 'dialog');
@@ -280,49 +297,49 @@ export class MainMenuScene extends Phaser.Scene {
     overlay.style.display = 'flex';
     overlay.style.alignItems = 'center';
     overlay.style.justifyContent = 'center';
-    overlay.style.padding = '28px';
-    overlay.style.background = 'rgba(0, 0, 0, 0.68)';
+    overlay.style.padding = theme.overlayPadding;
+    overlay.style.background = theme.overlayBackground;
     overlay.style.boxSizing = 'border-box';
 
     const panel = document.createElement('section');
     panel.style.width = 'min(760px, 100%)';
     panel.style.maxHeight = 'min(760px, 88vh)';
     panel.style.overflowY = 'auto';
-    panel.style.padding = '28px';
-    panel.style.border = '1px solid rgba(218, 246, 211, 0.52)';
-    panel.style.borderRadius = '8px';
-    panel.style.background = 'rgba(7, 16, 24, 0.98)';
-    panel.style.boxShadow = '0 22px 70px rgba(0, 0, 0, 0.5)';
-    panel.style.color = '#f5fff0';
-    panel.style.fontFamily = DEFAULT_FONT_FAMILY;
+    panel.style.padding = theme.panelPadding;
+    panel.style.border = theme.panelBorder;
+    panel.style.borderRadius = theme.panelRadius;
+    panel.style.background = theme.panelBackground;
+    panel.style.boxShadow = theme.panelShadow;
+    panel.style.color = UI_THEME.colors.primary.css;
+    panel.style.fontFamily = UI_THEME.fontFamily;
     panel.style.boxSizing = 'border-box';
 
     const header = document.createElement('div');
     header.style.display = 'flex';
     header.style.alignItems = 'center';
     header.style.justifyContent = 'space-between';
-    header.style.gap = '20px';
-    header.style.marginBottom = '18px';
+    header.style.gap = theme.headerGap;
+    header.style.marginBottom = theme.headerMarginBottom;
 
     const title = document.createElement('h2');
     title.id = 'license-dialog-title';
     title.textContent = 'License';
     title.style.margin = '0';
-    title.style.fontSize = '32px';
+    title.style.fontSize = theme.titleFontSize;
     title.style.lineHeight = '1.2';
 
     const closeButton = document.createElement('button');
     closeButton.type = 'button';
     closeButton.textContent = 'Close';
     closeButton.style.flex = '0 0 auto';
-    closeButton.style.minHeight = '40px';
-    closeButton.style.padding = '0 18px';
-    closeButton.style.border = '1px solid rgba(218, 246, 211, 0.8)';
-    closeButton.style.borderRadius = '6px';
-    closeButton.style.background = '#1d3f31';
-    closeButton.style.color = '#f5fff0';
-    closeButton.style.fontFamily = DEFAULT_FONT_FAMILY;
-    closeButton.style.fontSize = '18px';
+    closeButton.style.minHeight = theme.closeButtonHeight;
+    closeButton.style.padding = theme.closeButtonPadding;
+    closeButton.style.border = theme.closeButtonBorder;
+    closeButton.style.borderRadius = theme.closeButtonRadius;
+    closeButton.style.background = UI_THEME.surfaces.button.fill.css;
+    closeButton.style.color = UI_THEME.colors.primary.css;
+    closeButton.style.fontFamily = UI_THEME.fontFamily;
+    closeButton.style.fontSize = theme.closeButtonFontSize;
     closeButton.style.cursor = 'pointer';
     closeButton.addEventListener('click', () => {
       this.removeLicenseOverlay();
@@ -332,14 +349,14 @@ export class MainMenuScene extends Phaser.Scene {
 
     const intro = document.createElement('p');
     intro.textContent = LICENSE_INTRO_TEXT;
-    intro.style.margin = '0 0 22px';
-    intro.style.color = '#d9ebd1';
-    intro.style.fontSize = '18px';
-    intro.style.lineHeight = '1.65';
+    intro.style.margin = theme.introMargin;
+    intro.style.color = UI_THEME.colors.secondary.css;
+    intro.style.fontSize = theme.introFontSize;
+    intro.style.lineHeight = theme.introLineHeight;
 
     const list = document.createElement('ul');
     list.style.display = 'grid';
-    list.style.gap = '12px';
+    list.style.gap = theme.listGap;
     list.style.margin = '0';
     list.style.padding = '0';
     list.style.listStyle = 'none';
@@ -355,28 +372,28 @@ export class MainMenuScene extends Phaser.Scene {
       link.target = '_blank';
       link.rel = 'noopener noreferrer';
       link.style.display = 'block';
-      link.style.padding = '14px 16px';
-      link.style.border = '1px solid rgba(183, 201, 186, 0.36)';
-      link.style.borderRadius = '6px';
-      link.style.background = 'rgba(18, 33, 28, 0.84)';
-      link.style.color = '#f5fff0';
-      link.style.fontSize = '17px';
-      link.style.lineHeight = '1.4';
+      link.style.padding = theme.linkPadding;
+      link.style.border = theme.linkBorder;
+      link.style.borderRadius = theme.linkRadius;
+      link.style.background = theme.linkBackground;
+      link.style.color = UI_THEME.colors.primary.css;
+      link.style.fontSize = theme.linkFontSize;
+      link.style.lineHeight = theme.linkLineHeight;
       link.style.textDecoration = 'none';
       linkTitle.textContent = licenseLink.label;
       linkTitle.style.display = 'block';
-      linkTitle.style.marginBottom = '4px';
-      linkTitle.style.fontSize = '18px';
-      linkTitle.style.color = '#f5fff0';
+      linkTitle.style.marginBottom = theme.linkTitleMarginBottom;
+      linkTitle.style.fontSize = theme.linkTitleFontSize;
+      linkTitle.style.color = UI_THEME.colors.primary.css;
       linkPurpose.textContent = licenseLink.purpose;
       linkPurpose.style.display = 'block';
-      linkPurpose.style.marginBottom = '6px';
-      linkPurpose.style.color = '#d9ebd1';
-      linkPurpose.style.fontSize = '15px';
+      linkPurpose.style.marginBottom = theme.linkPurposeMarginBottom;
+      linkPurpose.style.color = UI_THEME.colors.secondary.css;
+      linkPurpose.style.fontSize = theme.linkPurposeFontSize;
       linkUrl.textContent = licenseLink.url;
       linkUrl.style.display = 'block';
-      linkUrl.style.color = '#9fb6aa';
-      linkUrl.style.fontSize = '13px';
+      linkUrl.style.color = theme.linkUrlColor;
+      linkUrl.style.fontSize = theme.linkUrlFontSize;
       linkUrl.style.overflowWrap = 'anywhere';
       link.append(linkTitle, linkPurpose, linkUrl);
       item.append(link);

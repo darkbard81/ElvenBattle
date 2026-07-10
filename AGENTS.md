@@ -59,13 +59,17 @@
 - 화면 흔들림, hit-stop, parallax는 가독성을 해치지 않는 수준으로만 사용한다.
 - Phaser canvas는 세계, 전투 가독성, 모션, 카드/캐릭터 표현을 담당한다.
 - 텍스트가 많은 정보 화면은 canvas에 억지로 그리지 않는다.
-- 1280x800 가상 해상도와 FIT scale 정책을 유지하는 변경은 모바일/데스크톱 표시를 함께 확인한다.
+- `src/phaser/config/constants.ts`의 1920x1280 가상 해상도와 FIT scale 정책을 유지하는 변경은 모바일/데스크톱 표시를 함께 확인한다.
 
 ## UI Integration
 
 - HUD, 명령 메뉴, 설정, 서사 패널처럼 텍스트 밀도가 높은 UI는 DOM overlay를 우선한다.
 - Phaser 내부 UI는 월드 표현, 카드 배치, 전투 피드백처럼 canvas가 더 적합한 경우에 사용한다.
-- Phaser Scene 내부 레이아웃 구성은 rexUI plugin의 Sizer/GridSizer/OverlapSizer를 직접 사용한다.
+- Canvas UI 생성, 스타일, 입력 상태, rexUI 레이아웃 조립은 `CanvasUiFactory`를 통해서만 수행한다.
+- Scene은 `CanvasUiFactory`가 반환한 구체적인 GameObject를 배치하거나 상태 갱신에 사용하고, `this.rexUI.add.*`와 직접 `this.add.text()`를 호출하지 않는다.
+- Scene은 raw 색상, 폰트, Phaser TextStyle을 전달하지 않고 `src/theme.ts`의 semantic variant를 사용한다. 새로운 표현은 Theme variant를 먼저 추가한다.
+- Battlefield의 보드, 카드, 드래그 프리뷰, 이펙트 같은 월드 렌더링은 Phaser 직접 생성을 허용하지만 Canvas UI에는 사용하지 않는다.
+- DOM UI는 `CanvasUiFactory`로 감싸지 않고 Canvas UI와 동일한 Theme 토큰만 공유한다.
 - 카드 텍스트 도구는 `tools/card-text/index.html`과 `src/tools/card-text` 흐름을 유지한다.
 - Vite build input은 `index.html`과 `tools/card-text/index.html` 두 진입점을 고려한다.
 - 버튼, 저장 슬롯, 메뉴 등 사용자 입력 흐름은 실패 상태와 재시도 상태를 포함한다.
@@ -85,6 +89,7 @@
 - 스프라이트나 tween의 생명주기에 게임 상태 변경을 의존시키는 방식.
 - 자산 파일 경로를 여러 곳에 직접 하드코딩하는 방식.
 - 복잡한 HUD나 설정 화면을 편의상 Phaser Text로만 처리하는 방식.
+- Scene에서 `this.rexUI.add.*`, 직접 `this.add.text()`, raw Canvas UI 스타일을 사용하는 방식.
 - fresh clone에 로컬 `assets/` 파일이나 `.data/` 저장 데이터가 있다고 가정하는 방식.
 - 타입 오류를 감추기 위해 불필요한 `any` 또는 넓은 타입 단언을 추가하는 방식.
 - 기존 저장 슬롯 schema와 카드 schema를 우회해서 임의 JSON을 저장하는 방식.

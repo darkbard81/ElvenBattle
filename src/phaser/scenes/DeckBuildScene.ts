@@ -11,9 +11,8 @@ import {
   type GameSession,
   type RuntimeCardInstance,
 } from '../../game/save/session';
-import { DEFAULT_FONT_FAMILY } from '../../theme';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
-import { createMenuButton } from '../ui/menu-button';
+import { CanvasUiFactory, type UiLayoutChild } from '../ui/CanvasUiFactory';
 import type { DeckBuildSceneData, StageSceneData } from './scene-data';
 
 const PANEL_Y = 248;
@@ -68,6 +67,7 @@ type DeckBuildMode = 'LEADER' | 'UNIT';
  * 실제 카드 이동 규칙과 저장 직렬화는 save 도메인 모듈에 위임하고, 이 씬은 선택과 저장 흐름만 담당한다.
  */
 export class DeckBuildScene extends Phaser.Scene {
+  private readonly ui = new CanvasUiFactory(this);
   private savedSession!: GameSession;
   private draftSession!: GameSession;
   private mode: DeckBuildMode = 'UNIT';
@@ -106,53 +106,67 @@ export class DeckBuildScene extends Phaser.Scene {
   }
 
   private addBackground(): void {
-    this.add
-      .image(0, 0, 'title-background')
-      .setOrigin(0, 0)
-      .setDisplaySize(GAME_WIDTH, GAME_HEIGHT);
-    this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x071018, 0.66).setOrigin(0, 0);
-    this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.18).setOrigin(0, 0);
+    this.ui.image({
+      x: 0,
+      y: 0,
+      key: 'title-background',
+      origin: { x: 0, y: 0 },
+      width: GAME_WIDTH,
+      height: GAME_HEIGHT,
+    });
+    this.ui.panel({
+      x: 0,
+      y: 0,
+      width: GAME_WIDTH,
+      height: GAME_HEIGHT,
+      variant: 'screenDim',
+      origin: 0,
+    });
+    this.ui.panel({
+      x: 0,
+      y: 0,
+      width: GAME_WIDTH,
+      height: GAME_HEIGHT,
+      variant: 'screenShade',
+      origin: 0,
+    });
   }
 
   private addTitle(): void {
-    this.add
-      .text(GAME_WIDTH / 2, 96, 'DECK BUILD', {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '56px',
-        fontStyle: '700',
-        color: '#f5faf0',
-        stroke: '#182e27',
-        strokeThickness: 7,
-        align: 'center',
-      })
-      .setOrigin(0.5);
-
-    this.add
-      .text(GAME_WIDTH / 2, 154, 'Build LEADER and UNIT cards before battle', {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '24px',
-        color: '#d9ebd1',
-        align: 'center',
-      })
-      .setOrigin(0.5)
-      .setAlpha(0.9);
+    this.ui.text({
+      x: GAME_WIDTH / 2,
+      y: 96,
+      text: 'DECK BUILD',
+      variant: 'screenTitle',
+      align: 'center',
+      origin: 0.5,
+    });
+    this.ui.text({
+      x: GAME_WIDTH / 2,
+      y: 154,
+      text: 'Build LEADER and UNIT cards before battle',
+      variant: 'subtitle',
+      align: 'center',
+      origin: 0.5,
+      alpha: 0.9,
+    });
   }
 
   private addStatusText(): void {
-    this.statusText = this.add
-      .text(GAME_WIDTH / 2, this.getLayoutMetrics().statusY, 'UNIT deck configuration ready.', {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '22px',
-        color: '#e6f4df',
-        align: 'center',
-        wordWrap: { width: GAME_WIDTH - 120 },
-      })
-      .setOrigin(0.5);
+    this.statusText = this.ui.text({
+      x: GAME_WIDTH / 2,
+      y: this.getLayoutMetrics().statusY,
+      text: 'UNIT deck configuration ready.',
+      variant: 'status',
+      align: 'center',
+      origin: 0.5,
+      wordWrapWidth: GAME_WIDTH - 120,
+    });
   }
 
   private renderLists(): void {
     this.listContainer?.destroy();
-    const container = this.add.container(0, 0);
+    const container = this.ui.container();
     this.listContainer = container;
     container.add(this.createModeTabs());
 
@@ -166,180 +180,167 @@ export class DeckBuildScene extends Phaser.Scene {
 
   private renderUnitLists(container: Phaser.GameObjects.Container): void {
     const { panelHeight } = this.getLayoutMetrics();
-    const bodyLayout = this.rexUI.add.sizer(
-      PANEL_BODY_X,
-      PANEL_Y,
-      PANEL_BODY_WIDTH,
-      panelHeight,
-      'x',
-      {
-        origin: 0,
-        space: { item: PANEL_GAP },
-      },
-    );
-
-    bodyLayout.add(
-      this.createCardPanel({
-        title: 'Deck UNIT',
-        subtitle: `${this.getDeckUnitEntries().length} cards`,
-        entries: this.getDeckUnitEntries(),
-        selectedInstanceId: null,
-        focusInstanceId: this.focusedCardInstanceId,
-        emptyMessage: 'No UNIT cards in deck.',
-        onSelect: (instanceId) => {
-          this.handleRemoveFromDeck(instanceId);
+    const bodyLayout = this.ui.stack({
+      x: PANEL_BODY_X,
+      y: PANEL_Y,
+      width: PANEL_BODY_WIDTH,
+      height: panelHeight,
+      orientation: 'x',
+      origin: 0,
+      gap: PANEL_GAP,
+      children: [
+        {
+          gameObject: this.createCardPanel({
+            title: 'Deck UNIT',
+            subtitle: `${this.getDeckUnitEntries().length} cards`,
+            entries: this.getDeckUnitEntries(),
+            selectedInstanceId: null,
+            focusInstanceId: this.focusedCardInstanceId,
+            emptyMessage: 'No UNIT cards in deck.',
+            onSelect: (instanceId) => {
+              this.handleRemoveFromDeck(instanceId);
+            },
+          }),
+          align: 'left-top',
+          minWidth: PANEL_WIDTH,
+          minHeight: panelHeight,
+          offsetOriginX: -0.5,
+          offsetOriginY: -0.5,
         },
-      }),
-      {
-        align: 'left-top',
-        minWidth: PANEL_WIDTH,
-        minHeight: panelHeight,
-        offsetOriginX: -0.5,
-        offsetOriginY: -0.5,
-      },
-    );
-
-    bodyLayout.add(
-      this.createCardPanel({
-        title: 'Collection UNIT',
-        subtitle: `${this.getCollectionUnitEntries().length} cards`,
-        entries: this.getCollectionUnitEntries(),
-        selectedInstanceId: null,
-        focusInstanceId: this.focusedCardInstanceId,
-        emptyMessage: 'No collection UNIT cards yet.',
-        onSelect: (instanceId) => {
-          this.handleAddToDeck(instanceId);
+        {
+          gameObject: this.createCardPanel({
+            title: 'Collection UNIT',
+            subtitle: `${this.getCollectionUnitEntries().length} cards`,
+            entries: this.getCollectionUnitEntries(),
+            selectedInstanceId: null,
+            focusInstanceId: this.focusedCardInstanceId,
+            emptyMessage: 'No collection UNIT cards yet.',
+            onSelect: (instanceId) => {
+              this.handleAddToDeck(instanceId);
+            },
+          }),
+          align: 'left-top',
+          minWidth: PANEL_WIDTH,
+          minHeight: panelHeight,
+          offsetOriginX: -0.5,
+          offsetOriginY: -0.5,
         },
-      }),
-      {
-        align: 'left-top',
-        minWidth: PANEL_WIDTH,
-        minHeight: panelHeight,
-        offsetOriginX: -0.5,
-        offsetOriginY: -0.5,
-      },
-    );
-
-    bodyLayout.layout();
+      ],
+    });
     container.add(bodyLayout);
   }
 
   private renderLeaderLists(container: Phaser.GameObjects.Container): void {
     const { panelHeight } = this.getLayoutMetrics();
-    const bodyLayout = this.rexUI.add.sizer(
-      PANEL_BODY_X,
-      PANEL_Y,
-      PANEL_BODY_WIDTH,
-      panelHeight,
-      'x',
-      {
-        origin: 0,
-        space: { item: PANEL_GAP },
-      },
-    );
-
-    bodyLayout.add(
-      this.createCardPanel({
-        title: 'Current LEADER',
-        subtitle: '1 card',
-        entries: this.getDeckLeaderEntries(),
-        selectedInstanceId: this.draftSession.deck.leader.instance.instanceId,
-        focusInstanceId: this.focusedCardInstanceId,
-        emptyMessage: 'No current LEADER.',
-        onSelect: () => {
-          this.setStatus('Current LEADER is fixed until replaced.');
+    const bodyLayout = this.ui.stack({
+      x: PANEL_BODY_X,
+      y: PANEL_Y,
+      width: PANEL_BODY_WIDTH,
+      height: panelHeight,
+      orientation: 'x',
+      origin: 0,
+      gap: PANEL_GAP,
+      children: [
+        {
+          gameObject: this.createCardPanel({
+            title: 'Current LEADER',
+            subtitle: '1 card',
+            entries: this.getDeckLeaderEntries(),
+            selectedInstanceId: this.draftSession.deck.leader.instance.instanceId,
+            focusInstanceId: this.focusedCardInstanceId,
+            emptyMessage: 'No current LEADER.',
+            onSelect: () => {
+              this.setStatus('Current LEADER is fixed until replaced.');
+            },
+          }),
+          align: 'left-top',
+          minWidth: PANEL_WIDTH,
+          minHeight: panelHeight,
+          offsetOriginX: -0.5,
+          offsetOriginY: -0.5,
         },
-      }),
-      {
-        align: 'left-top',
-        minWidth: PANEL_WIDTH,
-        minHeight: panelHeight,
-        offsetOriginX: -0.5,
-        offsetOriginY: -0.5,
-      },
-    );
-
-    bodyLayout.add(
-      this.createCardPanel({
-        title: 'Collection LEADER',
-        subtitle: `${this.getCollectionLeaderEntries().length} cards`,
-        entries: this.getCollectionLeaderEntries(),
-        selectedInstanceId: null,
-        focusInstanceId: this.focusedCardInstanceId,
-        emptyMessage: 'No collection LEADER cards yet.',
-        onSelect: (instanceId) => {
-          this.handleSetLeader(instanceId);
+        {
+          gameObject: this.createCardPanel({
+            title: 'Collection LEADER',
+            subtitle: `${this.getCollectionLeaderEntries().length} cards`,
+            entries: this.getCollectionLeaderEntries(),
+            selectedInstanceId: null,
+            focusInstanceId: this.focusedCardInstanceId,
+            emptyMessage: 'No collection LEADER cards yet.',
+            onSelect: (instanceId) => {
+              this.handleSetLeader(instanceId);
+            },
+          }),
+          align: 'left-top',
+          minWidth: PANEL_WIDTH,
+          minHeight: panelHeight,
+          offsetOriginX: -0.5,
+          offsetOriginY: -0.5,
         },
-      }),
-      {
-        align: 'left-top',
-        minWidth: PANEL_WIDTH,
-        minHeight: panelHeight,
-        offsetOriginX: -0.5,
-        offsetOriginY: -0.5,
-      },
-    );
-
-    bodyLayout.layout();
+      ],
+    });
     container.add(bodyLayout);
   }
 
   private createModeTabs(): Phaser.GameObjects.Container {
-    const container = this.add.container(0, 0);
-    const layout = this.rexUI.add.sizer(
-      (GAME_WIDTH - MODE_TABS_WIDTH) / 2,
-      188,
-      MODE_TABS_WIDTH,
-      MODE_TABS_HEIGHT,
-      'x',
-      {
-        origin: 0,
-        space: { item: MODE_TABS_GAP },
-      },
-    );
-
-    layout.add(this.createModeButton('UNIT'), {
-      align: 'left-top',
-      minWidth: 220,
-      minHeight: MODE_TABS_HEIGHT,
-      offsetOriginX: -0.5,
-      offsetOriginY: -0.5,
+    const container = this.ui.container();
+    const layout = this.ui.stack({
+      x: (GAME_WIDTH - MODE_TABS_WIDTH) / 2,
+      y: 188,
+      width: MODE_TABS_WIDTH,
+      height: MODE_TABS_HEIGHT,
+      orientation: 'x',
+      origin: 0,
+      gap: MODE_TABS_GAP,
+      children: [
+        {
+          gameObject: this.createModeButton('UNIT'),
+          align: 'left-top',
+          minWidth: 220,
+          minHeight: MODE_TABS_HEIGHT,
+          offsetOriginX: -0.5,
+          offsetOriginY: -0.5,
+        },
+        {
+          gameObject: this.createModeButton('LEADER'),
+          align: 'left-top',
+          minWidth: 220,
+          minHeight: MODE_TABS_HEIGHT,
+          offsetOriginX: -0.5,
+          offsetOriginY: -0.5,
+        },
+      ],
     });
-    layout.add(this.createModeButton('LEADER'), {
-      align: 'left-top',
-      minWidth: 220,
-      minHeight: MODE_TABS_HEIGHT,
-      offsetOriginX: -0.5,
-      offsetOriginY: -0.5,
-    });
-    layout.layout();
     container.add(layout);
     return container;
   }
 
   private createModeButton(mode: DeckBuildMode): Phaser.GameObjects.Container {
-    const container = this.add.container(0, 0);
-    container.setSize(220, 52);
     const selected = this.mode === mode;
-    const background = this.add
-      .rectangle(110, 26, 220, 52, selected ? 0x31543d : 0x12211c, 0.96)
-      .setOrigin(0.5);
-    background.setStrokeStyle(2, selected ? 0xffe4a8 : 0x78a98d, selected ? 0.95 : 0.56);
-    background.setInteractive({ useHandCursor: true });
+    const container = this.ui.container({ width: 220, height: 52 });
+    const background = this.ui.pressableSurface({
+      x: 110,
+      y: 26,
+      width: 220,
+      height: 52,
+      variant: selected ? 'tabSelected' : 'tab',
+      hoverVariant: selected ? 'rowSelectedHover' : 'rowHover',
+      origin: 0.5,
+      onClick: () => {
+        this.changeMode(mode);
+      },
+    });
     container.add(background);
     container.add(
-      this.add
-        .text(110, 26, mode, {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '22px',
-          color: selected ? '#fff3c2' : '#d7ead4',
-          align: 'center',
-        })
-        .setOrigin(0.5),
+      this.ui.text({
+        x: 110,
+        y: 26,
+        text: mode,
+        variant: selected ? 'tabSelected' : 'tab',
+        align: 'center',
+        origin: 0.5,
+      }),
     );
-    background.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
-      this.changeMode(mode);
-    });
     return container;
   }
 
@@ -354,33 +355,36 @@ export class DeckBuildScene extends Phaser.Scene {
   }): Phaser.GameObjects.Container {
     const { panelHeight } = this.getLayoutMetrics();
     const viewportHeight = this.getPanelViewportHeight(panelHeight);
-    const container = this.add.container(0, 0);
-    container.setSize(PANEL_WIDTH, panelHeight);
-    const panel = this.add.rectangle(0, 0, PANEL_WIDTH, panelHeight, 0x10261f, 0.94);
-    panel.setOrigin(0, 0);
-    panel.setStrokeStyle(2, 0xbfeec5, 0.64);
+    const container = this.ui.container({ width: PANEL_WIDTH, height: panelHeight });
+    const panel = this.ui.panel({
+      x: 0,
+      y: 0,
+      width: PANEL_WIDTH,
+      height: panelHeight,
+      variant: 'panel',
+      origin: 0,
+    });
     container.add(panel);
 
     container.add(
-      this.add
-        .text(28, 38, config.title, {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '30px',
-          fontStyle: '700',
-          color: '#f5fff0',
-          align: 'left',
-        })
-        .setOrigin(0, 0.5),
+      this.ui.text({
+        x: 28,
+        y: 38,
+        text: config.title,
+        variant: 'panelTitle',
+        align: 'left',
+        origin: { x: 0, y: 0.5 },
+      }),
     );
     container.add(
-      this.add
-        .text(PANEL_WIDTH - 28, 38, config.subtitle, {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '18px',
-          color: '#a8d2af',
-          align: 'right',
-        })
-        .setOrigin(1, 0.5),
+      this.ui.text({
+        x: PANEL_WIDTH - 28,
+        y: 38,
+        text: config.subtitle,
+        variant: 'panelSubtitle',
+        align: 'right',
+        origin: { x: 1, y: 0.5 },
+      }),
     );
 
     if (config.entries.length === 0) {
@@ -393,11 +397,7 @@ export class DeckBuildScene extends Phaser.Scene {
       config.entries.length * CARD_ROW_HEIGHT +
         Math.max(0, config.entries.length - 1) * CARD_ROW_GAP,
     );
-    const rowLayout = this.rexUI.add.sizer(0, 0, PANEL_INNER_WIDTH, rowLayoutHeight, 'y', {
-      origin: 0,
-      space: { item: CARD_ROW_GAP },
-    });
-
+    const rowChildren: UiLayoutChild[] = [];
     let focusedRow: Phaser.GameObjects.GameObject | null = null;
     config.entries.forEach((entry) => {
       const row = this.createCardRow({
@@ -409,18 +409,24 @@ export class DeckBuildScene extends Phaser.Scene {
         focusedRow = row;
       }
 
-      rowLayout.add(row, {
+      rowChildren.push({
+        gameObject: row,
         align: 'left-top',
         minWidth: PANEL_INNER_WIDTH,
         minHeight: CARD_ROW_HEIGHT,
       });
     });
-    rowLayout.layout();
-    const scrollPanel = this.createCardScrollPanel(rowLayout, viewportHeight);
-    scrollPanel.layout();
-    if (focusedRow) {
-      scrollPanel.scrollToChild(focusedRow, 'centerY');
-    }
+    const rowLayout = this.ui.stack({
+      x: 0,
+      y: 0,
+      width: PANEL_INNER_WIDTH,
+      height: rowLayoutHeight,
+      orientation: 'y',
+      origin: 0,
+      gap: CARD_ROW_GAP,
+      children: rowChildren,
+    });
+    const scrollPanel = this.createCardScrollPanel(rowLayout, viewportHeight, focusedRow);
     container.add(scrollPanel);
     return container;
   }
@@ -429,77 +435,54 @@ export class DeckBuildScene extends Phaser.Scene {
     message: string,
     viewportHeight: number,
   ): Phaser.GameObjects.GameObject {
-    const layout = this.rexUI.add.overlapSizer(
-      28,
-      PANEL_HEADER_HEIGHT,
-      PANEL_INNER_WIDTH,
-      viewportHeight,
-      {
-        origin: 0,
-      },
-    );
-
-    const messageContainer = this.add.container(0, 0);
-    messageContainer.setSize(PANEL_INNER_WIDTH, viewportHeight);
-    messageContainer.add(
-      this.add
-        .text(PANEL_INNER_WIDTH / 2, viewportHeight / 2, message, {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '24px',
-          color: '#b8c9c0',
-          align: 'center',
-          wordWrap: { width: PANEL_WIDTH - 72 },
-        })
-        .setOrigin(0.5),
-    );
-    layout.add(messageContainer, {
-      align: 'left-top',
-      minWidth: PANEL_INNER_WIDTH,
-      minHeight: viewportHeight,
-      offsetOriginX: -0.5,
-      offsetOriginY: -0.5,
+    const messageContainer = this.ui.container({
+      width: PANEL_INNER_WIDTH,
+      height: viewportHeight,
     });
-    layout.layout();
-    return layout;
+    messageContainer.add(
+      this.ui.text({
+        x: PANEL_INNER_WIDTH / 2,
+        y: viewportHeight / 2,
+        text: message,
+        variant: 'empty',
+        align: 'center',
+        origin: 0.5,
+        wordWrapWidth: PANEL_WIDTH - 72,
+      }),
+    );
+    return this.ui.overlay({
+      x: 28,
+      y: PANEL_HEADER_HEIGHT,
+      width: PANEL_INNER_WIDTH,
+      height: viewportHeight,
+      origin: 0,
+      children: [
+        {
+          gameObject: messageContainer,
+          align: 'left-top',
+          minWidth: PANEL_INNER_WIDTH,
+          minHeight: viewportHeight,
+          offsetOriginX: -0.5,
+          offsetOriginY: -0.5,
+        },
+      ],
+    });
   }
 
-  private createCardScrollPanel(child: Phaser.GameObjects.GameObject, viewportHeight: number) {
-    return this.rexUI.add.scrollablePanel({
+  private createCardScrollPanel(
+    child: Phaser.GameObjects.GameObject,
+    viewportHeight: number,
+    focusChild: Phaser.GameObjects.GameObject | null,
+  ) {
+    return this.ui.scrollPanel({
       x: 28,
       y: PANEL_HEADER_HEIGHT,
       width: PANEL_SCROLL_PANEL_WIDTH,
       height: viewportHeight,
-      origin: 0,
-      scrollMode: 'y',
-      clampChildOY: true,
-      panel: {
-        child,
-        mask: { padding: 2 },
-      },
-      space: {
-        sliderY: PANEL_SCROLLBAR_GAP,
-      },
-      slider: {
-        track: this.add.rectangle(0, 0, PANEL_SCROLLBAR_WIDTH, viewportHeight, 0x07130f, 0.72),
-        thumb: this.add.rectangle(0, 0, PANEL_SCROLLBAR_WIDTH, 48, 0xbfeec5, 0.78),
-        position: 'right',
-        input: 'drag',
-        hideUnscrollableSlider: true,
-        disableUnscrollableDrag: true,
-        adaptThumbSize: true,
-        minThumbSize: 42,
-      },
-      scroller: {
-        threshold: 8,
-        slidingDeceleration: 4200,
-        backDeceleration: 2200,
-        pointerOutRelease: true,
-      },
-      mouseWheelScroller: {
-        focus: false,
-        speed: 0.22,
-      },
-      scrollDetectionMode: 'rectBounds',
+      child,
+      ...(focusChild ? { focusChild } : {}),
+      scrollbarWidth: PANEL_SCROLLBAR_WIDTH,
+      scrollbarGap: PANEL_SCROLLBAR_GAP,
     });
   }
 
@@ -508,142 +491,150 @@ export class DeckBuildScene extends Phaser.Scene {
     selected: boolean;
     onSelect: (instanceId: string) => void;
   }): Phaser.GameObjects.GameObject {
-    const row = this.rexUI.add.overlapSizer(0, 0, PANEL_INNER_WIDTH, CARD_ROW_HEIGHT, {
-      origin: 0,
-    });
     const card = config.entry.card;
-    const fillColor = config.selected ? 0x31543d : 0x17352d;
-    const strokeColor = config.selected ? 0xffe4a8 : 0x78a98d;
-    const background = this.add
-      .rectangle(0, 0, PANEL_INNER_WIDTH, CARD_ROW_HEIGHT, fillColor, 0.92)
-      .setOrigin(0, 0);
-    background.setStrokeStyle(config.selected ? 3 : 1, strokeColor, config.selected ? 0.95 : 0.5);
-    background.setInteractive({ useHandCursor: true });
-    row.addBackground(background);
-
-    const textLayout = this.rexUI.add.sizer(0, 0, CARD_ROW_TEXT_WIDTH, CARD_ROW_HEIGHT - 24, 'y', {
+    const background = this.ui.pressableSurface({
+      x: 0,
+      y: 0,
+      width: PANEL_INNER_WIDTH,
+      height: CARD_ROW_HEIGHT,
+      variant: config.selected ? 'rowSelected' : 'row',
+      hoverVariant: config.selected ? 'rowSelectedHover' : 'rowHover',
       origin: 0,
+      onClick: () => {
+        config.onSelect(card.instance.instanceId);
+      },
     });
-    const titleText = this.add
-      .text(0, 0, `${config.entry.index + 1}. ${card.instance.name}`, {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '22px',
-        color: '#f5fff0',
-        align: 'left',
-        fixedWidth: CARD_ROW_TEXT_WIDTH,
-        fixedHeight: 24,
-        wordWrap: { width: CARD_ROW_TEXT_WIDTH },
-      })
-      .setOrigin(0, 0.5);
-    const statsText = this.add
-      .text(0, 0, formatCardStats(card), {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '17px',
-        color: '#d7ead4',
-        align: 'left',
-        fixedWidth: CARD_ROW_TEXT_WIDTH,
-        fixedHeight: 24,
-        wordWrap: { width: CARD_ROW_TEXT_WIDTH },
-      })
-      .setOrigin(0, 0.5);
-    const idText = this.add
-      .text(0, 0, card.definition.id, {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '14px',
-        color: '#92aa9e',
-        align: 'left',
-        fixedWidth: CARD_ROW_TEXT_WIDTH,
-        fixedHeight: 18,
-        wordWrap: { width: CARD_ROW_TEXT_WIDTH },
-      })
-      .setOrigin(0, 0.5);
-    textLayout.add(titleText, {
-      align: 'left-center',
-      minWidth: CARD_ROW_TEXT_WIDTH,
-      minHeight: 24,
-      expand: true,
+    const titleText = this.ui.text({
+      x: 0,
+      y: 0,
+      text: `${config.entry.index + 1}. ${card.instance.name}`,
+      variant: 'rowTitle',
+      align: 'left',
+      origin: { x: 0, y: 0.5 },
+      fixedWidth: CARD_ROW_TEXT_WIDTH,
+      fixedHeight: 24,
+      wordWrapWidth: CARD_ROW_TEXT_WIDTH,
     });
-    textLayout.add(statsText, {
-      align: 'left-center',
-      minWidth: CARD_ROW_TEXT_WIDTH,
-      minHeight: 24,
-      padding: { top: 16, bottom: 4 },
-      expand: true,
+    const statsText = this.ui.text({
+      x: 0,
+      y: 0,
+      text: formatCardStats(card),
+      variant: 'rowMeta',
+      align: 'left',
+      origin: { x: 0, y: 0.5 },
+      fixedWidth: CARD_ROW_TEXT_WIDTH,
+      fixedHeight: 24,
+      wordWrapWidth: CARD_ROW_TEXT_WIDTH,
     });
-    textLayout.add(idText, {
-      align: 'left-center',
-      minWidth: CARD_ROW_TEXT_WIDTH,
-      minHeight: 18,
-      padding: { top: 5 },
-      expand: true,
+    const idText = this.ui.text({
+      x: 0,
+      y: 0,
+      text: card.definition.id,
+      variant: 'rowId',
+      align: 'left',
+      origin: { x: 0, y: 0.5 },
+      fixedWidth: CARD_ROW_TEXT_WIDTH,
+      fixedHeight: 18,
+      wordWrapWidth: CARD_ROW_TEXT_WIDTH,
     });
-    row.add(textLayout, {
-      align: 'left-top',
-      padding: { left: 18, top: 12, right: 30, bottom: 12 },
-      expand: true,
+    const textLayout = this.ui.stack({
+      x: 0,
+      y: 0,
+      width: CARD_ROW_TEXT_WIDTH,
+      height: CARD_ROW_HEIGHT - 24,
+      orientation: 'y',
+      origin: 0,
+      children: [
+        {
+          gameObject: titleText,
+          align: 'left-center',
+          minWidth: CARD_ROW_TEXT_WIDTH,
+          minHeight: 24,
+          expand: true,
+        },
+        {
+          gameObject: statsText,
+          align: 'left-center',
+          minWidth: CARD_ROW_TEXT_WIDTH,
+          minHeight: 24,
+          padding: { top: 16, bottom: 4 },
+          expand: true,
+        },
+        {
+          gameObject: idText,
+          align: 'left-center',
+          minWidth: CARD_ROW_TEXT_WIDTH,
+          minHeight: 18,
+          padding: { top: 5 },
+          expand: true,
+        },
+      ],
     });
-
-    background.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OVER, () => {
-      background.setFillStyle(config.selected ? 0x3c684a : 0x24513d, 0.98);
+    return this.ui.overlay({
+      x: 0,
+      y: 0,
+      width: PANEL_INNER_WIDTH,
+      height: CARD_ROW_HEIGHT,
+      origin: 0,
+      background,
+      children: [
+        {
+          gameObject: textLayout,
+          align: 'left-top',
+          padding: { left: 18, top: 12, right: 30, bottom: 12 },
+          expand: true,
+        },
+      ],
     });
-    background.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OUT, () => {
-      background.setFillStyle(fillColor, 0.92);
-    });
-    background.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
-      config.onSelect(card.instance.instanceId);
-    });
-    row.layout();
-    return row;
   }
 
   private renderHud(): void {
     this.hudContainer?.destroy();
-    const layout = this.rexUI.add.sizer(
-      (GAME_WIDTH - HUD_WIDTH) / 2,
-      this.getLayoutMetrics().hudY,
-      HUD_WIDTH,
-      HUD_BUTTON_HEIGHT,
-      'x',
-      {
-        origin: 0,
-        space: { item: HUD_BUTTON_GAP },
-      },
-    );
-
-    layout.add(
-      this.createHudButton('Back', HUD_BACK_BUTTON_WIDTH, !this.isSaving, () => {
-        this.scene.start('StageScene', { session: this.savedSession } satisfies StageSceneData);
-      }),
-      {
-        align: 'left-top',
-        minWidth: HUD_BACK_BUTTON_WIDTH,
-        minHeight: HUD_BUTTON_HEIGHT,
-        offsetOriginX: -0.5,
-        offsetOriginY: -0.5,
-      },
-    );
-    layout.add(
-      this.createHudButton('Save', HUD_SAVE_BUTTON_WIDTH, this.isDirty && !this.isSaving, () => {
-        void this.handleSave();
-      }),
-      {
-        align: 'left-top',
-        minWidth: HUD_SAVE_BUTTON_WIDTH,
-        minHeight: HUD_BUTTON_HEIGHT,
-        offsetOriginX: -0.5,
-        offsetOriginY: -0.5,
-      },
-    );
-
     const summaryText = this.isDirty ? 'Unsaved changes' : 'Saved deck';
-    layout.add(this.createHudSummary(summaryText, this.isDirty), {
-      align: 'left-top',
-      minWidth: HUD_SUMMARY_WIDTH,
-      minHeight: HUD_BUTTON_HEIGHT,
-      offsetOriginX: -0.5,
-      offsetOriginY: -0.5,
+    const layout = this.ui.stack({
+      x: (GAME_WIDTH - HUD_WIDTH) / 2,
+      y: this.getLayoutMetrics().hudY,
+      width: HUD_WIDTH,
+      height: HUD_BUTTON_HEIGHT,
+      orientation: 'x',
+      origin: 0,
+      gap: HUD_BUTTON_GAP,
+      children: [
+        {
+          gameObject: this.createHudButton('Back', HUD_BACK_BUTTON_WIDTH, !this.isSaving, () => {
+            this.scene.start('StageScene', { session: this.savedSession } satisfies StageSceneData);
+          }),
+          align: 'left-top',
+          minWidth: HUD_BACK_BUTTON_WIDTH,
+          minHeight: HUD_BUTTON_HEIGHT,
+          offsetOriginX: -0.5,
+          offsetOriginY: -0.5,
+        },
+        {
+          gameObject: this.createHudButton(
+            'Save',
+            HUD_SAVE_BUTTON_WIDTH,
+            this.isDirty && !this.isSaving,
+            () => {
+              void this.handleSave();
+            },
+          ),
+          align: 'left-top',
+          minWidth: HUD_SAVE_BUTTON_WIDTH,
+          minHeight: HUD_BUTTON_HEIGHT,
+          offsetOriginX: -0.5,
+          offsetOriginY: -0.5,
+        },
+        {
+          gameObject: this.createHudSummary(summaryText, this.isDirty),
+          align: 'left-top',
+          minWidth: HUD_SUMMARY_WIDTH,
+          minHeight: HUD_BUTTON_HEIGHT,
+          offsetOriginX: -0.5,
+          offsetOriginY: -0.5,
+        },
+      ],
     });
-    layout.layout();
     this.hudContainer = layout;
   }
 
@@ -653,10 +644,9 @@ export class DeckBuildScene extends Phaser.Scene {
     enabled: boolean,
     onClick: () => void,
   ): Phaser.GameObjects.Container {
-    const slot = this.add.container(0, 0);
-    slot.setSize(width, HUD_BUTTON_HEIGHT);
+    const slot = this.ui.container({ width, height: HUD_BUTTON_HEIGHT });
     const button = enabled
-      ? createMenuButton(this, {
+      ? this.ui.button({
           x: width / 2,
           y: HUD_BUTTON_HEIGHT / 2,
           width,
@@ -665,7 +655,7 @@ export class DeckBuildScene extends Phaser.Scene {
           enabled,
           onClick,
         })
-      : createMenuButton(this, {
+      : this.ui.button({
           x: width / 2,
           y: HUD_BUTTON_HEIGHT / 2,
           width,
@@ -679,17 +669,16 @@ export class DeckBuildScene extends Phaser.Scene {
   }
 
   private createHudSummary(text: string, isDirty: boolean): Phaser.GameObjects.Container {
-    const slot = this.add.container(0, 0);
-    slot.setSize(HUD_SUMMARY_WIDTH, HUD_BUTTON_HEIGHT);
+    const slot = this.ui.container({ width: HUD_SUMMARY_WIDTH, height: HUD_BUTTON_HEIGHT });
     slot.add(
-      this.add
-        .text(HUD_SUMMARY_WIDTH / 2, HUD_BUTTON_HEIGHT / 2, text, {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '22px',
-          color: isDirty ? '#fff3c2' : '#bfeec5',
-          align: 'center',
-        })
-        .setOrigin(0.5),
+      this.ui.text({
+        x: HUD_SUMMARY_WIDTH / 2,
+        y: HUD_BUTTON_HEIGHT / 2,
+        text,
+        variant: isDirty ? 'hudSummaryDirty' : 'hudSummary',
+        align: 'center',
+        origin: 0.5,
+      }),
     );
     return slot;
   }

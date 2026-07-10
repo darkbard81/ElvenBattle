@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
-import { DEFAULT_FONT_FAMILY } from '../../theme';
 import { DEFAULT_ASSET_BASE_URL, GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
+import { CanvasUiFactory } from '../ui/CanvasUiFactory';
 import type { LoaderSceneData } from './scene-data';
 
 const TITLE_GROUP_HEIGHT = 260;
@@ -12,6 +12,8 @@ const PROMPT_GROUP_TOP = GAME_HEIGHT - PROMPT_GROUP_HEIGHT;
  * 클릭 전까지는 시작 안내만 보여주고, 클릭하면 로더 씬으로 보낸다.
  */
 export class TitleScene extends Phaser.Scene {
+  private readonly ui = new CanvasUiFactory(this);
+
   constructor() {
     super({ key: 'TitleScene' });
   }
@@ -31,16 +33,38 @@ export class TitleScene extends Phaser.Scene {
   }
 
   private addBackground(): void {
-    this.add
-      .image(0, 0, 'title-background')
-      .setOrigin(0, 0)
-      .setDisplaySize(GAME_WIDTH, GAME_HEIGHT);
-    this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x050b11, 0.22).setOrigin(0, 0);
-    this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.08).setOrigin(0, 0);
+    this.ui.image({
+      x: 0,
+      y: 0,
+      key: 'title-background',
+      origin: { x: 0, y: 0 },
+      width: GAME_WIDTH,
+      height: GAME_HEIGHT,
+    });
+    this.ui.panel({
+      x: 0,
+      y: 0,
+      width: GAME_WIDTH,
+      height: GAME_HEIGHT,
+      variant: 'titleBackdrop',
+      origin: 0,
+    });
+    this.ui.panel({
+      x: 0,
+      y: 0,
+      width: GAME_WIDTH,
+      height: GAME_HEIGHT,
+      variant: 'titleShade',
+      origin: 0,
+    });
   }
 
   private addForegroundUi(): void {
-    const root = this.rexUI.add.overlapSizer(0, 0, GAME_WIDTH, GAME_HEIGHT, {
+    this.ui.overlay({
+      x: 0,
+      y: 0,
+      width: GAME_WIDTH,
+      height: GAME_HEIGHT,
       origin: 0,
       anchor: {
         left: 'left',
@@ -48,80 +72,72 @@ export class TitleScene extends Phaser.Scene {
         width: '100%',
         height: '100%',
       },
+      children: [
+        {
+          gameObject: this.createTitleGroup(),
+          align: 'left-top',
+          minWidth: GAME_WIDTH,
+          minHeight: TITLE_GROUP_HEIGHT,
+          offsetOriginX: -0.5,
+          offsetOriginY: -0.5,
+        },
+        {
+          gameObject: this.createPromptGroup(),
+          align: 'left-top',
+          minWidth: GAME_WIDTH,
+          minHeight: PROMPT_GROUP_HEIGHT,
+          offsetY: PROMPT_GROUP_TOP,
+          offsetOriginX: -0.5,
+          offsetOriginY: -0.5,
+        },
+      ],
     });
-    const titleGroup = this.createTitleGroup();
-    const promptGroup = this.createPromptGroup();
-
-    root.add(titleGroup, {
-      align: 'left-top',
-      minWidth: GAME_WIDTH,
-      minHeight: TITLE_GROUP_HEIGHT,
-      offsetOriginX: -0.5,
-      offsetOriginY: -0.5,
-    });
-    root.add(promptGroup, {
-      align: 'left-top',
-      minWidth: GAME_WIDTH,
-      minHeight: PROMPT_GROUP_HEIGHT,
-      offsetY: PROMPT_GROUP_TOP,
-      offsetOriginX: -0.5,
-      offsetOriginY: -0.5,
-    });
-    root.layout();
   }
 
   private createTitleGroup(): Phaser.GameObjects.Container {
-    const group = this.add.container(0, 0);
-    group.setSize(GAME_WIDTH, TITLE_GROUP_HEIGHT);
-    const title = this.add
-      .text(GAME_WIDTH / 2, 140, 'ELVENBATTLE', {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '78px',
-        fontStyle: '700',
-        color: '#f4f8ef',
-        stroke: '#1a2f28',
-        strokeThickness: 8,
-        align: 'center',
-      })
-      .setOrigin(0.5)
-      .setShadow(0, 4, '#000000', 12, false, true);
-
-    const subtitle = this.add
-      .text(GAME_WIDTH / 2, 228, 'the elven card battler', {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '28px',
-        color: '#d8ead3',
-        align: 'center',
-      })
-      .setOrigin(0.5)
-      .setAlpha(0.92);
+    const group = this.ui.container({ width: GAME_WIDTH, height: TITLE_GROUP_HEIGHT });
+    const title = this.ui.text({
+      x: GAME_WIDTH / 2,
+      y: 140,
+      text: 'ELVENBATTLE',
+      variant: 'heroTitle',
+      align: 'center',
+      origin: 0.5,
+    });
+    const subtitle = this.ui.text({
+      x: GAME_WIDTH / 2,
+      y: 228,
+      text: 'the elven card battler',
+      variant: 'titleTagline',
+      align: 'center',
+      origin: 0.5,
+      alpha: 0.92,
+    });
 
     group.add([title, subtitle]);
     return group;
   }
 
   private createPromptGroup(): Phaser.GameObjects.Container {
-    const group = this.add.container(0, 0);
-    group.setSize(GAME_WIDTH, PROMPT_GROUP_HEIGHT);
-    const prompt = this.add
-      .text(GAME_WIDTH / 2, 28, 'click anywhere to begin', {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '26px',
-        color: '#ecf7e8',
-        align: 'center',
-      })
-      .setOrigin(0.5)
-      .setAlpha(0.95);
-
-    const helper = this.add
-      .text(GAME_WIDTH / 2, 66, 'the archive will preload webp textures before the menu opens', {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '16px',
-        color: '#b8cbb7',
-        align: 'center',
-      })
-      .setOrigin(0.5)
-      .setAlpha(0.9);
+    const group = this.ui.container({ width: GAME_WIDTH, height: PROMPT_GROUP_HEIGHT });
+    const prompt = this.ui.text({
+      x: GAME_WIDTH / 2,
+      y: 28,
+      text: 'click anywhere to begin',
+      variant: 'prompt',
+      align: 'center',
+      origin: 0.5,
+      alpha: 0.95,
+    });
+    const helper = this.ui.text({
+      x: GAME_WIDTH / 2,
+      y: 66,
+      text: 'the archive will preload webp textures before the menu opens',
+      variant: 'helper',
+      align: 'center',
+      origin: 0.5,
+      alpha: 0.9,
+    });
 
     group.add([prompt, helper]);
     return group;

@@ -10,9 +10,8 @@ import {
   type GameSession,
   type RuntimeCardInstance,
 } from '../../game/save/session';
-import { DEFAULT_FONT_FAMILY } from '../../theme';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
-import { createMenuButton } from '../ui/menu-button';
+import { CanvasUiFactory, type UiLayoutChild } from '../ui/CanvasUiFactory';
 import type { EquipmentSceneData, StageSceneData } from './scene-data';
 
 const PANEL_Y = 248;
@@ -72,6 +71,7 @@ type EquipmentListEntry = {
  * slot 제한과 능력 중복 검사는 save 도메인 모듈에 위임하고, 이 씬은 선택과 저장 흐름만 담당한다.
  */
 export class EquipmentScene extends Phaser.Scene {
+  private readonly ui = new CanvasUiFactory(this);
   private savedSession!: GameSession;
   private draftSession!: GameSession;
   private selectedTargetCardInstanceId: string | null = null;
@@ -110,88 +110,97 @@ export class EquipmentScene extends Phaser.Scene {
   }
 
   private addBackground(): void {
-    this.add
-      .image(0, 0, 'title-background')
-      .setOrigin(0, 0)
-      .setDisplaySize(GAME_WIDTH, GAME_HEIGHT);
-    this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x071018, 0.66).setOrigin(0, 0);
-    this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.18).setOrigin(0, 0);
+    this.ui.image({
+      x: 0,
+      y: 0,
+      key: 'title-background',
+      origin: 0,
+      width: GAME_WIDTH,
+      height: GAME_HEIGHT,
+    });
+    this.ui.panel({
+      x: 0,
+      y: 0,
+      width: GAME_WIDTH,
+      height: GAME_HEIGHT,
+      variant: 'screenDim',
+      origin: 0,
+    });
+    this.ui.panel({
+      x: 0,
+      y: 0,
+      width: GAME_WIDTH,
+      height: GAME_HEIGHT,
+      variant: 'screenShade',
+      origin: 0,
+    });
   }
 
   private addTitle(): void {
-    this.add
-      .text(GAME_WIDTH / 2, 96, 'EQUIPMENT', {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '56px',
-        fontStyle: '700',
-        color: '#f5faf0',
-        stroke: '#182e27',
-        strokeThickness: 7,
-        align: 'center',
-      })
-      .setOrigin(0.5);
-
-    this.add
-      .text(GAME_WIDTH / 2, 154, 'Equip Collection cards to Deck UNITs before battle', {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '24px',
-        color: '#d9ebd1',
-        align: 'center',
-      })
-      .setOrigin(0.5)
-      .setAlpha(0.9);
+    this.ui.text({
+      x: GAME_WIDTH / 2,
+      y: 96,
+      text: 'EQUIPMENT',
+      variant: 'screenTitle',
+      align: 'center',
+      origin: 0.5,
+    });
+    this.ui.text({
+      x: GAME_WIDTH / 2,
+      y: 154,
+      text: 'Equip Collection cards to Deck UNITs before battle',
+      variant: 'subtitle',
+      align: 'center',
+      origin: 0.5,
+      alpha: 0.9,
+    });
   }
 
   private addStatusText(): void {
-    this.statusText = this.add
-      .text(
-        GAME_WIDTH / 2,
-        this.getLayoutMetrics().statusY,
-        'Select a deck UNIT to manage equipment.',
-        {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '22px',
-          color: '#e6f4df',
-          align: 'center',
-          wordWrap: { width: GAME_WIDTH - 120 },
-        },
-      )
-      .setOrigin(0.5);
+    this.statusText = this.ui.text({
+      x: GAME_WIDTH / 2,
+      y: this.getLayoutMetrics().statusY,
+      text: 'Select a deck UNIT to manage equipment.',
+      variant: 'status',
+      align: 'center',
+      origin: 0.5,
+      wordWrapWidth: GAME_WIDTH - 120,
+    });
   }
 
   private renderLists(): void {
     this.ensureSelectedTargetExists();
     this.listContainer?.destroy();
-    const container = this.add.container(0, 0);
+    const container = this.ui.container();
     this.listContainer = container;
     const { panelHeight } = this.getLayoutMetrics();
-    const bodyLayout = this.rexUI.add.sizer(
-      PANEL_BODY_X,
-      PANEL_Y,
-      PANEL_BODY_WIDTH,
-      panelHeight,
-      'x',
-      {
-        origin: 0,
-        space: { item: PANEL_GAP },
-      },
-    );
-
-    bodyLayout.add(this.createUnitPanel(), {
-      align: 'left-top',
-      minWidth: PANEL_WIDTH,
-      minHeight: panelHeight,
-      offsetOriginX: -0.5,
-      offsetOriginY: -0.5,
+    const bodyLayout = this.ui.stack({
+      x: PANEL_BODY_X,
+      y: PANEL_Y,
+      width: PANEL_BODY_WIDTH,
+      height: panelHeight,
+      orientation: 'x',
+      origin: 0,
+      gap: PANEL_GAP,
+      children: [
+        {
+          gameObject: this.createUnitPanel(),
+          align: 'left-top',
+          minWidth: PANEL_WIDTH,
+          minHeight: panelHeight,
+          offsetOriginX: -0.5,
+          offsetOriginY: -0.5,
+        },
+        {
+          gameObject: this.createEquipmentPanel(),
+          align: 'left-top',
+          minWidth: PANEL_WIDTH,
+          minHeight: panelHeight,
+          offsetOriginX: -0.5,
+          offsetOriginY: -0.5,
+        },
+      ],
     });
-    bodyLayout.add(this.createEquipmentPanel(), {
-      align: 'left-top',
-      minWidth: PANEL_WIDTH,
-      minHeight: panelHeight,
-      offsetOriginX: -0.5,
-      offsetOriginY: -0.5,
-    });
-    bodyLayout.layout();
     container.add(bodyLayout);
   }
 
@@ -212,11 +221,7 @@ export class EquipmentScene extends Phaser.Scene {
       viewportHeight,
       entries.length * CARD_ROW_HEIGHT + Math.max(0, entries.length - 1) * CARD_ROW_GAP,
     );
-    const rowLayout = this.rexUI.add.sizer(0, 0, PANEL_INNER_WIDTH, rowLayoutHeight, 'y', {
-      origin: 0,
-      space: { item: CARD_ROW_GAP },
-    });
-
+    const rowChildren: UiLayoutChild[] = [];
     let focusedRow: Phaser.GameObjects.GameObject | null = null;
     entries.forEach((entry) => {
       const selected = entry.card.instance.instanceId === this.selectedTargetCardInstanceId;
@@ -228,18 +233,24 @@ export class EquipmentScene extends Phaser.Scene {
         focusedRow = row;
       }
 
-      rowLayout.add(row, {
+      rowChildren.push({
+        gameObject: row,
         align: 'left-top',
         minWidth: PANEL_INNER_WIDTH,
         minHeight: CARD_ROW_HEIGHT,
       });
     });
-    rowLayout.layout();
-    const scrollPanel = this.createCardScrollPanel(rowLayout, viewportHeight);
-    scrollPanel.layout();
-    if (focusedRow) {
-      scrollPanel.scrollToChild(focusedRow, 'centerY');
-    }
+    const rowLayout = this.ui.stack({
+      x: 0,
+      y: 0,
+      width: PANEL_INNER_WIDTH,
+      height: rowLayoutHeight,
+      orientation: 'y',
+      origin: 0,
+      gap: CARD_ROW_GAP,
+      children: rowChildren,
+    });
+    const scrollPanel = this.createCardScrollPanel(rowLayout, viewportHeight, focusedRow);
     container.add(scrollPanel);
     return container;
   }
@@ -262,11 +273,7 @@ export class EquipmentScene extends Phaser.Scene {
       viewportHeight,
       entries.length * CARD_ROW_HEIGHT + Math.max(0, entries.length - 1) * CARD_ROW_GAP,
     );
-    const rowLayout = this.rexUI.add.sizer(0, 0, PANEL_INNER_WIDTH, rowLayoutHeight, 'y', {
-      origin: 0,
-      space: { item: CARD_ROW_GAP },
-    });
-
+    const rowChildren: UiLayoutChild[] = [];
     let focusedRow: Phaser.GameObjects.GameObject | null = null;
     entries.forEach((entry) => {
       const row = this.createEquipmentRow({
@@ -279,18 +286,24 @@ export class EquipmentScene extends Phaser.Scene {
         focusedRow = row;
       }
 
-      rowLayout.add(row, {
+      rowChildren.push({
+        gameObject: row,
         align: 'left-top',
         minWidth: PANEL_INNER_WIDTH,
         minHeight: CARD_ROW_HEIGHT,
       });
     });
-    rowLayout.layout();
-    const scrollPanel = this.createCardScrollPanel(rowLayout, viewportHeight);
-    scrollPanel.layout();
-    if (focusedRow) {
-      scrollPanel.scrollToChild(focusedRow, 'centerY');
-    }
+    const rowLayout = this.ui.stack({
+      x: 0,
+      y: 0,
+      width: PANEL_INNER_WIDTH,
+      height: rowLayoutHeight,
+      orientation: 'y',
+      origin: 0,
+      gap: CARD_ROW_GAP,
+      children: rowChildren,
+    });
+    const scrollPanel = this.createCardScrollPanel(rowLayout, viewportHeight, focusedRow);
     container.add(scrollPanel);
     return container;
   }
@@ -300,110 +313,90 @@ export class EquipmentScene extends Phaser.Scene {
     subtitle: string;
   }): Phaser.GameObjects.Container {
     const { panelHeight } = this.getLayoutMetrics();
-    const container = this.add.container(0, 0);
-    container.setSize(PANEL_WIDTH, panelHeight);
-    const panel = this.add.rectangle(0, 0, PANEL_WIDTH, panelHeight, 0x10261f, 0.94);
-    panel.setOrigin(0, 0);
-    panel.setStrokeStyle(2, 0xbfeec5, 0.64);
+    const container = this.ui.container({ width: PANEL_WIDTH, height: panelHeight });
+    const panel = this.ui.panel({
+      x: 0,
+      y: 0,
+      width: PANEL_WIDTH,
+      height: panelHeight,
+      variant: 'panel',
+      origin: 0,
+    });
     container.add(panel);
 
     container.add(
-      this.add
-        .text(28, 38, config.title, {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '30px',
-          fontStyle: '700',
-          color: '#f5fff0',
-          align: 'left',
-        })
-        .setOrigin(0, 0.5),
+      this.ui.text({
+        x: 28,
+        y: 38,
+        text: config.title,
+        variant: 'panelTitle',
+        align: 'left',
+        origin: { x: 0, y: 0.5 },
+      }),
     );
     container.add(
-      this.add
-        .text(PANEL_WIDTH - 28, 38, config.subtitle, {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '18px',
-          color: '#a8d2af',
-          align: 'right',
-        })
-        .setOrigin(1, 0.5),
+      this.ui.text({
+        x: PANEL_WIDTH - 28,
+        y: 38,
+        text: config.subtitle,
+        variant: 'panelSubtitle',
+        align: 'right',
+        origin: { x: 1, y: 0.5 },
+      }),
     );
     return container;
   }
 
   private createEmptyPanelMessage(message: string): Phaser.GameObjects.GameObject {
     const viewportHeight = this.getPanelViewportHeight(this.getLayoutMetrics().panelHeight);
-    const layout = this.rexUI.add.overlapSizer(
-      28,
-      PANEL_HEADER_HEIGHT,
-      PANEL_INNER_WIDTH,
-      viewportHeight,
-      {
-        origin: 0,
-      },
-    );
-
-    const messageContainer = this.add.container(0, 0);
-    messageContainer.setSize(PANEL_INNER_WIDTH, viewportHeight);
-    messageContainer.add(
-      this.add
-        .text(PANEL_INNER_WIDTH / 2, viewportHeight / 2, message, {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '24px',
-          color: '#b8c9c0',
-          align: 'center',
-          wordWrap: { width: PANEL_WIDTH - 72 },
-        })
-        .setOrigin(0.5),
-    );
-    layout.add(messageContainer, {
-      align: 'left-top',
-      minWidth: PANEL_INNER_WIDTH,
-      minHeight: viewportHeight,
-      offsetOriginX: -0.5,
-      offsetOriginY: -0.5,
+    const messageContainer = this.ui.container({
+      width: PANEL_INNER_WIDTH,
+      height: viewportHeight,
     });
-    layout.layout();
-    return layout;
+    messageContainer.add(
+      this.ui.text({
+        x: PANEL_INNER_WIDTH / 2,
+        y: viewportHeight / 2,
+        text: message,
+        variant: 'empty',
+        align: 'center',
+        origin: 0.5,
+        wordWrapWidth: PANEL_WIDTH - 72,
+      }),
+    );
+    return this.ui.overlay({
+      x: 28,
+      y: PANEL_HEADER_HEIGHT,
+      width: PANEL_INNER_WIDTH,
+      height: viewportHeight,
+      origin: 0,
+      children: [
+        {
+          gameObject: messageContainer,
+          align: 'left-top',
+          minWidth: PANEL_INNER_WIDTH,
+          minHeight: viewportHeight,
+          offsetOriginX: -0.5,
+          offsetOriginY: -0.5,
+        },
+      ],
+    });
   }
 
-  private createCardScrollPanel(child: Phaser.GameObjects.GameObject, viewportHeight: number) {
-    return this.rexUI.add.scrollablePanel({
+  private createCardScrollPanel(
+    child: Phaser.GameObjects.GameObject,
+    viewportHeight: number,
+    focusChild: Phaser.GameObjects.GameObject | null,
+  ) {
+    return this.ui.scrollPanel({
       x: 28,
       y: PANEL_HEADER_HEIGHT,
       width: PANEL_SCROLL_PANEL_WIDTH,
       height: viewportHeight,
-      origin: 0,
-      scrollMode: 'y',
-      clampChildOY: true,
-      panel: {
-        child,
-        mask: { padding: 2 },
-      },
-      space: {
-        sliderY: PANEL_SCROLLBAR_GAP,
-      },
-      slider: {
-        track: this.add.rectangle(0, 0, PANEL_SCROLLBAR_WIDTH, viewportHeight, 0x07130f, 0.72),
-        thumb: this.add.rectangle(0, 0, PANEL_SCROLLBAR_WIDTH, 48, 0xbfeec5, 0.78),
-        position: 'right',
-        input: 'drag',
-        hideUnscrollableSlider: true,
-        disableUnscrollableDrag: true,
-        adaptThumbSize: true,
-        minThumbSize: 42,
-      },
-      scroller: {
-        threshold: 8,
-        slidingDeceleration: 4200,
-        backDeceleration: 2200,
-        pointerOutRelease: true,
-      },
-      mouseWheelScroller: {
-        focus: false,
-        speed: 0.22,
-      },
-      scrollDetectionMode: 'rectBounds',
+      child,
+      ...(focusChild ? { focusChild } : {}),
+      scrollbarWidth: PANEL_SCROLLBAR_WIDTH,
+      scrollbarGap: PANEL_SCROLLBAR_GAP,
     });
   }
 
@@ -411,239 +404,189 @@ export class EquipmentScene extends Phaser.Scene {
     entry: EquipmentUnitEntry;
     selected: boolean;
   }): Phaser.GameObjects.GameObject {
-    const row = this.rexUI.add.overlapSizer(0, 0, PANEL_INNER_WIDTH, CARD_ROW_HEIGHT, {
-      origin: 0,
-    });
     const card = config.entry.card;
-    const fillColor = config.selected ? 0x31543d : 0x17352d;
-    const strokeColor = config.selected ? 0xffe4a8 : 0x78a98d;
-    const background = this.add
-      .rectangle(0, 0, PANEL_INNER_WIDTH, CARD_ROW_HEIGHT, fillColor, 0.92)
-      .setOrigin(0, 0);
-    background.setStrokeStyle(config.selected ? 3 : 1, strokeColor, config.selected ? 0.95 : 0.5);
-    background.setInteractive({ useHandCursor: true });
-    row.addBackground(background);
-
-    const textLayout = this.rexUI.add.sizer(0, 0, CARD_ROW_TEXT_WIDTH, CARD_ROW_HEIGHT - 24, 'y', {
+    const background = this.ui.pressableSurface({
+      x: 0,
+      y: 0,
+      width: PANEL_INNER_WIDTH,
+      height: CARD_ROW_HEIGHT,
+      variant: config.selected ? 'rowSelected' : 'row',
+      hoverVariant: config.selected ? 'rowSelectedHover' : 'rowHover',
       origin: 0,
+      onClick: () => {
+        this.selectedTargetCardInstanceId = card.instance.instanceId;
+        this.focusedEquipmentCardInstanceId = null;
+        this.setStatus(`${card.instance.name} selected.`);
+        this.renderLists();
+        this.renderHud();
+      },
     });
-    const titleText = this.add
-      .text(0, 0, `${config.entry.index + 1}. ${card.instance.name}`, {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '22px',
-        color: '#f5fff0',
-        align: 'left',
-        fixedWidth: CARD_ROW_TEXT_WIDTH,
-        fixedHeight: 24,
-        wordWrap: { width: CARD_ROW_TEXT_WIDTH },
-      })
-      .setOrigin(0, 0.5);
-    const statsText = this.add
-      .text(0, 0, formatUnitStats(config.entry), {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '17px',
-        color: '#d7ead4',
-        align: 'left',
-        fixedWidth: CARD_ROW_TEXT_WIDTH,
-        fixedHeight: 24,
-        wordWrap: { width: CARD_ROW_TEXT_WIDTH },
-      })
-      .setOrigin(0, 0.5);
-    const equippedText = this.add
-      .text(0, 0, formatEquippedNames(config.entry), {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '14px',
-        color: '#92aa9e',
-        align: 'left',
-        fixedWidth: CARD_ROW_TEXT_WIDTH,
-        fixedHeight: 18,
-        wordWrap: { width: CARD_ROW_TEXT_WIDTH },
-      })
-      .setOrigin(0, 0.5);
-    textLayout.add(titleText, {
-      align: 'left-center',
-      minWidth: CARD_ROW_TEXT_WIDTH,
-      minHeight: 24,
-      expand: true,
-    });
-    textLayout.add(statsText, {
-      align: 'left-center',
-      minWidth: CARD_ROW_TEXT_WIDTH,
-      minHeight: 24,
-      padding: { top: 16, bottom: 4 },
-      expand: true,
-    });
-    textLayout.add(equippedText, {
-      align: 'left-center',
-      minWidth: CARD_ROW_TEXT_WIDTH,
-      minHeight: 18,
-      padding: { top: 5 },
-      expand: true,
-    });
-    row.add(textLayout, {
-      align: 'left-top',
-      padding: { left: 18, top: 12, right: 30, bottom: 12 },
-      expand: true,
-    });
-
-    background.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OVER, () => {
-      background.setFillStyle(config.selected ? 0x3c684a : 0x24513d, 0.98);
-    });
-    background.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OUT, () => {
-      background.setFillStyle(fillColor, 0.92);
-    });
-    background.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
-      this.selectedTargetCardInstanceId = card.instance.instanceId;
-      this.focusedEquipmentCardInstanceId = null;
-      this.setStatus(`${card.instance.name} selected.`);
-      this.renderLists();
-      this.renderHud();
-    });
-    row.layout();
-    return row;
+    return this.createInteractiveRow(
+      background,
+      `${config.entry.index + 1}. ${card.instance.name}`,
+      formatUnitStats(config.entry),
+      formatEquippedNames(config.entry),
+      false,
+    );
   }
 
   private createEquipmentRow(config: { entry: EquipmentListEntry }): Phaser.GameObjects.GameObject {
-    const row = this.rexUI.add.overlapSizer(0, 0, PANEL_INNER_WIDTH, CARD_ROW_HEIGHT, {
-      origin: 0,
-    });
     const card = config.entry.card;
-    const fillColor = config.entry.equippedToSelected ? 0x31543d : 0x17352d;
-    const strokeColor = config.entry.equippedToSelected
-      ? 0xffe4a8
+    const normalVariant = config.entry.equippedToSelected
+      ? 'rowSelected'
       : config.entry.equippedTargetName
-        ? 0xa8a05f
-        : 0x78a98d;
-    const background = this.add
-      .rectangle(0, 0, PANEL_INNER_WIDTH, CARD_ROW_HEIGHT, fillColor, 0.92)
-      .setOrigin(0, 0);
-    background.setStrokeStyle(config.entry.equippedToSelected ? 3 : 1, strokeColor, 0.75);
-    background.setInteractive({ useHandCursor: true });
-    row.addBackground(background);
-
-    const textLayout = this.rexUI.add.sizer(0, 0, CARD_ROW_TEXT_WIDTH, CARD_ROW_HEIGHT - 24, 'y', {
+        ? 'rowAssigned'
+        : 'row';
+    const background = this.ui.pressableSurface({
+      x: 0,
+      y: 0,
+      width: PANEL_INNER_WIDTH,
+      height: CARD_ROW_HEIGHT,
+      variant: normalVariant,
+      hoverVariant: config.entry.equippedToSelected ? 'rowSelectedHover' : 'rowHover',
       origin: 0,
+      onClick: () => this.handleToggleEquipment(card.instance.instanceId),
     });
-    const titleText = this.add
-      .text(0, 0, `${config.entry.index + 1}. ${card.instance.name}`, {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '22px',
-        color: '#f5fff0',
-        align: 'left',
-        fixedWidth: CARD_ROW_TEXT_WIDTH,
-        fixedHeight: 24,
-        wordWrap: { width: CARD_ROW_TEXT_WIDTH },
-      })
-      .setOrigin(0, 0.5);
-    const statsText = this.add
-      .text(0, 0, formatEquipmentStats(card), {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '17px',
-        color: '#d7ead4',
-        align: 'left',
-        fixedWidth: CARD_ROW_TEXT_WIDTH,
-        fixedHeight: 24,
-        wordWrap: { width: CARD_ROW_TEXT_WIDTH },
-      })
-      .setOrigin(0, 0.5);
-    const assignmentText = this.add
-      .text(0, 0, formatEquipmentAssignment(config.entry), {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '14px',
-        color: config.entry.equippedToSelected ? '#fff3c2' : '#92aa9e',
-        align: 'left',
-        fixedWidth: CARD_ROW_TEXT_WIDTH,
-        fixedHeight: 18,
-        wordWrap: { width: CARD_ROW_TEXT_WIDTH },
-      })
-      .setOrigin(0, 0.5);
-    textLayout.add(titleText, {
-      align: 'left-center',
-      minWidth: CARD_ROW_TEXT_WIDTH,
-      minHeight: 24,
-      expand: true,
-    });
-    textLayout.add(statsText, {
-      align: 'left-center',
-      minWidth: CARD_ROW_TEXT_WIDTH,
-      minHeight: 24,
-      padding: { top: 16, bottom: 4 },
-      expand: true,
-    });
-    textLayout.add(assignmentText, {
-      align: 'left-center',
-      minWidth: CARD_ROW_TEXT_WIDTH,
-      minHeight: 18,
-      padding: { top: 5 },
-      expand: true,
-    });
-    row.add(textLayout, {
-      align: 'left-top',
-      padding: { left: 18, top: 12, right: 30, bottom: 12 },
-      expand: true,
-    });
+    return this.createInteractiveRow(
+      background,
+      `${config.entry.index + 1}. ${card.instance.name}`,
+      formatEquipmentStats(card),
+      formatEquipmentAssignment(config.entry),
+      config.entry.equippedToSelected,
+    );
+  }
 
-    background.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OVER, () => {
-      background.setFillStyle(config.entry.equippedToSelected ? 0x3c684a : 0x24513d, 0.98);
+  private createInteractiveRow(
+    background: Phaser.GameObjects.Rectangle,
+    title: string,
+    stats: string,
+    detail: string,
+    emphasizedDetail: boolean,
+  ): Phaser.GameObjects.GameObject {
+    const titleText = this.ui.text({
+      x: 0,
+      y: 0,
+      text: title,
+      variant: 'rowTitle',
+      align: 'left',
+      origin: { x: 0, y: 0.5 },
+      fixedWidth: CARD_ROW_TEXT_WIDTH,
+      fixedHeight: 24,
+      wordWrapWidth: CARD_ROW_TEXT_WIDTH,
     });
-    background.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OUT, () => {
-      background.setFillStyle(fillColor, 0.92);
+    const statsText = this.ui.text({
+      x: 0,
+      y: 0,
+      text: stats,
+      variant: 'rowMeta',
+      align: 'left',
+      origin: { x: 0, y: 0.5 },
+      fixedWidth: CARD_ROW_TEXT_WIDTH,
+      fixedHeight: 24,
+      wordWrapWidth: CARD_ROW_TEXT_WIDTH,
     });
-    background.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
-      this.handleToggleEquipment(card.instance.instanceId);
+    const detailText = this.ui.text({
+      x: 0,
+      y: 0,
+      text: detail,
+      variant: emphasizedDetail ? 'rowIdSelected' : 'rowId',
+      align: 'left',
+      origin: { x: 0, y: 0.5 },
+      fixedWidth: CARD_ROW_TEXT_WIDTH,
+      fixedHeight: 18,
+      wordWrapWidth: CARD_ROW_TEXT_WIDTH,
     });
-    row.layout();
-    return row;
+    const textLayout = this.ui.stack({
+      x: 0,
+      y: 0,
+      width: CARD_ROW_TEXT_WIDTH,
+      height: CARD_ROW_HEIGHT - 24,
+      orientation: 'y',
+      origin: 0,
+      children: [
+        {
+          gameObject: titleText,
+          align: 'left-center',
+          minWidth: CARD_ROW_TEXT_WIDTH,
+          minHeight: 24,
+          expand: true,
+        },
+        {
+          gameObject: statsText,
+          align: 'left-center',
+          minWidth: CARD_ROW_TEXT_WIDTH,
+          minHeight: 24,
+          padding: { top: 16, bottom: 4 },
+          expand: true,
+        },
+        {
+          gameObject: detailText,
+          align: 'left-center',
+          minWidth: CARD_ROW_TEXT_WIDTH,
+          minHeight: 18,
+          padding: { top: 5 },
+          expand: true,
+        },
+      ],
+    });
+    return this.ui.overlay({
+      x: 0,
+      y: 0,
+      width: PANEL_INNER_WIDTH,
+      height: CARD_ROW_HEIGHT,
+      origin: 0,
+      background,
+      children: [
+        {
+          gameObject: textLayout,
+          align: 'left-top',
+          padding: { left: 18, top: 12, right: 30, bottom: 12 },
+          expand: true,
+        },
+      ],
+    });
   }
 
   private renderHud(): void {
     this.hudContainer?.destroy();
-    const layout = this.rexUI.add.sizer(
-      (GAME_WIDTH - HUD_WIDTH) / 2,
-      this.getLayoutMetrics().hudY,
-      HUD_WIDTH,
-      HUD_BUTTON_HEIGHT,
-      'x',
-      {
-        origin: 0,
-        space: { item: HUD_BUTTON_GAP },
-      },
-    );
-
-    layout.add(
-      this.createHudButton('Back', HUD_BACK_BUTTON_WIDTH, !this.isSaving, () => {
-        this.scene.start('StageScene', { session: this.savedSession } satisfies StageSceneData);
-      }),
-      {
-        align: 'left-top',
-        minWidth: HUD_BACK_BUTTON_WIDTH,
-        minHeight: HUD_BUTTON_HEIGHT,
-        offsetOriginX: -0.5,
-        offsetOriginY: -0.5,
-      },
-    );
-    layout.add(
-      this.createHudButton('Save', HUD_SAVE_BUTTON_WIDTH, this.isDirty && !this.isSaving, () => {
-        void this.handleSave();
-      }),
-      {
-        align: 'left-top',
-        minWidth: HUD_SAVE_BUTTON_WIDTH,
-        minHeight: HUD_BUTTON_HEIGHT,
-        offsetOriginX: -0.5,
-        offsetOriginY: -0.5,
-      },
-    );
-
     const summaryText = this.isDirty ? 'Unsaved equipment' : 'Saved equipment';
-    layout.add(this.createHudSummary(summaryText, this.isDirty), {
-      align: 'left-top',
-      minWidth: HUD_SUMMARY_WIDTH,
+    const child = (gameObject: Phaser.GameObjects.GameObject, width: number) => ({
+      gameObject,
+      align: 'left-top' as const,
+      minWidth: width,
       minHeight: HUD_BUTTON_HEIGHT,
       offsetOriginX: -0.5,
       offsetOriginY: -0.5,
     });
-    layout.layout();
+    const layout = this.ui.stack({
+      x: (GAME_WIDTH - HUD_WIDTH) / 2,
+      y: this.getLayoutMetrics().hudY,
+      width: HUD_WIDTH,
+      height: HUD_BUTTON_HEIGHT,
+      orientation: 'x',
+      origin: 0,
+      gap: HUD_BUTTON_GAP,
+      children: [
+        child(
+          this.createHudButton('Back', HUD_BACK_BUTTON_WIDTH, !this.isSaving, () =>
+            this.scene.start('StageScene', { session: this.savedSession } satisfies StageSceneData),
+          ),
+          HUD_BACK_BUTTON_WIDTH,
+        ),
+        child(
+          this.createHudButton(
+            'Save',
+            HUD_SAVE_BUTTON_WIDTH,
+            this.isDirty && !this.isSaving,
+            () => {
+              void this.handleSave();
+            },
+          ),
+          HUD_SAVE_BUTTON_WIDTH,
+        ),
+        child(this.createHudSummary(summaryText, this.isDirty), HUD_SUMMARY_WIDTH),
+      ],
+    });
     this.hudContainer = layout;
   }
 
@@ -653,10 +596,9 @@ export class EquipmentScene extends Phaser.Scene {
     enabled: boolean,
     onClick: () => void,
   ): Phaser.GameObjects.Container {
-    const slot = this.add.container(0, 0);
-    slot.setSize(width, HUD_BUTTON_HEIGHT);
+    const slot = this.ui.container({ width, height: HUD_BUTTON_HEIGHT });
     const button = enabled
-      ? createMenuButton(this, {
+      ? this.ui.button({
           x: width / 2,
           y: HUD_BUTTON_HEIGHT / 2,
           width,
@@ -665,7 +607,7 @@ export class EquipmentScene extends Phaser.Scene {
           enabled,
           onClick,
         })
-      : createMenuButton(this, {
+      : this.ui.button({
           x: width / 2,
           y: HUD_BUTTON_HEIGHT / 2,
           width,
@@ -679,17 +621,16 @@ export class EquipmentScene extends Phaser.Scene {
   }
 
   private createHudSummary(text: string, isDirty: boolean): Phaser.GameObjects.Container {
-    const slot = this.add.container(0, 0);
-    slot.setSize(HUD_SUMMARY_WIDTH, HUD_BUTTON_HEIGHT);
+    const slot = this.ui.container({ width: HUD_SUMMARY_WIDTH, height: HUD_BUTTON_HEIGHT });
     slot.add(
-      this.add
-        .text(HUD_SUMMARY_WIDTH / 2, HUD_BUTTON_HEIGHT / 2, text, {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '22px',
-          color: isDirty ? '#fff3c2' : '#bfeec5',
-          align: 'center',
-        })
-        .setOrigin(0.5),
+      this.ui.text({
+        x: HUD_SUMMARY_WIDTH / 2,
+        y: HUD_BUTTON_HEIGHT / 2,
+        text,
+        variant: isDirty ? 'hudSummaryDirty' : 'hudSummary',
+        align: 'center',
+        origin: 0.5,
+      }),
     );
     return slot;
   }

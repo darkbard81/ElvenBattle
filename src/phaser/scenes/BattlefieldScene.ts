@@ -41,11 +41,11 @@ import {
 import { applyStageBattleResultToSession, createStageBattleResult } from '../../game/stage/result';
 import { requireStageDefinition } from '../../game/stage/stage-definitions';
 import type { StageBattleResult, StageDefinition } from '../../game/stage/types';
-import { DEFAULT_FONT_FAMILY } from '../../theme';
+import { UI_THEME } from '../../theme';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
 import { SequencePlugin } from '../plugins/sequence/SequencePlugin';
 import type { SequenceStep } from '../plugins/sequence/sequence-types';
-import { createMenuButton } from '../ui/menu-button';
+import { CanvasUiFactory, type UiLayoutChild } from '../ui/CanvasUiFactory';
 import type { BattlefieldSceneData, StageSceneData } from './scene-data';
 
 type Rect = {
@@ -192,27 +192,27 @@ const POPUP_STYLE = {
   PLACE: {
     fill: 0x173a24,
     stroke: PLACE_HIGHLIGHT_COLOR,
-    color: '#d9ffd6',
+    color: UI_THEME.colors.popupPlace,
   },
   MOVE: {
     fill: 0x18314c,
     stroke: MOVE_HIGHLIGHT_COLOR,
-    color: '#e2f1ff',
+    color: UI_THEME.colors.popupMove,
   },
   ATTACK: {
     fill: 0x4b1717,
     stroke: ATTACK_HIGHLIGHT_COLOR,
-    color: '#ffe1dc',
+    color: UI_THEME.colors.popupAttack,
   },
   SKILL: {
     fill: 0x463416,
     stroke: SKILL_HIGHLIGHT_COLOR,
-    color: '#fff3c2',
+    color: UI_THEME.colors.popupSkill,
   },
   BLOCK: {
     fill: 0x273313,
     stroke: BLOCK_HIGHLIGHT_COLOR,
-    color: '#f4ffd2',
+    color: UI_THEME.colors.popupBlock,
   },
 } as const;
 const BATTLE_GRID_COLUMNS = ['leftPile', 'FR', 'FC', 'FL', 'rightPile'] as const;
@@ -349,6 +349,7 @@ const PILE_RECTS: Record<BattlePileKey, Rect> = {
  * 전투 규칙은 도메인 런타임에 두고, 이 씬은 카드 슬롯, 손패, HUD와 저장 입력만 담당한다.
  */
 export class BattlefieldScene extends Phaser.Scene {
+  private readonly ui = new CanvasUiFactory(this);
   private handDeckContainer: Phaser.GameObjects.Container | null = null;
   private handDeckTargetY: number | null = null;
   private highlightGraphics!: Phaser.GameObjects.Graphics;
@@ -512,30 +513,28 @@ export class BattlefieldScene extends Phaser.Scene {
   }
 
   private addInfoPanel(rect: Rect, lines: [string, string, string]): void {
-    const panel = this.add.rectangle(
-      rect.x + rect.width / 2,
-      rect.y + rect.height / 2,
-      rect.width,
-      rect.height,
-      0x12251f,
-      0.94,
-    );
-    panel.setStrokeStyle(2, 0xbfeec5, 0.72);
+    const panel = this.ui.panel({
+      x: rect.x + rect.width / 2,
+      y: rect.y + rect.height / 2,
+      width: rect.width,
+      height: rect.height,
+      variant: 'battleHud',
+    });
     this.layers.hudLayer.add(panel);
 
     const ys = [rect.y + 24, rect.y + 52, rect.y + 78] as const;
     const sizes = [16, 20, 15] as const;
     const minimumSizes = [12, 15, 12] as const;
-    const colors = ['#a8c7af', '#fff7d2', '#d5e7d1'] as const;
+    const variants = ['battleHudHeading', 'battleHudValue', 'battleHudMeta'] as const;
     for (let index = 0; index < lines.length; index += 1) {
-      const text = this.add
-        .text(rect.x + 18, ys[index]!, lines[index]!, {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: `${sizes[index]!}px`,
-          color: colors[index]!,
-          align: 'left',
-        })
-        .setOrigin(0, 0.5);
+      const text = this.ui.text({
+        x: rect.x + 18,
+        y: ys[index]!,
+        text: lines[index]!,
+        variant: variants[index]!,
+        align: 'left',
+        origin: { x: 0, y: 0.5 },
+      });
       this.fitTextToWidth(text, rect.width - 36, sizes[index]!, minimumSizes[index]!);
       this.layers.hudLayer.add(text);
     }
@@ -578,26 +577,11 @@ export class BattlefieldScene extends Phaser.Scene {
   }
 
   private addBattleGridSlots(): void {
-    const grid = this.rexUI.add.gridSizer(
-      BATTLE_GRID_X,
-      BATTLE_GRID_Y,
-      BATTLE_GRID_WIDTH,
-      BATTLE_GRID_HEIGHT,
-      BATTLE_GRID_COLUMNS.length,
-      BATTLE_GRID_ROWS.length,
-      {
-        origin: 0,
-        space: {
-          column: BATTLE_GRID_COLUMN_GAP,
-          row: BATTLE_GRID_ROW_GAPS,
-        },
-      },
-    );
-    this.layers.boardLayer.add(grid);
-
+    const children: UiLayoutChild[] = [];
     for (const pileKey of PILE_ORDER) {
       const cell = PILE_GRID_CELLS[pileKey];
-      grid.add(this.createPilePanelForKey(pileKey, PILE_RECTS[pileKey]), {
+      children.push({
+        gameObject: this.createPilePanelForKey(pileKey, PILE_RECTS[pileKey]),
         column: BATTLE_GRID_COLUMNS.indexOf(cell.column),
         row: BATTLE_GRID_ROWS.indexOf(cell.row),
         align: 'center',
@@ -607,7 +591,8 @@ export class BattlefieldScene extends Phaser.Scene {
 
     for (const slotId of SLOT_ORDER) {
       const cell = FIELD_SLOT_GRID_CELLS[slotId];
-      grid.add(this.createSlotPanel(slotId, formatSlotLabel(slotId)), {
+      children.push({
+        gameObject: this.createSlotPanel(slotId, formatSlotLabel(slotId)),
         column: BATTLE_GRID_COLUMNS.indexOf(cell.column),
         row: BATTLE_GRID_ROWS.indexOf(cell.row),
         align: 'center',
@@ -615,7 +600,19 @@ export class BattlefieldScene extends Phaser.Scene {
       });
     }
 
-    grid.layout();
+    const grid = this.ui.grid({
+      x: BATTLE_GRID_X,
+      y: BATTLE_GRID_Y,
+      width: BATTLE_GRID_WIDTH,
+      height: BATTLE_GRID_HEIGHT,
+      columns: BATTLE_GRID_COLUMNS.length,
+      rows: BATTLE_GRID_ROWS.length,
+      origin: 0,
+      columnGap: BATTLE_GRID_COLUMN_GAP,
+      rowGap: BATTLE_GRID_ROW_GAPS,
+      children,
+    });
+    this.layers.boardLayer.add(grid);
   }
 
   private createSlotPanel(slotId: BattleSlotId, label: string): Phaser.GameObjects.Container {
@@ -634,15 +631,15 @@ export class BattlefieldScene extends Phaser.Scene {
     container.add(slot);
 
     container.add(
-      this.add
-        .text(-FIELD_SLOT_WIDTH / 2 + 10, -FIELD_SLOT_HEIGHT / 2 + 14, label, {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '17px',
-          color: '#a9c9b6',
-          align: 'left',
-        })
-        .setOrigin(0, 0.5)
-        .setAlpha(0.84),
+      this.ui.text({
+        x: -FIELD_SLOT_WIDTH / 2 + 10,
+        y: -FIELD_SLOT_HEIGHT / 2 + 14,
+        text: label,
+        variant: 'battleLabel',
+        align: 'left',
+        origin: { x: 0, y: 0.5 },
+        alpha: 0.84,
+      }),
     );
 
     return container;
@@ -679,14 +676,14 @@ export class BattlefieldScene extends Phaser.Scene {
     panel.setStrokeStyle(2, 0x91ab9f, 0.58);
     container.add(panel);
     container.add(
-      this.add
-        .text(0, 0, label, {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '17px',
-          color: '#d9ead9',
-          align: 'center',
-        })
-        .setOrigin(0.5),
+      this.ui.text({
+        x: 0,
+        y: 0,
+        text: label,
+        variant: 'battleCenteredLabel',
+        align: 'center',
+        origin: 0.5,
+      }),
     );
     return container;
   }
@@ -724,32 +721,28 @@ export class BattlefieldScene extends Phaser.Scene {
       fallback.setStrokeStyle(2, 0x5f6f67, 0.76);
       container.add(fallback);
       container.add(
-        this.add
-          .text(0, -4, latestCard.card.instance.name, {
-            fontFamily: DEFAULT_FONT_FAMILY,
-            fontSize: '15px',
-            color: '#aeb8b1',
-            stroke: '#07100d',
-            strokeThickness: 4,
-            align: 'center',
-            wordWrap: { width: cardWidth - 18 },
-          })
-          .setOrigin(0.5)
-          .setAlpha(0.8),
+        this.ui.text({
+          x: 0,
+          y: -4,
+          text: latestCard.card.instance.name,
+          variant: 'battleCardName',
+          align: 'center',
+          origin: 0.5,
+          alpha: 0.8,
+          wordWrapWidth: cardWidth - 18,
+        }),
       );
     }
 
     container.add(
-      this.add
-        .text(0, rect.height / 2 - 28, `${label} ${droppedCards.length}`, {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '17px',
-          color: '#eef7ed',
-          stroke: '#07100d',
-          strokeThickness: 5,
-          align: 'center',
-        })
-        .setOrigin(0.5),
+      this.ui.text({
+        x: 0,
+        y: rect.height / 2 - 28,
+        text: `${label} ${droppedCards.length}`,
+        variant: 'battlePileCount',
+        align: 'center',
+        origin: 0.5,
+      }),
     );
     return container;
   }
@@ -775,16 +768,15 @@ export class BattlefieldScene extends Phaser.Scene {
         .setAlpha(0.96),
     );
     container.add(
-      this.add
-        .text(0, rect.height / 2 - 28, `${label} ${cardCount}`, {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '17px',
-          color: '#f8ffe9',
-          stroke: '#111b18',
-          strokeThickness: 4,
-          align: 'center',
-        })
-        .setOrigin(0.5),
+      this.ui.text({
+        x: 0,
+        y: rect.height / 2 - 28,
+        text: `${label} ${cardCount}`,
+        variant: 'battlePileCount',
+        color: UI_THEME.colors.primary,
+        align: 'center',
+        origin: 0.5,
+      }),
     );
     return container;
   }
@@ -949,16 +941,13 @@ export class BattlefieldScene extends Phaser.Scene {
     fontSize: string,
   ): void {
     parent.add(
-      this.add
-        .text(x, y, value, {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize,
-          color: '#ffffff',
-          stroke: '#000000',
-          strokeThickness: Math.max(3, Math.round(size / 10)),
-          align: 'center',
-        })
-        .setOrigin(0.5),
+      this.ui.cardStat({
+        x,
+        y,
+        text: value,
+        fontSize,
+        strokeThickness: Math.max(3, Math.round(size / 10)),
+      }),
     );
   }
 
@@ -993,152 +982,114 @@ export class BattlefieldScene extends Phaser.Scene {
       side === 'left'
         ? CARD_INFO_PANEL_MARGIN_X
         : GAME_WIDTH - CARD_INFO_PANEL_MARGIN_X - CARD_INFO_PANEL_WIDTH;
-    const panel = this.rexUI.add.gridSizer(
+    const background = this.ui.panel({
+      x: 0,
+      y: 0,
+      width: CARD_INFO_PANEL_WIDTH,
+      height: CARD_INFO_PANEL_HEIGHT,
+      variant: 'cardInfo',
+      origin: 0,
+    });
+    return this.ui.grid({
       x,
-      CARD_INFO_PANEL_Y,
-      CARD_INFO_PANEL_WIDTH,
-      CARD_INFO_PANEL_HEIGHT,
-      2,
-      1,
-      {
-        origin: 0,
-        columnProportions: [0, 0],
-        space: {
-          left: CARD_INFO_PANEL_PADDING,
-          right: CARD_INFO_PANEL_PADDING,
-          top: CARD_INFO_PANEL_PADDING,
-          bottom: CARD_INFO_PANEL_PADDING,
-          column: CARD_INFO_CONTENT_GAP,
-        },
+      y: CARD_INFO_PANEL_Y,
+      width: CARD_INFO_PANEL_WIDTH,
+      height: CARD_INFO_PANEL_HEIGHT,
+      columns: 2,
+      rows: 1,
+      origin: 0,
+      columnProportions: [0, 0],
+      columnGap: CARD_INFO_CONTENT_GAP,
+      padding: {
+        left: CARD_INFO_PANEL_PADDING,
+        right: CARD_INFO_PANEL_PADDING,
+        top: CARD_INFO_PANEL_PADDING,
+        bottom: CARD_INFO_PANEL_PADDING,
       },
-    );
-    const background = this.add
-      .rectangle(0, 0, CARD_INFO_PANEL_WIDTH, CARD_INFO_PANEL_HEIGHT, 0x10211b, 0.96)
-      .setOrigin(0, 0);
-    background.setStrokeStyle(3, 0xd8efcd, 0.86);
-    panel.addBackground(background);
-
-    panel.add(this.createCardInfoPreviewPanel(card), {
-      column: 0,
-      row: 0,
-      align: 'left-top',
+      background,
+      children: [
+        { gameObject: this.createCardInfoPreviewPanel(card), column: 0, row: 0, align: 'left-top' },
+        { gameObject: this.createCardInfoDetailsPanel(card), column: 1, row: 0, align: 'center' },
+      ],
     });
-    panel.add(this.createCardInfoDetailsPanel(card), {
-      column: 1,
-      row: 0,
-      align: 'center',
-    });
-    panel.layout();
-
-    return panel;
   }
 
   private createCardInfoPreviewPanel(card: BattleCardRuntimeState): Phaser.GameObjects.GameObject {
-    const panel = this.rexUI.add.overlapSizer(
-      0,
-      0,
-      CARD_INFO_PREVIEW_WIDTH,
-      CARD_INFO_PREVIEW_HEIGHT,
-      {
-        origin: 0,
-      },
-    );
-    panel.addBackground(
-      this.add
-        .rectangle(
-          0,
-          0,
-          CARD_INFO_PREVIEW_WIDTH,
-          CARD_INFO_PREVIEW_HEIGHT,
-          card.side === 'enemy' ? 0x281c2c : 0x132c25,
-          0.94,
-        )
-        .setOrigin(0, 0),
-    );
-
+    const background = this.ui.panel({
+      x: 0,
+      y: 0,
+      width: CARD_INFO_PREVIEW_WIDTH,
+      height: CARD_INFO_PREVIEW_HEIGHT,
+      variant: card.side === 'enemy' ? 'cardPreviewEnemy' : 'cardPreviewPlayer',
+      origin: 0,
+    });
+    const children: UiLayoutChild[] = [];
     const textureKey = `cards.webp.${card.card.instance.id}`;
     if (this.textures.exists(textureKey)) {
-      panel.add(this.add.image(0, 0, textureKey).setOrigin(0, 0), {
+      children.push({
+        gameObject: this.ui.image({ x: 0, y: 0, key: textureKey, origin: 0 }),
         align: 'left-top',
         expand: false,
       });
     } else {
-      const fallback = this.add
-        .rectangle(
-          0,
-          0,
-          CARD_INFO_PREVIEW_WIDTH,
-          CARD_INFO_PREVIEW_HEIGHT,
-          card.side === 'enemy' ? 0x42233c : 0x1c4238,
-          0.98,
-        )
-        .setOrigin(0, 0);
-      panel.add(fallback, {
+      const fallback = this.ui.panel({
+        x: 0,
+        y: 0,
+        width: CARD_INFO_PREVIEW_WIDTH,
+        height: CARD_INFO_PREVIEW_HEIGHT,
+        variant: card.side === 'enemy' ? 'cardFallbackEnemy' : 'cardFallbackPlayer',
+        origin: 0,
+      });
+      children.push({ gameObject: fallback, align: 'left-top', expand: false });
+      children.push({
+        gameObject: this.ui.text({
+          x: 32,
+          y: 344,
+          text: card.card.instance.name,
+          variant: 'battlePreviewName',
+          align: 'center',
+          origin: 0,
+          wordWrapWidth: CARD_INFO_PREVIEW_WIDTH - 40,
+        }),
         align: 'left-top',
         expand: false,
       });
-      panel.add(
-        this.add
-          .text(32, 344, card.card.instance.name, {
-            fontFamily: DEFAULT_FONT_FAMILY,
-            fontSize: '30px',
-            color: '#ffffff',
-            stroke: '#000000',
-            strokeThickness: 5,
-            align: 'center',
-            wordWrap: { width: CARD_INFO_PREVIEW_WIDTH - 40 },
-          })
-          .setOrigin(0, 0),
-        {
-          align: 'left-top',
-          expand: false,
-        },
-      );
     }
 
-    const frame = this.add
-      .rectangle(0, 0, CARD_INFO_PREVIEW_WIDTH, CARD_INFO_PREVIEW_HEIGHT, 0x000000, 0)
-      .setOrigin(0, 0);
-    frame.setStrokeStyle(3, 0xf5ffe9, 0.72);
-    panel.add(frame, {
+    children.push({
+      gameObject: this.ui.panel({
+        x: 0,
+        y: 0,
+        width: CARD_INFO_PREVIEW_WIDTH,
+        height: CARD_INFO_PREVIEW_HEIGHT,
+        variant: 'cardFrame',
+        origin: 0,
+      }),
       align: 'left-top',
       expand: false,
     });
-    panel.layout();
-
-    return panel;
+    return this.ui.overlay({
+      x: 0,
+      y: 0,
+      width: CARD_INFO_PREVIEW_WIDTH,
+      height: CARD_INFO_PREVIEW_HEIGHT,
+      origin: 0,
+      background,
+      children,
+    });
   }
 
   private createCardInfoDetailsPanel(card: BattleCardRuntimeState): Phaser.GameObjects.GameObject {
-    const panel = this.rexUI.add.overlapSizer(
-      0,
-      0,
-      CARD_INFO_DETAILS_WIDTH,
-      CARD_INFO_PREVIEW_HEIGHT,
-      {
-        origin: 0,
-      },
-    );
-    const background = this.add
-      .rectangle(0, 0, CARD_INFO_DETAILS_WIDTH, CARD_INFO_PREVIEW_HEIGHT, 0x132620, 0.94)
-      .setOrigin(0, 0);
-    background.setStrokeStyle(2, card.side === 'enemy' ? 0xcaa6df : 0xbfeec5, 0.62);
-    panel.addBackground(background);
-
-    const content = this.rexUI.add.sizer(
-      0,
-      0,
-      CARD_INFO_DETAILS_INNER_WIDTH,
-      CARD_INFO_PREVIEW_HEIGHT - CARD_INFO_DETAILS_INNER_PADDING * 2,
-      'y',
-      {
-        origin: 0,
-        space: { item: 14 },
-      },
-    );
+    const background = this.ui.panel({
+      x: 0,
+      y: 0,
+      width: CARD_INFO_DETAILS_WIDTH,
+      height: CARD_INFO_PREVIEW_HEIGHT,
+      variant: card.side === 'enemy' ? 'cardDetailsEnemy' : 'cardDetailsPlayer',
+      origin: 0,
+    });
     const instance = card.card.instance;
-    const title = this.createCardInfoText(`[b]${instance.name}[/b]`, 32, {
-      color: '#f8fff1',
+    const title = this.createCardInfoText(`[b]${instance.name}[/b]`, 'cardInfoTitle', {
       fixedWidth: CARD_INFO_DETAILS_INNER_WIDTH,
       fixedHeight: 48,
       lineSpacing: 2,
@@ -1146,9 +1097,8 @@ export class BattlefieldScene extends Phaser.Scene {
     });
     const subtitle = this.createCardInfoText(
       `[color=#bfeec5]${instance.rarity} / ${instance.type}[/color]`,
-      22,
+      'cardInfoSubtitle',
       {
-        color: '#cfe6d0',
         fixedWidth: CARD_INFO_DETAILS_INNER_WIDTH,
         fixedHeight: 30,
         lineSpacing: 0,
@@ -1156,102 +1106,107 @@ export class BattlefieldScene extends Phaser.Scene {
       },
     );
 
-    content.add(title, { align: 'left', expand: false });
-    content.add(subtitle, { align: 'left', expand: false });
-    content.add(this.createCardInfoDetailsGrid(card), { align: 'left', expand: false });
-
-    panel.add(content, {
-      align: 'left-top',
-      padding: CARD_INFO_DETAILS_INNER_PADDING,
-      expand: false,
+    const content = this.ui.stack({
+      x: 0,
+      y: 0,
+      width: CARD_INFO_DETAILS_INNER_WIDTH,
+      height: CARD_INFO_PREVIEW_HEIGHT - CARD_INFO_DETAILS_INNER_PADDING * 2,
+      orientation: 'y',
+      origin: 0,
+      gap: 14,
+      children: [
+        { gameObject: title, align: 'left', expand: false },
+        { gameObject: subtitle, align: 'left', expand: false },
+        { gameObject: this.createCardInfoDetailsGrid(card), align: 'left', expand: false },
+      ],
     });
-    panel.layout();
-
-    return panel;
+    return this.ui.overlay({
+      x: 0,
+      y: 0,
+      width: CARD_INFO_DETAILS_WIDTH,
+      height: CARD_INFO_PREVIEW_HEIGHT,
+      origin: 0,
+      background,
+      children: [
+        {
+          gameObject: content,
+          align: 'left-top',
+          padding: CARD_INFO_DETAILS_INNER_PADDING,
+          expand: false,
+        },
+      ],
+    });
   }
 
   private createCardInfoDetailsGrid(card: BattleCardRuntimeState): Phaser.GameObjects.GameObject {
     const rows = this.createCardInfoDetailRows(card);
     const gridHeight =
       rows.length * CARD_INFO_DETAIL_ROW_HEIGHT + (rows.length - 1) * CARD_INFO_DETAIL_ROW_GAP;
-    const grid = this.rexUI.add.gridSizer(
-      0,
-      0,
-      CARD_INFO_DETAILS_INNER_WIDTH,
-      gridHeight,
-      2,
-      rows.length,
-      {
-        origin: 0,
-        columnProportions: [0, 1],
-        rowProportions: 0,
-        space: {
-          column: CARD_INFO_DETAIL_COLUMN_GAP,
-          row: CARD_INFO_DETAIL_ROW_GAP,
-        },
-      },
-    );
-
+    const children: UiLayoutChild[] = [];
     rows.forEach((row, rowIndex) => {
-      grid.add(
-        this.createCardInfoText(`[color=#95afa3]${row.label}[/color]`, 21, {
-          color: '#95afa3',
-          fixedWidth: CARD_INFO_DETAIL_LABEL_WIDTH,
-          fixedHeight: CARD_INFO_DETAIL_ROW_HEIGHT,
-          lineSpacing: 0,
-          wrapWidth: CARD_INFO_DETAIL_LABEL_WIDTH,
-        }),
-        {
-          column: 0,
-          row: rowIndex,
-          align: 'left',
-        },
-      );
-      grid.add(
-        this.createCardInfoText(row.value, 23, {
-          color: '#edf7e8',
+      children.push({
+        gameObject: this.createCardInfoText(
+          `[color=#95afa3]${row.label}[/color]`,
+          'cardInfoLabel',
+          {
+            fixedWidth: CARD_INFO_DETAIL_LABEL_WIDTH,
+            fixedHeight: CARD_INFO_DETAIL_ROW_HEIGHT,
+            lineSpacing: 0,
+            wrapWidth: CARD_INFO_DETAIL_LABEL_WIDTH,
+          },
+        ),
+        column: 0,
+        row: rowIndex,
+        align: 'left',
+      });
+      children.push({
+        gameObject: this.createCardInfoText(row.value, 'cardInfoValue', {
           fixedWidth: CARD_INFO_DETAIL_VALUE_WIDTH,
           fixedHeight: CARD_INFO_DETAIL_ROW_HEIGHT,
           lineSpacing: 0,
           wrapWidth: CARD_INFO_DETAIL_VALUE_WIDTH,
         }),
-        {
-          column: 1,
-          row: rowIndex,
-          align: 'left',
-        },
-      );
+        column: 1,
+        row: rowIndex,
+        align: 'left',
+      });
     });
-    grid.layout();
-
-    return grid;
+    return this.ui.grid({
+      x: 0,
+      y: 0,
+      width: CARD_INFO_DETAILS_INNER_WIDTH,
+      height: gridHeight,
+      columns: 2,
+      rows: rows.length,
+      origin: 0,
+      columnProportions: [0, 1],
+      rowProportions: 0,
+      columnGap: CARD_INFO_DETAIL_COLUMN_GAP,
+      rowGap: CARD_INFO_DETAIL_ROW_GAP,
+      children,
+    });
   }
 
   private createCardInfoText(
     content: string,
-    fontSize: number,
+    variant: 'cardInfoTitle' | 'cardInfoSubtitle' | 'cardInfoLabel' | 'cardInfoValue',
     options: {
-      color: string;
       fixedWidth: number;
       fixedHeight: number;
       lineSpacing: number;
       wrapWidth: number;
     },
   ): Phaser.GameObjects.GameObject {
-    return this.rexUI.add.BBCodeText(0, 0, content, {
-      fontFamily: DEFAULT_FONT_FAMILY,
-      fontSize: `${fontSize}px`,
-      color: options.color,
-      stroke: '#07100d',
-      strokeThickness: 2,
+    return this.ui.richText({
+      x: 0,
+      y: 0,
+      text: content,
+      variant,
       align: 'left',
       fixedWidth: options.fixedWidth,
       fixedHeight: options.fixedHeight,
       lineSpacing: options.lineSpacing,
-      wrap: {
-        mode: 'word',
-        width: options.wrapWidth,
-      },
+      wordWrapWidth: options.wrapWidth,
     });
   }
 
@@ -1364,14 +1319,15 @@ export class BattlefieldScene extends Phaser.Scene {
       empty.setStrokeStyle(2, 0x4e5d57, 0.7);
       container.add(empty);
       container.add(
-        this.add
-          .text(rect.x + rect.width / 2, rect.y + rect.height / 2, 'EMPTY', {
-            fontFamily: DEFAULT_FONT_FAMILY,
-            fontSize: '20px',
-            color: '#8e9a95',
-            align: 'center',
-          })
-          .setOrigin(0.5),
+        this.ui.text({
+          x: rect.x + rect.width / 2,
+          y: rect.y + rect.height / 2,
+          text: 'EMPTY',
+          variant: 'bodyLarge',
+          color: UI_THEME.colors.disabledText,
+          align: 'center',
+          origin: 0.5,
+        }),
       );
     }
   }
@@ -1507,22 +1463,26 @@ export class BattlefieldScene extends Phaser.Scene {
     const x = side === 'left' ? SIDE_BUTTON_MARGIN_X : GAME_WIDTH - SIDE_BUTTON_MARGIN_X - width;
     const y = GAME_HEIGHT - SIDE_BUTTON_BOTTOM_MARGIN - height;
     const align = side === 'left' ? 'left' : 'right';
-    const layout = this.rexUI.add.sizer(x, y, width, height, 'y', {
-      origin: 0,
-      space: { item: BUTTON_STACK_GAP },
-    });
-    this.layers.buttonLayer.add(layout);
-
-    for (const button of buttons) {
-      layout.add(this.createSideButton(button), {
+    const children = buttons.map(
+      (button): UiLayoutChild => ({
+        gameObject: this.createSideButton(button),
         align,
         minWidth: button.width,
         minHeight: button.height,
         expand: false,
-      });
-    }
-
-    layout.layout();
+      }),
+    );
+    const layout = this.ui.stack({
+      x,
+      y,
+      width,
+      height,
+      orientation: 'y',
+      origin: 0,
+      gap: BUTTON_STACK_GAP,
+      children,
+    });
+    this.layers.buttonLayer.add(layout);
   }
 
   private createSideButton(button: BottomButtonDefinition): Phaser.GameObjects.Container {
@@ -1535,10 +1495,10 @@ export class BattlefieldScene extends Phaser.Scene {
       enabled: button.enabled,
     };
     if (button.onClick) {
-      return createMenuButton(this, { ...baseConfig, onClick: button.onClick });
+      return this.ui.button({ ...baseConfig, onClick: button.onClick });
     }
 
-    return createMenuButton(this, baseConfig);
+    return this.ui.button(baseConfig);
   }
 
   private refreshUtilityButtons(): void {
@@ -1553,28 +1513,27 @@ export class BattlefieldScene extends Phaser.Scene {
       width: HUD_WIDTH,
       height: STATUS_PANEL_HEIGHT,
     } as const satisfies Rect;
-    const panel = this.add.rectangle(
-      rect.x + rect.width / 2,
-      rect.y + rect.height / 2,
-      rect.width,
-      rect.height,
-      0x10211b,
-      0.94,
-    );
-    panel.setStrokeStyle(2, 0xbfeec5, 0.72);
+    const panel = this.ui.panel({
+      x: rect.x + rect.width / 2,
+      y: rect.y + rect.height / 2,
+      width: rect.width,
+      height: rect.height,
+      variant: 'battleStatus',
+    });
     this.layers.hudLayer.add(panel);
 
-    this.statusText = this.add
-      .text(rect.x + 20, rect.y + 20, this.statusMessage, {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '18px',
-        color: '#c7d7ca',
-        align: 'left',
-        lineSpacing: 5,
-        wordWrap: { width: rect.width - 40, useAdvancedWrap: true },
-      })
-      .setOrigin(0, 0)
-      .setAlpha(0.9);
+    this.statusText = this.ui.text({
+      x: rect.x + 20,
+      y: rect.y + 20,
+      text: this.statusMessage,
+      variant: 'battleStatus',
+      align: 'left',
+      origin: 0,
+      alpha: 0.9,
+      lineSpacing: 5,
+      wordWrapWidth: rect.width - 40,
+      useAdvancedWrap: true,
+    });
     this.layers.hudLayer.add(this.statusText);
   }
 
@@ -1594,26 +1553,38 @@ export class BattlefieldScene extends Phaser.Scene {
     const blocker = this.add.zone(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT);
     blocker.setInteractive();
     container.add(blocker);
-    container.add(this.add.rectangle(0, 0, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.52).setOrigin(0));
+    container.add(
+      this.ui.panel({
+        x: 0,
+        y: 0,
+        width: GAME_WIDTH,
+        height: GAME_HEIGHT,
+        variant: 'modalBackdrop',
+        origin: 0,
+      }),
+    );
 
     const panelX = GAME_WIDTH / 2;
     const panelY = GAME_HEIGHT / 2;
-    const panel = this.add.rectangle(panelX, panelY, 720, 560, 0x10241e, 0.98);
-    panel.setStrokeStyle(3, result.outcome === 'WIN' ? 0xffe4a8 : 0xff8e8e, 0.94);
+    const panel = this.ui.panel({
+      x: panelX,
+      y: panelY,
+      width: 720,
+      height: 560,
+      variant: result.outcome === 'WIN' ? 'modalWin' : 'modalLoss',
+    });
     container.add(panel);
 
     container.add(
-      this.add
-        .text(panelX, panelY - 218, result.outcome === 'WIN' ? 'VICTORY' : 'DEFEAT', {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '58px',
-          fontStyle: '700',
-          color: result.outcome === 'WIN' ? '#fff3c2' : '#ffd8d8',
-          stroke: '#07100d',
-          strokeThickness: 7,
-          align: 'center',
-        })
-        .setOrigin(0.5),
+      this.ui.text({
+        x: panelX,
+        y: panelY - 218,
+        text: result.outcome === 'WIN' ? 'VICTORY' : 'DEFEAT',
+        variant: 'battleResultTitle',
+        color: result.outcome === 'WIN' ? UI_THEME.colors.primaryWarm : UI_THEME.colors.danger,
+        align: 'center',
+        origin: 0.5,
+      }),
     );
 
     const resultLines = [
@@ -1628,33 +1599,33 @@ export class BattlefieldScene extends Phaser.Scene {
       formatStageBattleResultGrowth(result),
     ];
     container.add(
-      this.add
-        .text(panelX, panelY - 126, resultLines.join('\n'), {
-          fontFamily: DEFAULT_FONT_FAMILY,
-          fontSize: '24px',
-          color: '#edf8e9',
-          align: 'center',
-          lineSpacing: 8,
-          wordWrap: { width: 620 },
-        })
-        .setOrigin(0.5, 0),
+      this.ui.text({
+        x: panelX,
+        y: panelY - 126,
+        text: resultLines.join('\n'),
+        variant: 'battleResultBody',
+        align: 'center',
+        origin: { x: 0.5, y: 0 },
+        lineSpacing: 8,
+        wordWrapWidth: 620,
+      }),
     );
 
     if (this.resultReturnStatusMessage) {
       container.add(
-        this.add
-          .text(panelX, panelY + 166, this.resultReturnStatusMessage, {
-            fontFamily: DEFAULT_FONT_FAMILY,
-            fontSize: '18px',
-            color: '#d7ead4',
-            align: 'center',
-            wordWrap: { width: 620 },
-          })
-          .setOrigin(0.5),
+        this.ui.text({
+          x: panelX,
+          y: panelY + 166,
+          text: this.resultReturnStatusMessage,
+          variant: 'bodySmall',
+          align: 'center',
+          origin: 0.5,
+          wordWrapWidth: 620,
+        }),
       );
     }
 
-    createMenuButton(this, {
+    this.ui.button({
       x: panelX,
       y: panelY + 224,
       width: 280,
@@ -2066,17 +2037,15 @@ export class BattlefieldScene extends Phaser.Scene {
       fallback.setStrokeStyle(2, 0xf6ffe3, 0.86);
       container.add(fallback);
       container.add(
-        this.add
-          .text(0, 0, card.card.instance.name, {
-            fontFamily: DEFAULT_FONT_FAMILY,
-            fontSize: '18px',
-            color: '#ffffff',
-            stroke: '#000000',
-            strokeThickness: 4,
-            align: 'center',
-            wordWrap: { width: width - 18 },
-          })
-          .setOrigin(0.5),
+        this.ui.text({
+          x: 0,
+          y: 0,
+          text: card.card.instance.name,
+          variant: 'battleCardOverlay',
+          align: 'center',
+          origin: 0.5,
+          wordWrapWidth: width - 18,
+        }),
       );
     }
 
@@ -2663,16 +2632,15 @@ export class BattlefieldScene extends Phaser.Scene {
     const container = this.add.container(centerX, y);
     container.setAlpha(1);
 
-    const text = this.add
-      .text(0, 0, event.text, {
-        fontFamily: DEFAULT_FONT_FAMILY,
-        fontSize: '24px',
-        color: style.color,
-        stroke: '#07100d',
-        strokeThickness: 5,
-        align: 'center',
-      })
-      .setOrigin(0.5);
+    const text = this.ui.text({
+      x: 0,
+      y: 0,
+      text: event.text,
+      variant: 'battlePopup',
+      color: style.color,
+      align: 'center',
+      origin: 0.5,
+    });
     const bubble = this.add.rectangle(0, 0, Math.max(112, text.width + 34), 44, style.fill, 0.94);
     bubble.setStrokeStyle(3, style.stroke, 0.92);
 
