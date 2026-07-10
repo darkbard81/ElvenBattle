@@ -14,7 +14,7 @@ import type {
 } from '../../game/stage/types';
 import { UI_THEME } from '../../theme';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
-import { CanvasUiFactory, type UiLayoutChild } from '../ui/CanvasUiFactory';
+import { CanvasUiFactory, type CanvasScrollState, type UiLayoutChild } from '../ui/CanvasUiFactory';
 import type {
   BattlefieldSceneData,
   DeckBuildSceneData,
@@ -68,6 +68,7 @@ type StageLayoutMetrics = {
  */
 export class StageScene extends Phaser.Scene {
   private readonly ui = new CanvasUiFactory(this);
+  private readonly stageListScrollState: CanvasScrollState = { childOY: 0 };
   private session!: GameSession;
   private selectedStageId!: string;
   private stageDefinitions: StageDefinition[] = [];
@@ -90,6 +91,7 @@ export class StageScene extends Phaser.Scene {
     this.lastBattleResult = data.lastBattleResult ?? null;
     this.stageDefinitions = listStageDefinitions();
     this.selectedStageId = this.resolveInitialSelectedStage().id;
+    this.stageListScrollState.childOY = 0;
     this.isStartingBattle = false;
 
     this.addBackground();
@@ -231,13 +233,8 @@ export class StageScene extends Phaser.Scene {
         Math.max(0, this.stageDefinitions.length - 1) * STAGE_CARD_GAP,
     );
     const cardChildren: UiLayoutChild[] = [];
-    let selectedStageCard: Phaser.GameObjects.GameObject | null = null;
     this.stageDefinitions.forEach((stageDefinition) => {
       const stageCard = this.createStageCard(stageDefinition);
-      if (stageDefinition.id === this.selectedStageId) {
-        selectedStageCard = stageCard;
-      }
-
       cardChildren.push({
         gameObject: stageCard,
         align: 'left-top',
@@ -264,7 +261,7 @@ export class StageScene extends Phaser.Scene {
       width: scrollPanelWidth,
       height: viewportHeight,
       child: cardLayout,
-      ...(selectedStageCard ? { focusChild: selectedStageCard } : {}),
+      scrollState: this.stageListScrollState,
       scrollbarWidth: STAGE_LIST_SCROLLBAR_WIDTH,
       scrollbarGap: STAGE_LIST_SCROLLBAR_GAP,
     });

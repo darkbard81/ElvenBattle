@@ -12,7 +12,7 @@ import {
   type RuntimeCardInstance,
 } from '../../game/save/session';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
-import { CanvasUiFactory, type UiLayoutChild } from '../ui/CanvasUiFactory';
+import { CanvasUiFactory, type CanvasScrollState, type UiLayoutChild } from '../ui/CanvasUiFactory';
 import type { DeckBuildSceneData, StageSceneData } from './scene-data';
 
 const PANEL_Y = 248;
@@ -68,10 +68,11 @@ type DeckBuildMode = 'LEADER' | 'UNIT';
  */
 export class DeckBuildScene extends Phaser.Scene {
   private readonly ui = new CanvasUiFactory(this);
+  private readonly primaryListScrollState: CanvasScrollState = { childOY: 0 };
+  private readonly secondaryListScrollState: CanvasScrollState = { childOY: 0 };
   private savedSession!: GameSession;
   private draftSession!: GameSession;
   private mode: DeckBuildMode = 'UNIT';
-  private focusedCardInstanceId: string | null = null;
   private isDirty = false;
   private isSaving = false;
   private statusText!: Phaser.GameObjects.Text;
@@ -89,7 +90,7 @@ export class DeckBuildScene extends Phaser.Scene {
     this.savedSession = data.session;
     this.draftSession = data.session;
     this.mode = 'UNIT';
-    this.focusedCardInstanceId = null;
+    this.resetListScrollStates();
     this.isDirty = false;
     this.isSaving = false;
 
@@ -164,8 +165,11 @@ export class DeckBuildScene extends Phaser.Scene {
     });
   }
 
-  private renderLists(): void {
+  private renderLists(preserveScroll = true): void {
     this.listContainer?.destroy();
+    if (!preserveScroll) {
+      this.resetListScrollStates();
+    }
     const container = this.ui.container();
     this.listContainer = container;
     container.add(this.createModeTabs());
@@ -195,7 +199,7 @@ export class DeckBuildScene extends Phaser.Scene {
             subtitle: `${this.getDeckUnitEntries().length} cards`,
             entries: this.getDeckUnitEntries(),
             selectedInstanceId: null,
-            focusInstanceId: this.focusedCardInstanceId,
+            scrollState: this.primaryListScrollState,
             emptyMessage: 'No UNIT cards in deck.',
             onSelect: (instanceId) => {
               this.handleRemoveFromDeck(instanceId);
@@ -213,7 +217,7 @@ export class DeckBuildScene extends Phaser.Scene {
             subtitle: `${this.getCollectionUnitEntries().length} cards`,
             entries: this.getCollectionUnitEntries(),
             selectedInstanceId: null,
-            focusInstanceId: this.focusedCardInstanceId,
+            scrollState: this.secondaryListScrollState,
             emptyMessage: 'No collection UNIT cards yet.',
             onSelect: (instanceId) => {
               this.handleAddToDeck(instanceId);
@@ -247,7 +251,7 @@ export class DeckBuildScene extends Phaser.Scene {
             subtitle: '1 card',
             entries: this.getDeckLeaderEntries(),
             selectedInstanceId: this.draftSession.deck.leader.instance.instanceId,
-            focusInstanceId: this.focusedCardInstanceId,
+            scrollState: this.primaryListScrollState,
             emptyMessage: 'No current LEADER.',
             onSelect: () => {
               this.setStatus('Current LEADER is fixed until replaced.');
@@ -265,7 +269,7 @@ export class DeckBuildScene extends Phaser.Scene {
             subtitle: `${this.getCollectionLeaderEntries().length} cards`,
             entries: this.getCollectionLeaderEntries(),
             selectedInstanceId: null,
-            focusInstanceId: this.focusedCardInstanceId,
+            scrollState: this.secondaryListScrollState,
             emptyMessage: 'No collection LEADER cards yet.',
             onSelect: (instanceId) => {
               this.handleSetLeader(instanceId);
@@ -349,7 +353,7 @@ export class DeckBuildScene extends Phaser.Scene {
     subtitle: string;
     entries: DeckBuildListEntry[];
     selectedInstanceId: string | null;
-    focusInstanceId: string | null;
+    scrollState: CanvasScrollState;
     emptyMessage: string;
     onSelect: (instanceId: string) => void;
   }): Phaser.GameObjects.Container {
@@ -388,6 +392,7 @@ export class DeckBuildScene extends Phaser.Scene {
     );
 
     if (config.entries.length === 0) {
+      config.scrollState.childOY = 0;
       container.add(this.createEmptyPanelMessage(config.emptyMessage, viewportHeight));
       return container;
     }
@@ -398,17 +403,12 @@ export class DeckBuildScene extends Phaser.Scene {
         Math.max(0, config.entries.length - 1) * CARD_ROW_GAP,
     );
     const rowChildren: UiLayoutChild[] = [];
-    let focusedRow: Phaser.GameObjects.GameObject | null = null;
     config.entries.forEach((entry) => {
       const row = this.createCardRow({
         entry,
         selected: entry.card.instance.instanceId === config.selectedInstanceId,
         onSelect: config.onSelect,
       });
-      if (entry.card.instance.instanceId === config.focusInstanceId) {
-        focusedRow = row;
-      }
-
       rowChildren.push({
         gameObject: row,
         align: 'left-top',
@@ -426,7 +426,7 @@ export class DeckBuildScene extends Phaser.Scene {
       gap: CARD_ROW_GAP,
       children: rowChildren,
     });
-    const scrollPanel = this.createCardScrollPanel(rowLayout, viewportHeight, focusedRow);
+    const scrollPanel = this.createCardScrollPanel(rowLayout, viewportHeight, config.scrollState);
     container.add(scrollPanel);
     return container;
   }
@@ -472,7 +472,7 @@ export class DeckBuildScene extends Phaser.Scene {
   private createCardScrollPanel(
     child: Phaser.GameObjects.GameObject,
     viewportHeight: number,
-    focusChild: Phaser.GameObjects.GameObject | null,
+    scrollState: CanvasScrollState,
   ) {
     return this.ui.scrollPanel({
       x: 28,
@@ -480,7 +480,7 @@ export class DeckBuildScene extends Phaser.Scene {
       width: PANEL_SCROLL_PANEL_WIDTH,
       height: viewportHeight,
       child,
-      ...(focusChild ? { focusChild } : {}),
+      scrollState,
       scrollbarWidth: PANEL_SCROLLBAR_WIDTH,
       scrollbarGap: PANEL_SCROLLBAR_GAP,
     });
@@ -698,7 +698,6 @@ export class DeckBuildScene extends Phaser.Scene {
         collectionCardInstanceId,
       });
       this.isDirty = true;
-      this.focusedCardInstanceId = collectionCardInstanceId;
       this.setStatus(`${collectionCard?.instance.name ?? 'Collection card'} added to deck.`);
       this.renderLists();
       this.renderHud();
@@ -720,7 +719,6 @@ export class DeckBuildScene extends Phaser.Scene {
         deckCardInstanceId,
       });
       this.isDirty = true;
-      this.focusedCardInstanceId = deckCardInstanceId;
       this.setStatus(`${deckCard?.instance.name ?? 'Deck card'} removed to collection.`);
       this.renderLists();
       this.renderHud();
@@ -745,7 +743,6 @@ export class DeckBuildScene extends Phaser.Scene {
         collectionLeaderInstanceId,
       });
       this.isDirty = true;
-      this.focusedCardInstanceId = collectionLeaderInstanceId;
       this.setStatus(`${leaderCard?.instance.name ?? 'Collection LEADER'} set as leader.`);
       this.renderLists();
       this.renderHud();
@@ -787,12 +784,16 @@ export class DeckBuildScene extends Phaser.Scene {
     }
 
     this.mode = mode;
-    this.focusedCardInstanceId = null;
     this.setStatus(
       mode === 'LEADER' ? 'LEADER configuration ready.' : 'UNIT deck configuration ready.',
     );
-    this.renderLists();
+    this.renderLists(false);
     this.renderHud();
+  }
+
+  private resetListScrollStates(): void {
+    this.primaryListScrollState.childOY = 0;
+    this.secondaryListScrollState.childOY = 0;
   }
 
   private getDeckLeaderEntries(): DeckBuildListEntry[] {

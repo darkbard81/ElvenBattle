@@ -11,7 +11,7 @@ import {
   type RuntimeCardInstance,
 } from '../../game/save/session';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
-import { CanvasUiFactory, type UiLayoutChild } from '../ui/CanvasUiFactory';
+import { CanvasUiFactory, type CanvasScrollState, type UiLayoutChild } from '../ui/CanvasUiFactory';
 import type { EquipmentSceneData, StageSceneData } from './scene-data';
 
 const PANEL_Y = 248;
@@ -72,10 +72,11 @@ type EquipmentListEntry = {
  */
 export class EquipmentScene extends Phaser.Scene {
   private readonly ui = new CanvasUiFactory(this);
+  private readonly unitListScrollState: CanvasScrollState = { childOY: 0 };
+  private readonly equipmentListScrollState: CanvasScrollState = { childOY: 0 };
   private savedSession!: GameSession;
   private draftSession!: GameSession;
   private selectedTargetCardInstanceId: string | null = null;
-  private focusedEquipmentCardInstanceId: string | null = null;
   private isDirty = false;
   private isSaving = false;
   private statusText!: Phaser.GameObjects.Text;
@@ -93,7 +94,8 @@ export class EquipmentScene extends Phaser.Scene {
     this.savedSession = data.session;
     this.draftSession = data.session;
     this.selectedTargetCardInstanceId = null;
-    this.focusedEquipmentCardInstanceId = null;
+    this.unitListScrollState.childOY = 0;
+    this.equipmentListScrollState.childOY = 0;
     this.isDirty = false;
     this.isSaving = false;
 
@@ -212,6 +214,7 @@ export class EquipmentScene extends Phaser.Scene {
     });
 
     if (entries.length === 0) {
+      this.unitListScrollState.childOY = 0;
       container.add(this.createEmptyPanelMessage('No deck UNIT cards.'));
       return container;
     }
@@ -222,17 +225,12 @@ export class EquipmentScene extends Phaser.Scene {
       entries.length * CARD_ROW_HEIGHT + Math.max(0, entries.length - 1) * CARD_ROW_GAP,
     );
     const rowChildren: UiLayoutChild[] = [];
-    let focusedRow: Phaser.GameObjects.GameObject | null = null;
     entries.forEach((entry) => {
       const selected = entry.card.instance.instanceId === this.selectedTargetCardInstanceId;
       const row = this.createUnitRow({
         entry,
         selected,
       });
-      if (selected) {
-        focusedRow = row;
-      }
-
       rowChildren.push({
         gameObject: row,
         align: 'left-top',
@@ -250,7 +248,11 @@ export class EquipmentScene extends Phaser.Scene {
       gap: CARD_ROW_GAP,
       children: rowChildren,
     });
-    const scrollPanel = this.createCardScrollPanel(rowLayout, viewportHeight, focusedRow);
+    const scrollPanel = this.createCardScrollPanel(
+      rowLayout,
+      viewportHeight,
+      this.unitListScrollState,
+    );
     container.add(scrollPanel);
     return container;
   }
@@ -264,6 +266,7 @@ export class EquipmentScene extends Phaser.Scene {
     });
 
     if (entries.length === 0) {
+      this.equipmentListScrollState.childOY = 0;
       container.add(this.createEmptyPanelMessage('No collection EQUIPMENT cards.'));
       return container;
     }
@@ -274,18 +277,10 @@ export class EquipmentScene extends Phaser.Scene {
       entries.length * CARD_ROW_HEIGHT + Math.max(0, entries.length - 1) * CARD_ROW_GAP,
     );
     const rowChildren: UiLayoutChild[] = [];
-    let focusedRow: Phaser.GameObjects.GameObject | null = null;
     entries.forEach((entry) => {
       const row = this.createEquipmentRow({
         entry,
       });
-      if (
-        entry.card.instance.instanceId === this.focusedEquipmentCardInstanceId ||
-        (!this.focusedEquipmentCardInstanceId && entry.equippedToSelected && !focusedRow)
-      ) {
-        focusedRow = row;
-      }
-
       rowChildren.push({
         gameObject: row,
         align: 'left-top',
@@ -303,7 +298,11 @@ export class EquipmentScene extends Phaser.Scene {
       gap: CARD_ROW_GAP,
       children: rowChildren,
     });
-    const scrollPanel = this.createCardScrollPanel(rowLayout, viewportHeight, focusedRow);
+    const scrollPanel = this.createCardScrollPanel(
+      rowLayout,
+      viewportHeight,
+      this.equipmentListScrollState,
+    );
     container.add(scrollPanel);
     return container;
   }
@@ -386,7 +385,7 @@ export class EquipmentScene extends Phaser.Scene {
   private createCardScrollPanel(
     child: Phaser.GameObjects.GameObject,
     viewportHeight: number,
-    focusChild: Phaser.GameObjects.GameObject | null,
+    scrollState: CanvasScrollState,
   ) {
     return this.ui.scrollPanel({
       x: 28,
@@ -394,7 +393,7 @@ export class EquipmentScene extends Phaser.Scene {
       width: PANEL_SCROLL_PANEL_WIDTH,
       height: viewportHeight,
       child,
-      ...(focusChild ? { focusChild } : {}),
+      scrollState,
       scrollbarWidth: PANEL_SCROLLBAR_WIDTH,
       scrollbarGap: PANEL_SCROLLBAR_GAP,
     });
@@ -415,7 +414,6 @@ export class EquipmentScene extends Phaser.Scene {
       origin: 0,
       onClick: () => {
         this.selectedTargetCardInstanceId = card.instance.instanceId;
-        this.focusedEquipmentCardInstanceId = null;
         this.setStatus(`${card.instance.name} selected.`);
         this.renderLists();
         this.renderHud();
@@ -674,7 +672,6 @@ export class EquipmentScene extends Phaser.Scene {
           `${this.getEquipmentName(equipmentCardInstanceId)} equipped to ${selectedTarget.instance.name}.`,
         );
       }
-      this.focusedEquipmentCardInstanceId = equipmentCardInstanceId;
       this.renderLists();
       this.renderHud();
     } catch (error: unknown) {
@@ -764,7 +761,6 @@ export class EquipmentScene extends Phaser.Scene {
       )
     ) {
       this.selectedTargetCardInstanceId = null;
-      this.focusedEquipmentCardInstanceId = null;
     }
   }
 

@@ -10,6 +10,12 @@ vi.mock('phaser', () => ({
         GAMEOBJECT_POINTER_OVER: 'pointerover',
         GAMEOBJECT_POINTER_OUT: 'pointerout',
         GAMEOBJECT_POINTER_DOWN: 'pointerdown',
+        GAMEOBJECT_POINTER_UP: 'pointerup',
+      },
+    },
+    GameObjects: {
+      Events: {
+        DESTROY: 'destroy',
       },
     },
   },
@@ -101,7 +107,7 @@ class FakeRectangle extends FakeGameObject {
   public interactive = false;
   public fillColor: number;
   public fillAlpha: number;
-  private readonly handlers = new Map<string, Array<() => void>>();
+  private readonly handlers = new Map<string, Array<(...args: unknown[]) => void>>();
 
   constructor(
     x: number,
@@ -131,15 +137,15 @@ class FakeRectangle extends FakeGameObject {
     return this;
   }
 
-  on(event: string, callback: () => void): this {
+  on(event: string, callback: (...args: unknown[]) => void): this {
     const callbacks = this.handlers.get(event) ?? [];
     callbacks.push(callback);
     this.handlers.set(event, callbacks);
     return this;
   }
 
-  emit(event: string): void {
-    this.handlers.get(event)?.forEach((callback) => callback());
+  emit(event: string, ...args: unknown[]): void {
+    this.handlers.get(event)?.forEach((callback) => callback(...args));
   }
 }
 
@@ -184,11 +190,23 @@ class FakeSizer extends FakeContainer {
 }
 
 class FakeScrollablePanel extends FakeSizer {
-  public focusedChild: unknown = null;
+  public childOY = 0;
+  private destroyHandler: (() => void) | null = null;
 
-  scrollToChild(child: unknown): this {
-    this.focusedChild = child;
+  setChildOY(value: number): this {
+    this.childOY = value;
     return this;
+  }
+
+  once(event: string, callback: () => void): this {
+    if (event === Phaser.GameObjects.Events.DESTROY) {
+      this.destroyHandler = callback;
+    }
+    return this;
+  }
+
+  destroy(): void {
+    this.destroyHandler?.();
   }
 }
 
@@ -327,6 +345,31 @@ describe('CanvasUiFactory', () => {
     expect(scene.rectangles[1]!.interactive).toBe(false);
   });
 
+  it('activates a pressable surface only after a release below the drag threshold', () => {
+    const { factory } = createFactory();
+    const onClick = vi.fn();
+    const surface = factory.pressableSurface({
+      x: 0,
+      y: 0,
+      width: 200,
+      height: 80,
+      variant: 'row',
+      hoverVariant: 'rowHover',
+      onClick,
+    }) as unknown as FakeRectangle;
+    const clickPointer = { id: 1, getDistance: () => 4 } as Phaser.Input.Pointer;
+    const dragPointer = { id: 2, getDistance: () => 8 } as Phaser.Input.Pointer;
+
+    surface.emit(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, clickPointer);
+    expect(onClick).not.toHaveBeenCalled();
+    surface.emit(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, clickPointer);
+    expect(onClick).toHaveBeenCalledOnce();
+
+    surface.emit(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, dragPointer);
+    surface.emit(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, dragPointer);
+    expect(onClick).toHaveBeenCalledOnce();
+  });
+
   it('assembles children declaratively and lays a stack out once', () => {
     const { factory } = createFactory();
     const first = factory.container();
@@ -350,11 +393,10 @@ describe('CanvasUiFactory', () => {
     expect(stack.layoutCount).toBe(1);
   });
 
-  it('restores scroll focus after the caller can attach the panel', () => {
-    vi.useFakeTimers();
+  it('restores and captures explicit scroll state across panel recreation', () => {
     const { factory } = createFactory();
     const child = factory.container();
-    const focusChild = factory.container();
+    const scrollState = { childOY: -120 };
 
     const panel = factory.scrollPanel({
       x: 0,
@@ -362,12 +404,12 @@ describe('CanvasUiFactory', () => {
       width: 300,
       height: 400,
       child,
-      focusChild,
+      scrollState,
     }) as unknown as FakeScrollablePanel;
 
-    expect(panel.focusedChild).toBeNull();
-    vi.advanceTimersByTime(50);
-    expect(panel.focusedChild).toBe(focusChild);
-    vi.useRealTimers();
+    expect(panel.childOY).toBe(-120);
+    panel.childOY = -240;
+    panel.destroy();
+    expect(scrollState.childOY).toBe(-240);
   });
 });

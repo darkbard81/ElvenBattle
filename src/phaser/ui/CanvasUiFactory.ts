@@ -82,6 +82,7 @@ export type PressableSurfaceConfig = CanvasPanelConfig &
   Readonly<{
     hoverVariant: UiSurfaceVariant;
     onClick: () => void;
+    dragThreshold?: number;
   }>;
 
 export type CanvasButtonConfig = Readonly<{
@@ -125,13 +126,18 @@ export type GridConfig = BaseLayoutConfig &
 
 export type OverlayConfig = BaseLayoutConfig;
 
+/** ScrollablePanel 재생성 사이에 유지할 세로 스크롤 상태다. */
+export type CanvasScrollState = {
+  childOY: number;
+};
+
 export type ScrollPanelConfig = Readonly<{
   x: number;
   y: number;
   width: number;
   height: number;
   child: Phaser.GameObjects.GameObject;
-  focusChild?: Phaser.GameObjects.GameObject;
+  scrollState?: CanvasScrollState;
   maskPadding?: number;
   scrollbarWidth?: number;
   scrollbarGap?: number;
@@ -271,14 +277,26 @@ export class CanvasUiFactory {
     const panel = this.panel(config);
     const normal = UI_THEME.surfaces[config.variant];
     const hover = UI_THEME.surfaces[config.hoverVariant];
+    const dragThreshold = config.dragThreshold ?? 8;
+    let pressedPointerId: number | null = null;
     panel.setInteractive({ useHandCursor: true });
     panel.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OVER, () => {
       panel.setFillStyle(hover.fill.canvas, hover.fillAlpha);
     });
     panel.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OUT, () => {
+      pressedPointerId = null;
       panel.setFillStyle(normal.fill.canvas, normal.fillAlpha);
     });
-    panel.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, config.onClick);
+    panel.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, (pointer: Phaser.Input.Pointer) => {
+      pressedPointerId = pointer.id;
+    });
+    panel.on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, (pointer: Phaser.Input.Pointer) => {
+      if (pressedPointerId !== pointer.id) return;
+      pressedPointerId = null;
+      if (pointer.getDistance() < dragThreshold) {
+        config.onClick();
+      }
+    });
     return panel;
   }
 
@@ -503,13 +521,12 @@ export class CanvasUiFactory {
       scrollDetectionMode: 'rectBounds',
     });
     panel.layout();
-    if (config.focusChild) {
-      const focusChild = config.focusChild;
-      setTimeout(() => {
-        if (panel.active && focusChild.active) {
-          panel.scrollToChild(focusChild, 'centerY');
-        }
-      }, 50);
+    if (config.scrollState) {
+      const scrollState = config.scrollState;
+      panel.setChildOY(scrollState.childOY, true);
+      panel.once(Phaser.GameObjects.Events.DESTROY, () => {
+        scrollState.childOY = panel.childOY;
+      });
     }
     return panel;
   }

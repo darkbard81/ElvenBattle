@@ -8,7 +8,7 @@ import {
   type RuntimeCardInstance,
 } from '../../game/save/session';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
-import { CanvasUiFactory, type UiLayoutChild } from '../ui/CanvasUiFactory';
+import { CanvasUiFactory, type CanvasScrollState, type UiLayoutChild } from '../ui/CanvasUiFactory';
 import type { GrowthSceneData, StageSceneData } from './scene-data';
 
 const PANEL_Y = 248;
@@ -64,12 +64,12 @@ type GrowthListEntry = {
  */
 export class GrowthScene extends Phaser.Scene {
   private readonly ui = new CanvasUiFactory(this);
+  private readonly targetListScrollState: CanvasScrollState = { childOY: 0 };
+  private readonly materialListScrollState: CanvasScrollState = { childOY: 0 };
   private savedSession!: GameSession;
   private draftSession!: GameSession;
   private selectedTargetCardInstanceId: string | null = null;
   private selectedMaterialCardInstanceIds = new Set<string>();
-  private focusedTargetCardInstanceId: string | null = null;
-  private focusedMaterialCardInstanceId: string | null = null;
   private isDirty = false;
   private isSaving = false;
   private statusText!: Phaser.GameObjects.Text;
@@ -88,8 +88,8 @@ export class GrowthScene extends Phaser.Scene {
     this.draftSession = data.session;
     this.selectedTargetCardInstanceId = null;
     this.selectedMaterialCardInstanceIds = new Set();
-    this.focusedTargetCardInstanceId = null;
-    this.focusedMaterialCardInstanceId = null;
+    this.targetListScrollState.childOY = 0;
+    this.materialListScrollState.childOY = 0;
     this.isDirty = false;
     this.isSaving = false;
 
@@ -186,11 +186,10 @@ export class GrowthScene extends Phaser.Scene {
             selectedInstanceIds: new Set(
               this.selectedTargetCardInstanceId ? [this.selectedTargetCardInstanceId] : [],
             ),
-            focusInstanceId: this.focusedTargetCardInstanceId ?? this.selectedTargetCardInstanceId,
+            scrollState: this.targetListScrollState,
             emptyMessage: 'No growable deck UNIT cards.',
             onSelect: (instanceId) => {
               this.selectedTargetCardInstanceId = instanceId;
-              this.focusedTargetCardInstanceId = instanceId;
               this.setStatus('Growth target selected.');
               this.renderLists();
               this.renderHud();
@@ -210,7 +209,7 @@ export class GrowthScene extends Phaser.Scene {
             } selected`,
             entries: this.getMaterialEntries(),
             selectedInstanceIds: this.selectedMaterialCardInstanceIds,
-            focusInstanceId: this.focusedMaterialCardInstanceId,
+            scrollState: this.materialListScrollState,
             emptyMessage: 'No collection UNIT materials.',
             onSelect: (instanceId) => {
               this.toggleMaterialSelection(instanceId);
@@ -232,7 +231,7 @@ export class GrowthScene extends Phaser.Scene {
     subtitle: string;
     entries: GrowthListEntry[];
     selectedInstanceIds: ReadonlySet<string>;
-    focusInstanceId: string | null;
+    scrollState: CanvasScrollState;
     emptyMessage: string;
     onSelect: (instanceId: string) => void;
   }): Phaser.GameObjects.Container {
@@ -271,6 +270,7 @@ export class GrowthScene extends Phaser.Scene {
     );
 
     if (config.entries.length === 0) {
+      config.scrollState.childOY = 0;
       container.add(this.createEmptyPanelMessage(config.emptyMessage, viewportHeight));
       return container;
     }
@@ -281,17 +281,12 @@ export class GrowthScene extends Phaser.Scene {
         Math.max(0, config.entries.length - 1) * CARD_ROW_GAP,
     );
     const rowChildren: UiLayoutChild[] = [];
-    let focusedRow: Phaser.GameObjects.GameObject | null = null;
     config.entries.forEach((entry) => {
       const row = this.createCardRow({
         entry,
         selected: config.selectedInstanceIds.has(entry.card.instance.instanceId),
         onSelect: config.onSelect,
       });
-      if (entry.card.instance.instanceId === config.focusInstanceId) {
-        focusedRow = row;
-      }
-
       rowChildren.push({
         gameObject: row,
         align: 'left-top',
@@ -309,7 +304,7 @@ export class GrowthScene extends Phaser.Scene {
       gap: CARD_ROW_GAP,
       children: rowChildren,
     });
-    const scrollPanel = this.createCardScrollPanel(rowLayout, viewportHeight, focusedRow);
+    const scrollPanel = this.createCardScrollPanel(rowLayout, viewportHeight, config.scrollState);
     container.add(scrollPanel);
     return container;
   }
@@ -355,7 +350,7 @@ export class GrowthScene extends Phaser.Scene {
   private createCardScrollPanel(
     child: Phaser.GameObjects.GameObject,
     viewportHeight: number,
-    focusChild: Phaser.GameObjects.GameObject | null,
+    scrollState: CanvasScrollState,
   ) {
     return this.ui.scrollPanel({
       x: 28,
@@ -363,7 +358,7 @@ export class GrowthScene extends Phaser.Scene {
       width: PANEL_SCROLL_PANEL_WIDTH,
       height: viewportHeight,
       child,
-      ...(focusChild ? { focusChild } : {}),
+      scrollState,
       scrollbarWidth: PANEL_SCROLLBAR_WIDTH,
       scrollbarGap: PANEL_SCROLLBAR_GAP,
     });
@@ -569,7 +564,6 @@ export class GrowthScene extends Phaser.Scene {
   }
 
   private toggleMaterialSelection(instanceId: string): void {
-    this.focusedMaterialCardInstanceId = instanceId;
     if (this.selectedMaterialCardInstanceIds.has(instanceId)) {
       this.selectedMaterialCardInstanceIds.delete(instanceId);
       this.setStatus('Material removed from selection.');
@@ -595,7 +589,6 @@ export class GrowthScene extends Phaser.Scene {
       this.draftSession = result.session;
       this.isDirty = true;
       this.selectedMaterialCardInstanceIds = new Set();
-      this.focusedMaterialCardInstanceId = null;
       this.setStatus(formatGrowthResultStatus(result));
       this.renderLists();
       this.renderHud();
@@ -622,8 +615,6 @@ export class GrowthScene extends Phaser.Scene {
       this.isDirty = false;
       this.selectedTargetCardInstanceId = null;
       this.selectedMaterialCardInstanceIds = new Set();
-      this.focusedTargetCardInstanceId = null;
-      this.focusedMaterialCardInstanceId = null;
       this.setStatus('Growth changes saved.');
       this.renderLists();
     } catch (error: unknown) {
