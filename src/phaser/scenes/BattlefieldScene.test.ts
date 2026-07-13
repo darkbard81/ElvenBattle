@@ -200,7 +200,7 @@ describe('BattlefieldScene', () => {
 
     scene.scheduleCardInfo(card, 100);
     expect(scheduled).toHaveLength(1);
-    expect(scheduled[0]!.delay).toBe(2000);
+    expect(scheduled[0]!.delay).toBe(1500);
     expect(addedPanels).toHaveLength(0);
 
     scheduled[0]!.callback();
