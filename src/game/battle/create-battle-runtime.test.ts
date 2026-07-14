@@ -277,6 +277,16 @@ describe('createInitialBattleRuntime', () => {
     expect(cards.every((card) => !card.hasMovedThisTurn)).toBe(true);
     expect(cards.every((card) => !card.hasAttackedThisTurn)).toBe(true);
     expect(cards.every((card) => !card.hasUsedActiveSkillThisTurn)).toBe(true);
+    expect(runtime.player.leader.enteredBattlefieldTurnNumber).toBe(1);
+    expect(runtime.enemy.leader.enteredBattlefieldTurnNumber).toBe(1);
+    expect(
+      [
+        ...runtime.player.hand,
+        ...runtime.player.deck,
+        ...runtime.enemy.hand,
+        ...runtime.enemy.deck,
+      ].every((card) => card.enteredBattlefieldTurnNumber === null),
+    ).toBe(true);
   });
 
   it('initializes empty ability effect state on every battle runtime card', async () => {

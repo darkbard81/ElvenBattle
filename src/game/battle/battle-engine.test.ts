@@ -81,6 +81,7 @@ describe('battle engine', () => {
     const placedCard = findBattlefieldCardAtSlot(runtime, 'player:FC');
     expect(placedCard?.card.instance.instanceId).toBe(placedCardId);
     expect(placedCard?.zone).toBe('BATTLEFIELD');
+    expect(placedCard?.enteredBattlefieldTurnNumber).toBe(runtime.turnNumber);
     expect(placedCard?.handIndex).toBeNull();
     expect(runtime.player.hand).toHaveLength(4);
     expect(runtime.player.hand.map((card) => card.handIndex)).toEqual([0, 1, 2, 3]);
@@ -216,56 +217,97 @@ describe('battle engine', () => {
     expect(listMoveActions(runtime)).toEqual([]);
   });
 
-  it('disables attacks and active skills for both sides during the opening round', async () => {
-    const runtime = await createRuntime(1);
-    const playerAttacker = moveCardToBattlefield(
+  it('disables attacks and active skills only for cards on their battlefield entry turn', async () => {
+    const runtime = await createRuntime(2);
+    const establishedAttacker = moveCardToBattlefield(
       runtime,
       'player',
       'unit_elf_archer_001',
       'player:FC',
     );
-    const playerHealer = moveCardToBattlefield(
+    const newAttacker = moveCardToBattlefield(
+      runtime,
+      'player',
+      'unit_elf_scout_001',
+      'player:FL',
+      runtime.turnNumber,
+    );
+    const newHealer = moveCardToBattlefield(
       runtime,
       'player',
       'unit_elf_healer_001',
       'player:FR',
+      runtime.turnNumber,
     );
-    moveCardToBattlefield(runtime, 'enemy', 'unit_dark_archer_001', 'enemy:FC');
-    moveCardToBattlefield(runtime, 'enemy', 'unit_dark_healer_001', 'enemy:FR');
 
-    expect(listAttackActions(runtime)).toEqual([]);
-    expect(listActiveSkillActions(runtime)).toEqual([]);
+    const attackActions = listAttackActions(runtime);
+    const skillActions = listActiveSkillActions(runtime);
+
+    expect(
+      attackActions.some(
+        (action) => action.attackerInstanceId === establishedAttacker.card.instance.instanceId,
+      ),
+    ).toBe(true);
+    expect(
+      attackActions.some(
+        (action) => action.attackerInstanceId === newAttacker.card.instance.instanceId,
+      ),
+    ).toBe(false);
+    expect(
+      skillActions.some((action) => action.cardInstanceId === newHealer.card.instance.instanceId),
+    ).toBe(false);
     expect(listMoveActions(runtime).length).toBeGreaterThan(0);
     expect(listPlaceActions(runtime).length).toBeGreaterThan(0);
-    expect(playerAttacker.hasAttackedThisTurn).toBe(false);
-    expect(playerHealer.hasUsedActiveSkillThisTurn).toBe(false);
-
-    applyTurnEnd(runtime);
-
-    expect(runtime.currentSide).toBe('enemy');
-    expect(runtime.turnNumber).toBe(1);
-    expect(listAttackActions(runtime, 'enemy')).toEqual([]);
-    expect(listActiveSkillActions(runtime, 'enemy')).toEqual([]);
+    expect(newAttacker.hasAttackedThisTurn).toBe(false);
+    expect(newHealer.hasUsedActiveSkillThisTurn).toBe(false);
   });
 
-  it('reenables attacks and active skills after the opening round ends', async () => {
-    const runtime = await createRuntime(1);
-    moveCardToBattlefield(runtime, 'player', 'unit_elf_archer_001', 'player:FC');
-    moveCardToBattlefield(runtime, 'player', 'unit_elf_healer_001', 'player:FR');
+  it('reenables a card attack and active skill after its battlefield entry turn ends', async () => {
+    const runtime = await createRuntime(2);
+    const attacker = moveCardToBattlefield(
+      runtime,
+      'player',
+      'unit_elf_archer_001',
+      'player:FC',
+      runtime.turnNumber,
+    );
+    const healer = moveCardToBattlefield(
+      runtime,
+      'player',
+      'unit_elf_healer_001',
+      'player:FR',
+      runtime.turnNumber,
+    );
 
-    expect(listAttackActions(runtime)).toEqual([]);
-    expect(listActiveSkillActions(runtime)).toEqual([]);
+    expect(
+      listAttackActions(runtime).some(
+        (action) => action.attackerInstanceId === attacker.card.instance.instanceId,
+      ),
+    ).toBe(false);
+    expect(
+      listActiveSkillActions(runtime).some(
+        (action) => action.cardInstanceId === healer.card.instance.instanceId,
+      ),
+    ).toBe(false);
 
     applyTurnEnd(runtime);
     applyTurnEnd(runtime);
 
     expect(runtime.currentSide).toBe('player');
-    expect(runtime.turnNumber).toBe(2);
-    expect(listAttackActions(runtime).length).toBeGreaterThan(0);
-    expect(listActiveSkillActions(runtime).length).toBeGreaterThan(0);
+    expect(runtime.turnNumber).toBe(3);
+    expect(
+      listAttackActions(runtime).some(
+        (action) => action.attackerInstanceId === attacker.card.instance.instanceId,
+      ),
+    ).toBe(true);
+    expect(
+      listActiveSkillActions(runtime).some(
+        (action) => action.cardInstanceId === healer.card.instance.instanceId,
+      ),
+    ).toBe(true);
   });
 
-  it('rejects attack and active skill actions during the opening round', async () => {
+  it('rejects attack and active skill actions forged for a card battlefield entry turn', async () => {
     const runtime = await createRuntime(2);
     const attacker = moveCardToBattlefield(runtime, 'player', 'unit_elf_archer_001', 'player:FC');
     const healer = moveCardToBattlefield(runtime, 'player', 'unit_elf_healer_001', 'player:FR');
@@ -283,7 +325,8 @@ describe('battle engine', () => {
       throw new Error('Expected legal post-opening actions');
     }
 
-    runtime.turnNumber = 1;
+    attacker.enteredBattlefieldTurnNumber = runtime.turnNumber;
+    healer.enteredBattlefieldTurnNumber = runtime.turnNumber;
 
     expect(() => applyAttackAction(runtime, attackAction)).toThrow('Illegal attack action');
     expect(() => applyActiveSkillAction(runtime, skillAction)).toThrow(
@@ -902,21 +945,37 @@ describe('battle engine', () => {
 
   it('runs automated enemy turns through existing actions and returns control to player', async () => {
     const runtime = await createRuntime();
+    const establishedAttacker = moveCardToBattlefield(
+      runtime,
+      'enemy',
+      'unit_dark_archer_001',
+      'enemy:FC',
+    );
     applyTurnEnd(runtime);
     const playerLeaderHpBefore = runtime.player.leader.card.instance.hp ?? 0;
     const enemyHandSizeBefore = runtime.enemy.hand.length;
 
     const events = runAutomatedTurn(runtime, 'enemy');
-    const placeEvents = events.filter(
-      (event) => event.type === 'ACTION' && event.action.type === 'PLACE',
+    const placeActions = events.flatMap((event) =>
+      event.type === 'ACTION' && event.action.type === 'PLACE' ? [event.action] : [],
     );
+    const attackActions = events.flatMap((event) =>
+      event.type === 'ACTION' && event.action.type === 'ATTACK' ? [event.action] : [],
+    );
+    const placedCardInstanceIds = new Set(placeActions.map((action) => action.cardInstanceId));
 
     expect(events.some((event) => event.type === 'ACTION')).toBe(true);
-    expect(placeEvents.length).toBeGreaterThan(1);
+    expect(placeActions.length).toBeGreaterThan(1);
     expect(runtime.enemy.hand.length).toBeLessThan(enemyHandSizeBefore - 1);
-    expect(events.some((event) => event.type === 'ACTION' && event.action.type === 'ATTACK')).toBe(
-      true,
-    );
+    expect(attackActions.length).toBeGreaterThan(0);
+    expect(
+      attackActions.some(
+        (action) => action.attackerInstanceId === establishedAttacker.card.instance.instanceId,
+      ),
+    ).toBe(true);
+    expect(
+      attackActions.every((action) => !placedCardInstanceIds.has(action.attackerInstanceId)),
+    ).toBe(true);
     expect(runtime.currentSide).toBe('player');
     expect(runtime.player.leader.card.instance.hp).toBeLessThan(playerLeaderHpBefore);
   });
@@ -1018,6 +1077,7 @@ function moveCardToHand(
   removeCardFromRuntimeCollections(runtime, card);
   card.zone = 'HAND';
   card.battlefieldSlot = null;
+  card.enteredBattlefieldTurnNumber = null;
   card.handIndex = participant.hand.length;
   card.deckIndex = null;
   participant.hand.push(card);
@@ -1032,6 +1092,7 @@ function moveCardToBattlefield(
   side: BattleSide,
   definitionId: string,
   slotId: BattleSlotId,
+  enteredBattlefieldTurnNumber = Math.max(1, runtime.turnNumber - 1),
 ): BattleCardRuntimeState {
   const participant = side === 'player' ? runtime.player : runtime.enemy;
   const card = findParticipantCardByDefinitionId(runtime, side, definitionId);
@@ -1039,6 +1100,7 @@ function moveCardToBattlefield(
   removeCardFromRuntimeCollections(runtime, card);
   card.zone = 'BATTLEFIELD';
   card.battlefieldSlot = slotId;
+  card.enteredBattlefieldTurnNumber = enteredBattlefieldTurnNumber;
   card.handIndex = null;
   card.deckIndex = null;
   runtime.battlefield.push(card);
@@ -1110,6 +1172,7 @@ function placeHandCardOnBattlefield(
   participant.hand.splice(handIndex, 1);
   card.zone = 'BATTLEFIELD';
   card.battlefieldSlot = slotId;
+  card.enteredBattlefieldTurnNumber = Math.max(1, runtime.turnNumber - 1);
   card.handIndex = null;
   runtime.battlefield.push(card);
   participant.hand.forEach((entry, index) => {
@@ -1132,6 +1195,7 @@ function moveEnemyDeckCardsToBattlefield(
 
     card.zone = 'BATTLEFIELD';
     card.battlefieldSlot = slotId;
+    card.enteredBattlefieldTurnNumber = Math.max(1, runtime.turnNumber - 1);
     card.handIndex = null;
     card.deckIndex = null;
     runtime.battlefield.push(card);

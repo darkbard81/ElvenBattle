@@ -33,7 +33,6 @@ import type {
 } from './types';
 
 export const MAX_AUTOMATED_ACTIONS_PER_TURN = 20 as const;
-const FIRST_BATTLE_TURN_NUMBER = 1 as const;
 
 const BATTLEFIELD_ZONES: readonly BattlefieldZone[] = ['FR', 'FC', 'FL', 'BR', 'BC', 'BL'];
 const SLOT_COORDINATES: Record<BattlefieldZone, { x: number; y: number }> = {
@@ -232,11 +231,7 @@ export function listAttackActions(
   runtime: BattleRuntimeState,
   side: BattleSide = runtime.currentSide,
 ): AttackBattleAction[] {
-  if (
-    runtime.phase === 'GAME_OVER' ||
-    side !== runtime.currentSide ||
-    runtime.turnNumber === FIRST_BATTLE_TURN_NUMBER
-  ) {
+  if (runtime.phase === 'GAME_OVER' || side !== runtime.currentSide) {
     return [];
   }
 
@@ -245,6 +240,7 @@ export function listAttackActions(
   for (const attacker of listBattlefieldCards(runtime, side)) {
     if (
       attacker.battlefieldSlot === null ||
+      isBattlefieldEntryTurn(runtime, attacker) ||
       attacker.hasAttackedThisTurn ||
       getEffectiveAttack(runtime, attacker) <= 0
     ) {
@@ -328,17 +324,13 @@ export function listActiveSkillActions(
   runtime: BattleRuntimeState,
   side: BattleSide = runtime.currentSide,
 ): ActiveSkillBattleAction[] {
-  if (
-    runtime.phase !== 'MAIN' ||
-    side !== runtime.currentSide ||
-    runtime.turnNumber === FIRST_BATTLE_TURN_NUMBER
-  ) {
+  if (runtime.phase !== 'MAIN' || side !== runtime.currentSide) {
     return [];
   }
 
   const actions: ActiveSkillBattleAction[] = [];
   for (const card of listBattlefieldCards(runtime, side)) {
-    if (card.hasUsedActiveSkillThisTurn) {
+    if (isBattlefieldEntryTurn(runtime, card) || card.hasUsedActiveSkillThisTurn) {
       continue;
     }
 
@@ -406,6 +398,7 @@ export function applyPlaceAction(runtime: BattleRuntimeState, action: PlaceBattl
   participant.hand.splice(cardIndex, 1);
   card.zone = 'BATTLEFIELD';
   card.battlefieldSlot = action.toSlotId;
+  card.enteredBattlefieldTurnNumber = runtime.turnNumber;
   card.handIndex = null;
   card.deckIndex = null;
   runtime.battlefield.push(card);
@@ -509,6 +502,7 @@ export function applyTurnStart(runtime: BattleRuntimeState): BattleTurnEvent {
   if (drawnCard) {
     drawnCard.zone = 'HAND';
     drawnCard.battlefieldSlot = null;
+    drawnCard.enteredBattlefieldTurnNumber = null;
     drawnCard.handIndex = participant.hand.length;
     drawnCard.deckIndex = null;
     participant.hand.push(drawnCard);
@@ -1289,6 +1283,13 @@ function readCardNumber(value: number | undefined, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
+function isBattlefieldEntryTurn(
+  runtime: BattleRuntimeState,
+  card: BattleCardRuntimeState,
+): boolean {
+  return card.enteredBattlefieldTurnNumber === runtime.turnNumber;
+}
+
 function reindexHand(participant: BattleParticipantRuntimeState): void {
   participant.hand.forEach((card, index) => {
     card.handIndex = index;
@@ -1367,6 +1368,7 @@ function moveBattlefieldCardToDrop(
   );
   card.zone = 'DROP';
   card.battlefieldSlot = null;
+  card.enteredBattlefieldTurnNumber = null;
   card.handIndex = null;
   card.deckIndex = null;
   getParticipant(runtime, card.side).drop.push(card);

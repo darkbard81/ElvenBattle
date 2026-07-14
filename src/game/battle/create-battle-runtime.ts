@@ -61,6 +61,7 @@ function createBattleParticipantRuntimeState(
 ): BattleParticipantRuntimeState {
   const leader = createBattleCardRuntimeState(side, deck.leader, 'BATTLEFIELD', {
     battlefieldSlot: leaderSlot,
+    enteredBattlefieldTurnNumber: 1,
   });
   const hand = deck.cards
     .slice(0, INITIAL_HAND_SIZE)
@@ -81,6 +82,7 @@ function createBattleParticipantRuntimeState(
 
 type CreateBattleCardRuntimeStateOptions = {
   battlefieldSlot?: BattleSlotId;
+  enteredBattlefieldTurnNumber?: number;
   handIndex?: number;
   deckIndex?: number;
 };
@@ -96,6 +98,7 @@ function createBattleCardRuntimeState(
     side,
     zone,
     battlefieldSlot: options.battlefieldSlot ?? null,
+    enteredBattlefieldTurnNumber: options.enteredBattlefieldTurnNumber ?? null,
     handIndex: options.handIndex ?? null,
     deckIndex: options.deckIndex ?? null,
     hasMovedThisTurn: false,

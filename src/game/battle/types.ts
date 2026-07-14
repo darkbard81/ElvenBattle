@@ -41,6 +41,7 @@ export type BattleCardRuntimeState = {
   side: BattleSide;
   zone: BattleRuntimeZone;
   battlefieldSlot: BattleSlotId | null;
+  enteredBattlefieldTurnNumber: number | null;
   handIndex: number | null;
   deckIndex: number | null;
   hasMovedThisTurn: boolean;
