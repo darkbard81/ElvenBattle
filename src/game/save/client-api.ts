@@ -1,5 +1,31 @@
 import type { CardInstance, SaveSlotId, SaveSlotState, SaveSlotSummary } from './types';
 import type { StageProgressState } from '../stage/types';
+import type { ApiFetch } from '../auth/client';
+
+/** 인증된 요청 함수를 통해 계정 소유 저장 슬롯만 다루는 클라이언트다. */
+export class SaveSlotsClient {
+  constructor(private readonly request: ApiFetch) {}
+
+  /** 현재 계정의 1~3번 저장 슬롯 요약을 반환한다. */
+  fetchSummaries(): Promise<SaveSlotSummary[]> {
+    return fetchSaveSlotSummaries(this.request);
+  }
+
+  /** 현재 계정의 지정 슬롯 원본 상태를 반환한다. */
+  fetch(slotId: SaveSlotId): Promise<SaveSlotState> {
+    return fetchSaveSlot(this.request, slotId);
+  }
+
+  /** 현재 계정의 지정 슬롯을 검증된 상태로 덮어쓴다. */
+  save(state: SaveSlotState): Promise<SaveSlotState> {
+    return saveSlotState(this.request, state);
+  }
+
+  /** 현재 계정의 빈 슬롯을 초기 상태로 생성한다. */
+  initialize(slotId: SaveSlotId): Promise<{ state: SaveSlotState; summary: SaveSlotSummary }> {
+    return initializeSaveSlot(this.request, slotId);
+  }
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -93,8 +119,8 @@ function isStageProgressState(value: unknown): value is StageProgressState {
  * 서버의 `/api/save-slots` 응답을 읽어 저장 슬롯 요약을 반환한다.
  * 응답 형식이 예상과 다르면 예외를 던져서 씬이 실패 상태를 처리하게 한다.
  */
-export async function fetchSaveSlotSummaries(): Promise<SaveSlotSummary[]> {
-  const response = await fetch('/api/save-slots');
+async function fetchSaveSlotSummaries(request: ApiFetch): Promise<SaveSlotSummary[]> {
+  const response = await request('/api/save-slots');
   if (!response.ok) {
     throw new Error(`Failed to load save slots: ${response.status} ${response.statusText}`);
   }
@@ -111,8 +137,8 @@ export async function fetchSaveSlotSummaries(): Promise<SaveSlotSummary[]> {
  * 지정한 슬롯의 저장 상태를 읽어 세션 생성에 필요한 원본 데이터를 돌려준다.
  * 서버가 비정상 응답을 반환하면 런타임 검증 단계에서 중단한다.
  */
-export async function fetchSaveSlot(slotId: SaveSlotId): Promise<SaveSlotState> {
-  const response = await fetch(`/api/save-slots/${slotId}`);
+async function fetchSaveSlot(request: ApiFetch, slotId: SaveSlotId): Promise<SaveSlotState> {
+  const response = await request(`/api/save-slots/${slotId}`);
   if (!response.ok) {
     throw new Error(await response.text());
   }
@@ -129,8 +155,8 @@ export async function fetchSaveSlot(slotId: SaveSlotId): Promise<SaveSlotState> 
  * 저장 슬롯 상태를 서버에 덮어쓰고, 서버가 돌려준 저장 상태를 다시 검증한다.
  * 클라이언트가 만든 직렬화 결과와 서버 검증 스키마가 어긋나면 예외를 던진다.
  */
-export async function saveSlotState(state: SaveSlotState): Promise<SaveSlotState> {
-  const response = await fetch(`/api/save-slots/${state.slotId}`, {
+async function saveSlotState(request: ApiFetch, state: SaveSlotState): Promise<SaveSlotState> {
+  const response = await request(`/api/save-slots/${state.slotId}`, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
@@ -153,10 +179,11 @@ export async function saveSlotState(state: SaveSlotState): Promise<SaveSlotState
  * 비어 있는 저장 슬롯을 초기화하고, 초기 상태와 요약을 함께 반환한다.
  * 초기화 결과는 곧바로 전장 세션 생성에 사용된다.
  */
-export async function initializeSaveSlot(
+async function initializeSaveSlot(
+  request: ApiFetch,
   slotId: SaveSlotId,
 ): Promise<{ state: SaveSlotState; summary: SaveSlotSummary }> {
-  const response = await fetch(`/api/save-slots/${slotId}/initialize`, {
+  const response = await request(`/api/save-slots/${slotId}/initialize`, {
     method: 'POST',
   });
   if (!response.ok) {

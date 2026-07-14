@@ -32,7 +32,6 @@ import {
   type MoveBattleAction,
   type PlaceBattleAction,
 } from '../../game/battle/types';
-import { saveSlotState } from '../../game/save/client-api';
 import {
   createGameSession,
   createSaveSlotStateFromGameSession,
@@ -45,6 +44,7 @@ import { UI_THEME } from '../../theme';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
 import { SequencePlugin } from '../plugins/sequence/SequencePlugin';
 import type { SequenceStep } from '../plugins/sequence/sequence-types';
+import { getGameServices } from '../services/game-services';
 import { CanvasUiFactory, type UiLayoutChild } from '../ui/CanvasUiFactory';
 import type { BattlefieldSceneData, StageSceneData } from './scene-data';
 
@@ -2374,7 +2374,9 @@ export class BattlefieldScene extends Phaser.Scene {
     this.renderBattleState();
 
     try {
-      const savedState = await saveSlotState(createSaveSlotStateFromGameSession(this.session));
+      const savedState = await getGameServices(this).saveSlots.save(
+        createSaveSlotStateFromGameSession(this.session),
+      );
       const savedSession = createGameSession(savedState);
       this.scene.start('StageScene', {
         session: savedSession,

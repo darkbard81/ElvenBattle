@@ -439,6 +439,15 @@ export const UI_THEME = {
     xl: 32,
   },
   dom: {
+    login: {
+      panelBackground: 'rgba(7, 16, 24, 0.96)',
+      panelBorder: '1px solid rgba(218, 246, 211, 0.68)',
+      panelShadow: '0 22px 70px rgba(0, 0, 0, 0.5)',
+      inputBackground: 'rgba(18, 33, 28, 0.94)',
+      inputBorder: '1px solid rgba(183, 201, 186, 0.52)',
+      focusRing: 'rgba(191, 238, 197, 0.22)',
+      buttonBorder: '1px solid rgba(218, 246, 211, 0.82)',
+    },
     licenseDialog: {
       overlayPadding: '28px',
       overlayBackground: 'rgba(0, 0, 0, 0.68)',

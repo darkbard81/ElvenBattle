@@ -1,6 +1,10 @@
 import type { GameSession } from '../../game/save/session';
 import type { StageBattleResult } from '../../game/stage/types';
 
+export type TitleSceneData = {
+  statusMessage?: string;
+};
+
 export type LoaderSceneData = {
   assetBaseUrl: string;
 };

@@ -2,14 +2,15 @@ import Phaser from 'phaser';
 import { UI_THEME } from '../../theme';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
 import { CanvasUiFactory } from '../ui/CanvasUiFactory';
-import type { MainMenuSceneData } from './scene-data';
+import { getGameServices } from '../services/game-services';
+import type { MainMenuSceneData, TitleSceneData } from './scene-data';
 
 const MENU_TOP = 88;
 const TITLE_HEIGHT = 142;
 const BUTTON_WIDTH = 360;
 const BUTTON_HEIGHT = 72;
 const BUTTON_GAP = 22;
-const BUTTON_COUNT = 3;
+const BUTTON_COUNT = 4;
 const BUTTON_STACK_HEIGHT = BUTTON_HEIGHT * BUTTON_COUNT + BUTTON_GAP * (BUTTON_COUNT - 1);
 const BUTTON_TOP_PADDING = 128;
 const STATUS_HEIGHT = 96;
@@ -72,6 +73,8 @@ export class MainMenuScene extends Phaser.Scene {
   private readonly ui = new CanvasUiFactory(this);
   private licenseOverlay: HTMLDivElement | null = null;
   private licenseEscapeHandler: ((event: KeyboardEvent) => void) | null = null;
+  private statusText!: Phaser.GameObjects.Text;
+  private isLoggingOut = false;
 
   constructor() {
     super({ key: 'MainMenuScene' });
@@ -215,6 +218,14 @@ export class MainMenuScene extends Phaser.Scene {
           minWidth: BUTTON_WIDTH,
           minHeight: BUTTON_HEIGHT,
         },
+        {
+          gameObject: this.createButton('Logout', () => {
+            void this.logout();
+          }),
+          align: 'center',
+          minWidth: BUTTON_WIDTH,
+          minHeight: BUTTON_HEIGHT,
+        },
       ],
     });
   }
@@ -238,7 +249,7 @@ export class MainMenuScene extends Phaser.Scene {
         : `Loaded ${data.loadedCount} assets`;
 
     const group = this.ui.container({ width: GAME_WIDTH, height: STATUS_HEIGHT });
-    const status = this.ui.text({
+    this.statusText = this.ui.text({
       x: GAME_WIDTH / 2,
       y: 44,
       text: statusText,
@@ -250,15 +261,32 @@ export class MainMenuScene extends Phaser.Scene {
     const helper = this.ui.text({
       x: GAME_WIDTH / 2,
       y: 76,
-      text: 'Start Game opens the save slot screen in this phase.',
+      text: `Signed in as ${getGameServices(this).auth.current?.id ?? 'unknown'}`,
       variant: 'helper',
       align: 'center',
       origin: 0.5,
       alpha: 0.9,
     });
 
-    group.add([status, helper]);
+    group.add([this.statusText, helper]);
     return group;
+  }
+
+  private async logout(): Promise<void> {
+    if (this.isLoggingOut) {
+      return;
+    }
+    this.isLoggingOut = true;
+    this.statusText.setText('Signing out...');
+    try {
+      await getGameServices(this).auth.logout();
+      this.scene.start('TitleScene', {
+        statusMessage: 'You have been logged out.',
+      } satisfies TitleSceneData);
+    } catch (error) {
+      this.isLoggingOut = false;
+      this.statusText.setText(error instanceof Error ? error.message : String(error));
+    }
   }
 
   private showLicenseOverlay(): void {

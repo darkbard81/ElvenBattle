@@ -5,8 +5,15 @@ import { Readable } from 'node:stream';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { describe, expect, it } from 'vitest';
 import { CARD_DEFINITIONS } from '../game/save/card-catalog';
+import { createInitialSaveState } from '../game/save/create-initial-save';
 import type { SaveSlotState } from '../game/save/types';
-import { createSaveSlotsApiHandler, listSaveSlotSummaries } from './save-slots-api';
+import { AUTH_SESSION_COOKIE_NAME } from './auth-api';
+import { AuthService } from './auth-service';
+import {
+  createSaveSlotsApiHandler,
+  listSaveSlotSummaries,
+  migrateLegacySaveSlots,
+} from './save-slots-api';
 
 function createRequest(method: string, url: string, body?: string): IncomingMessage {
   const request = Readable.from(body ? [body] : []) as IncomingMessage;
@@ -14,6 +21,29 @@ function createRequest(method: string, url: string, body?: string): IncomingMess
   request.url = url;
   request.headers = {};
   return request;
+}
+
+async function createTestContext(tempRoot: string): Promise<{
+  handler: ReturnType<typeof createSaveSlotsApiHandler>;
+  request(method: string, url: string, body?: string): IncomingMessage;
+  slotsRoot: string;
+}> {
+  const dataRoot = path.join(tempRoot, 'data');
+  const authService = new AuthService({ dataRoot, startCleanupTimer: false });
+  const issued = await authService.register({ id: 'test_user', password: 'password-123' });
+  return {
+    handler: createSaveSlotsApiHandler({
+      authService,
+      projectRoot: process.cwd(),
+      dataRoot,
+    }),
+    request(method, url, body) {
+      const request = createRequest(method, url, body);
+      request.headers.cookie = `${AUTH_SESSION_COOKIE_NAME}=${issued.token}`;
+      return request;
+    },
+    slotsRoot: path.join(dataRoot, 'users', issued.accountId, 'save-slots'),
+  };
 }
 
 function createResponse(): {
@@ -55,10 +85,24 @@ function createResponse(): {
 }
 
 describe('save slots api', () => {
+  it('rejects unauthenticated save-slot requests', async () => {
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'save-slots-'));
+    const dataRoot = path.join(tempRoot, 'data');
+    const authService = new AuthService({ dataRoot, startCleanupTimer: false });
+    const handler = createSaveSlotsApiHandler({ authService, dataRoot });
+    const req = createRequest('GET', '/api/save-slots');
+    const res = createResponse();
+
+    await handler(req, res.response, () => undefined);
+
+    expect(res.statusCode()).toBe(401);
+    expect(res.json()).toMatchObject({ error: { code: 'NO_SESSION' } });
+  });
+
   it('returns three empty summaries when no files exist', async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'save-slots-'));
-    const handler = createSaveSlotsApiHandler({ saveSlotsRoot: path.join(tempRoot, 'slots') });
-    const req = createRequest('GET', '/api/save-slots');
+    const { handler, request } = await createTestContext(tempRoot);
+    const req = request('GET', '/api/save-slots');
     const res = createResponse();
 
     await handler(req, res.response, () => undefined);
@@ -71,13 +115,9 @@ describe('save slots api', () => {
 
   it('initializes, saves, and reloads a slot', async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'save-slots-'));
-    const slotsRoot = path.join(tempRoot, 'slots');
-    const handler = createSaveSlotsApiHandler({
-      projectRoot: process.cwd(),
-      saveSlotsRoot: slotsRoot,
-    });
+    const { handler, request, slotsRoot } = await createTestContext(tempRoot);
 
-    const initReq = createRequest('POST', '/api/save-slots/1/initialize');
+    const initReq = request('POST', '/api/save-slots/1/initialize');
     const initRes = createResponse();
     await handler(initReq, initRes.response, () => undefined);
 
@@ -127,14 +167,14 @@ describe('save slots api', () => {
         },
       },
     };
-    const putReq = createRequest('PUT', '/api/save-slots/1', JSON.stringify(savedState));
+    const putReq = request('PUT', '/api/save-slots/1', JSON.stringify(savedState));
     const putRes = createResponse();
     await handler(putReq, putRes.response, () => undefined);
 
     expect(putRes.statusCode()).toBe(200);
     expect(putRes.json()).toEqual(savedState);
 
-    const getReq = createRequest('GET', '/api/save-slots/1');
+    const getReq = request('GET', '/api/save-slots/1');
     const getRes = createResponse();
     await handler(getReq, getRes.response, () => undefined);
 
@@ -157,7 +197,7 @@ describe('save slots api', () => {
 
   it('normalizes legacy card instances when reading an existing slot', async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'save-slots-'));
-    const slotsRoot = path.join(tempRoot, 'slots');
+    const { handler, request, slotsRoot } = await createTestContext(tempRoot);
     await fs.mkdir(slotsRoot, { recursive: true });
     await fs.writeFile(
       path.join(slotsRoot, 'slot-1.json'),
@@ -184,8 +224,7 @@ describe('save slots api', () => {
       }),
       'utf8',
     );
-    const handler = createSaveSlotsApiHandler({ saveSlotsRoot: slotsRoot });
-    const req = createRequest('GET', '/api/save-slots/1');
+    const req = request('GET', '/api/save-slots/1');
     const res = createResponse();
 
     await handler(req, res.response, () => undefined);
@@ -212,10 +251,9 @@ describe('save slots api', () => {
 
   it('rejects collection cards outside the collection zone', async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'save-slots-'));
-    const slotsRoot = path.join(tempRoot, 'slots');
-    const handler = createSaveSlotsApiHandler({ saveSlotsRoot: slotsRoot });
+    const { handler, request } = await createTestContext(tempRoot);
 
-    const initReq = createRequest('POST', '/api/save-slots/1/initialize');
+    const initReq = request('POST', '/api/save-slots/1/initialize');
     const initRes = createResponse();
     await handler(initReq, initRes.response, () => undefined);
     const initBody = initRes.json() as { state: SaveSlotState };
@@ -232,7 +270,7 @@ describe('save slots api', () => {
       },
     };
 
-    const putReq = createRequest('PUT', '/api/save-slots/1', JSON.stringify(invalidState));
+    const putReq = request('PUT', '/api/save-slots/1', JSON.stringify(invalidState));
     const putRes = createResponse();
     await handler(putReq, putRes.response, () => undefined);
 
@@ -242,10 +280,9 @@ describe('save slots api', () => {
 
   it('persists valid equipment attachments and rejects invalid equipment references', async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'save-slots-'));
-    const slotsRoot = path.join(tempRoot, 'slots');
-    const handler = createSaveSlotsApiHandler({ saveSlotsRoot: slotsRoot });
+    const { handler, request } = await createTestContext(tempRoot);
 
-    const initReq = createRequest('POST', '/api/save-slots/1/initialize');
+    const initReq = request('POST', '/api/save-slots/1/initialize');
     const initRes = createResponse();
     await handler(initReq, initRes.response, () => undefined);
     const initBody = initRes.json() as { state: SaveSlotState };
@@ -265,7 +302,7 @@ describe('save slots api', () => {
       },
     };
 
-    const putReq = createRequest('PUT', '/api/save-slots/1', JSON.stringify(validState));
+    const putReq = request('PUT', '/api/save-slots/1', JSON.stringify(validState));
     const putRes = createResponse();
     await handler(putReq, putRes.response, () => undefined);
 
@@ -287,7 +324,7 @@ describe('save slots api', () => {
         ],
       },
     };
-    const invalidReq = createRequest('PUT', '/api/save-slots/1', JSON.stringify(invalidState));
+    const invalidReq = request('PUT', '/api/save-slots/1', JSON.stringify(invalidState));
     const invalidRes = createResponse();
     await handler(invalidReq, invalidRes.response, () => undefined);
 
@@ -297,13 +334,95 @@ describe('save slots api', () => {
 
   it('rejects invalid slot numbers', async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'save-slots-'));
-    const handler = createSaveSlotsApiHandler({ saveSlotsRoot: path.join(tempRoot, 'slots') });
-    const req = createRequest('PUT', '/api/save-slots/9', '{}');
+    const { handler, request } = await createTestContext(tempRoot);
+    const req = request('PUT', '/api/save-slots/9', '{}');
     const res = createResponse();
 
     await handler(req, res.response, () => undefined);
 
     expect(res.statusCode()).toBe(404);
     expect(res.text()).toBe('Not found');
+  });
+
+  it('isolates the same slot id between authenticated accounts', async () => {
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'save-slots-'));
+    const dataRoot = path.join(tempRoot, 'data');
+    const authService = new AuthService({ dataRoot, startCleanupTimer: false });
+    const first = await authService.register({ id: 'first_user', password: 'password-123' });
+    const second = await authService.register({ id: 'second_user', password: 'password-123' });
+    const handler = createSaveSlotsApiHandler({
+      authService,
+      dataRoot,
+      projectRoot: process.cwd(),
+    });
+    const authenticatedRequest = (
+      token: string,
+      method: string,
+      url: string,
+      body?: string,
+    ): IncomingMessage => {
+      const request = createRequest(method, url, body);
+      request.headers.cookie = `${AUTH_SESSION_COOKIE_NAME}=${token}`;
+      return request;
+    };
+
+    const firstInit = createResponse();
+    await handler(
+      authenticatedRequest(first.token, 'POST', '/api/save-slots/1/initialize'),
+      firstInit.response,
+      () => undefined,
+    );
+    expect(firstInit.statusCode()).toBe(200);
+
+    const firstList = createResponse();
+    await handler(
+      authenticatedRequest(first.token, 'GET', '/api/save-slots'),
+      firstList.response,
+      () => undefined,
+    );
+    const secondList = createResponse();
+    await handler(
+      authenticatedRequest(second.token, 'GET', '/api/save-slots'),
+      secondList.response,
+      () => undefined,
+    );
+
+    const firstSlots = firstList.json() as { slots: Array<{ slotId: number; isEmpty: boolean }> };
+    const secondSlots = secondList.json() as { slots: Array<{ slotId: number; isEmpty: boolean }> };
+    expect(firstSlots.slots[0]).toMatchObject({ slotId: 1, isEmpty: false });
+    expect(secondSlots.slots[0]).toMatchObject({ slotId: 1, isEmpty: true });
+    await expect(
+      fs.stat(path.join(dataRoot, 'users', first.accountId, 'save-slots', 'slot-1.json')),
+    ).resolves.toBeDefined();
+    await expect(
+      fs.stat(path.join(dataRoot, 'users', second.accountId, 'save-slots', 'slot-1.json')),
+    ).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('validates and copies legacy slots without removing their originals', async () => {
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'save-slots-'));
+    const legacyRoot = path.join(tempRoot, 'legacy');
+    const targetRoot = path.join(tempRoot, 'target');
+    const state = await createInitialSaveState({ slotId: 1, projectRoot: process.cwd() });
+    await fs.mkdir(legacyRoot, { recursive: true });
+    await fs.writeFile(
+      path.join(legacyRoot, 'slot-1.json'),
+      `${JSON.stringify(state, null, 2)}\n`,
+      'utf8',
+    );
+
+    await migrateLegacySaveSlots({
+      legacySaveSlotsRoot: legacyRoot,
+      targetSaveSlotsRoot: targetRoot,
+    });
+
+    await expect(fs.readFile(path.join(legacyRoot, 'slot-1.json'), 'utf8')).resolves.toContain(
+      'leader_minerva',
+    );
+    const copied = JSON.parse(await fs.readFile(path.join(targetRoot, 'slot-1.json'), 'utf8')) as {
+      slotId: number;
+      schemaVersion: number;
+    };
+    expect(copied).toMatchObject({ slotId: 1, schemaVersion: 3 });
   });
 });

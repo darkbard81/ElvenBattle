@@ -1,10 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  fetchSaveSlotSummaries,
-  fetchSaveSlot,
-  initializeSaveSlot,
-  saveSlotState,
-} from './client-api';
+import { SaveSlotsClient } from './client-api';
 import type { CardInstance, SaveSlotState } from './types';
 
 type FakeResponseInit = {
@@ -108,9 +103,9 @@ describe('save slot client api', () => {
         },
       }),
     );
-    vi.stubGlobal('fetch', fetchSpy);
+    const client = new SaveSlotsClient(fetchSpy);
 
-    await expect(fetchSaveSlotSummaries()).resolves.toEqual([
+    await expect(client.fetchSummaries()).resolves.toEqual([
       {
         slotId: 1,
         saveName: 'Slot 1',
@@ -124,8 +119,7 @@ describe('save slot client api', () => {
   });
 
   it('rejects invalid save slot state payloads', async () => {
-    vi.stubGlobal(
-      'fetch',
+    const client = new SaveSlotsClient(
       vi.fn(async () =>
         createFakeResponse({
           ok: true,
@@ -136,7 +130,7 @@ describe('save slot client api', () => {
       ),
     );
 
-    await expect(fetchSaveSlot(1)).rejects.toThrow('Invalid save slot state response');
+    await expect(client.fetch(1)).rejects.toThrow('Invalid save slot state response');
   });
 
   it('saves a slot state with PUT and JSON body', async () => {
@@ -149,9 +143,9 @@ describe('save slot client api', () => {
         body: state,
       }),
     );
-    vi.stubGlobal('fetch', fetchSpy);
+    const client = new SaveSlotsClient(fetchSpy);
 
-    await expect(saveSlotState(state)).resolves.toEqual(state);
+    await expect(client.save(state)).resolves.toEqual(state);
     expect(fetchSpy).toHaveBeenCalledWith('/api/save-slots/1', {
       method: 'PUT',
       headers: {
@@ -163,8 +157,7 @@ describe('save slot client api', () => {
 
   it('rejects invalid save slot state payloads after save', async () => {
     const state = createValidSaveSlotState();
-    vi.stubGlobal(
-      'fetch',
+    const client = new SaveSlotsClient(
       vi.fn(async () =>
         createFakeResponse({
           ok: true,
@@ -175,12 +168,11 @@ describe('save slot client api', () => {
       ),
     );
 
-    await expect(saveSlotState(state)).rejects.toThrow('Invalid save slot state response');
+    await expect(client.save(state)).rejects.toThrow('Invalid save slot state response');
   });
 
   it('loads initialized save slots', async () => {
-    vi.stubGlobal(
-      'fetch',
+    const client = new SaveSlotsClient(
       vi.fn(async () =>
         createFakeResponse({
           ok: true,
@@ -222,7 +214,7 @@ describe('save slot client api', () => {
       ),
     );
 
-    await expect(initializeSaveSlot(1)).resolves.toMatchObject({
+    await expect(client.initialize(1)).resolves.toMatchObject({
       state: {
         slotId: 1,
       },

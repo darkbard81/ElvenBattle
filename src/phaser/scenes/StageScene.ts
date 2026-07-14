@@ -1,5 +1,4 @@
 import Phaser from 'phaser';
-import { saveSlotState } from '../../game/save/client-api';
 import {
   createGameSession,
   createSaveSlotStateFromGameSession,
@@ -14,6 +13,7 @@ import type {
 } from '../../game/stage/types';
 import { UI_THEME } from '../../theme';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
+import { getGameServices } from '../services/game-services';
 import { CanvasUiFactory, type CanvasScrollState, type UiLayoutChild } from '../ui/CanvasUiFactory';
 import type {
   BattlefieldSceneData,
@@ -21,6 +21,7 @@ import type {
   EquipmentSceneData,
   GrowthSceneData,
   StageSceneData,
+  TitleSceneData,
 } from './scene-data';
 
 const STAGE_BODY_X = 74;
@@ -47,6 +48,10 @@ const HUD_BUTTON_HEIGHT = 64;
 const HUD_BUTTON_GAP = 20;
 const HUD_BOTTOM_SAFE_MARGIN = 128;
 const HUD_WIDTH = 180 + 250 + 128 * 4 + HUD_BUTTON_GAP * 5;
+const LOGOUT_BUTTON_WIDTH = 180;
+const LOGOUT_BUTTON_HEIGHT = 58;
+const LOGOUT_BUTTON_MARGIN_X = 70;
+const LOGOUT_BUTTON_MARGIN_Y = 57;
 const STATUS_GAP_WITH_RESULT = 80;
 const STATUS_GAP_WITHOUT_RESULT = 214;
 const RESULT_SUMMARY_TO_STATUS_GAP = 232;
@@ -78,6 +83,7 @@ export class StageScene extends Phaser.Scene {
   private statusText!: Phaser.GameObjects.Text;
   private lastBattleResult: StageBattleResult | null = null;
   private isStartingBattle = false;
+  private isLoggingOut = false;
 
   constructor() {
     super({ key: 'StageScene' });
@@ -93,10 +99,12 @@ export class StageScene extends Phaser.Scene {
     this.selectedStageId = this.resolveInitialSelectedStage().id;
     this.stageListScrollState.childOY = 0;
     this.isStartingBattle = false;
+    this.isLoggingOut = false;
 
     this.addBackground();
     this.addTitle();
     this.addStatusText();
+    this.addLogoutButton();
     this.renderStageBody();
     this.renderBattleResultSummary();
     this.renderHud();
@@ -163,6 +171,20 @@ export class StageScene extends Phaser.Scene {
       align: 'center',
       origin: 0.5,
       wordWrapWidth: GAME_WIDTH - 120,
+    });
+  }
+
+  private addLogoutButton(): void {
+    this.ui.button({
+      x: GAME_WIDTH - LOGOUT_BUTTON_MARGIN_X - LOGOUT_BUTTON_WIDTH / 2,
+      y: LOGOUT_BUTTON_MARGIN_Y + LOGOUT_BUTTON_HEIGHT / 2,
+      width: LOGOUT_BUTTON_WIDTH,
+      height: LOGOUT_BUTTON_HEIGHT,
+      label: 'Logout',
+      enabled: true,
+      onClick: () => {
+        void this.logout();
+      },
     });
   }
 
@@ -664,7 +686,9 @@ export class StageScene extends Phaser.Scene {
     };
 
     try {
-      const savedState = await saveSlotState(createSaveSlotStateFromGameSession(nextSession));
+      const savedState = await getGameServices(this).saveSlots.save(
+        createSaveSlotStateFromGameSession(nextSession),
+      );
       const savedSession = createGameSession(savedState);
       this.scene.start('BattlefieldScene', {
         session: savedSession,
@@ -715,6 +739,25 @@ export class StageScene extends Phaser.Scene {
 
   private setStatus(message: string): void {
     this.statusText.setText(message);
+  }
+
+  private async logout(): Promise<void> {
+    if (this.isLoggingOut || this.isStartingBattle) {
+      return;
+    }
+    this.isLoggingOut = true;
+    this.input.enabled = false;
+    this.setStatus('Signing out...');
+    try {
+      await getGameServices(this).auth.logout();
+      this.scene.start('TitleScene', {
+        statusMessage: 'You have been logged out.',
+      } satisfies TitleSceneData);
+    } catch (error: unknown) {
+      this.isLoggingOut = false;
+      this.input.enabled = true;
+      this.setStatus(error instanceof Error ? error.message : String(error));
+    }
   }
 
   private getStageName(stageId: string): string {

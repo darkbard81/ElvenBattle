@@ -38,7 +38,7 @@ npm run dev
 ```
 
 - 개발 서버는 기본적으로 `0.0.0.0:3010`을 strict port로 사용한다.
-- 서버 값은 `.env`의 `ELVEN_BATTLE_HOST`, `ELVEN_BATTLE_PORT`, `ELVEN_BATTLE_STRICT_PORT`, `ELVEN_BATTLE_ALLOWED_HOSTS`, `ELVEN_BATTLE_CAPTURE_HOST`, `ELVEN_BATTLE_ASSET_BASE_URL`로 덮어쓸 수 있다.
+- 서버 값은 `.env`의 `ELVEN_BATTLE_HOST`, `ELVEN_BATTLE_PORT`, `ELVEN_BATTLE_STRICT_PORT`, `ELVEN_BATTLE_ALLOWED_HOSTS`, `ELVEN_BATTLE_CAPTURE_HOST`, `ELVEN_BATTLE_ASSET_BASE_URL`, `ELVEN_BATTLE_DATA_ROOT`로 덮어쓸 수 있다.
 - 게임은 `/`, 카드 텍스트 도구는 `/tools/card-text/index.html`에서 실행한다.
 - production 결과 확인은 `npm run preview`를 사용한다.
 - fresh clone에는 런타임 `assets/`와 `.data/`가 없을 수 있다. 존재한다고 가정하거나 임의 fixture로 커밋하지 않는다.

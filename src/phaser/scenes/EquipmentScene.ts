@@ -1,5 +1,4 @@
 import Phaser from 'phaser';
-import { saveSlotState } from '../../game/save/client-api';
 import {
   equipCollectionEquipmentToDeckUnit,
   unequipEquipmentFromDeckUnit,
@@ -11,6 +10,7 @@ import {
   type RuntimeCardInstance,
 } from '../../game/save/session';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
+import { getGameServices } from '../services/game-services';
 import { CanvasUiFactory, type CanvasScrollState, type UiLayoutChild } from '../ui/CanvasUiFactory';
 import type { EquipmentSceneData, StageSceneData } from './scene-data';
 
@@ -690,7 +690,9 @@ export class EquipmentScene extends Phaser.Scene {
     this.renderHud();
 
     try {
-      const savedState = await saveSlotState(createSaveSlotStateFromGameSession(this.draftSession));
+      const savedState = await getGameServices(this).saveSlots.save(
+        createSaveSlotStateFromGameSession(this.draftSession),
+      );
       const savedSession = createGameSession(savedState);
       this.savedSession = savedSession;
       this.draftSession = savedSession;

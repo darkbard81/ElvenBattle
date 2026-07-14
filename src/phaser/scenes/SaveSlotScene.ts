@@ -2,14 +2,10 @@ import Phaser from 'phaser';
 import { UI_THEME } from '../../theme';
 import { createGameSession } from '../../game/save/session';
 import type { SaveSlotSummary } from '../../game/save/types';
-import {
-  fetchSaveSlot,
-  fetchSaveSlotSummaries,
-  initializeSaveSlot,
-} from '../../game/save/client-api';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
+import { getGameServices } from '../services/game-services';
 import { CanvasUiFactory } from '../ui/CanvasUiFactory';
-import type { MainMenuSceneData, StageSceneData } from './scene-data';
+import type { MainMenuSceneData, StageSceneData, TitleSceneData } from './scene-data';
 
 const SLOT_CARD_WIDTH = 330;
 const SLOT_CARD_HEIGHT = 260;
@@ -20,6 +16,7 @@ const BACK_BUTTON_X = 70;
 const BACK_BUTTON_Y = 57;
 const BACK_BUTTON_WIDTH = 180;
 const BACK_BUTTON_HEIGHT = 58;
+const LOGOUT_BUTTON_X = GAME_WIDTH - BACK_BUTTON_X - BACK_BUTTON_WIDTH;
 const STATUS_GROUP_Y = 232;
 const STATUS_GROUP_HEIGHT = 1;
 const RETRY_BUTTON_WIDTH = 280;
@@ -35,6 +32,7 @@ export class SaveSlotScene extends Phaser.Scene {
   private readonly ui = new CanvasUiFactory(this);
   private statusText!: Phaser.GameObjects.Text;
   private slotContentContainer: Phaser.GameObjects.GameObject | null = null;
+  private isLoggingOut = false;
 
   constructor() {
     super({ key: 'SaveSlotScene' });
@@ -44,6 +42,7 @@ export class SaveSlotScene extends Phaser.Scene {
    * 저장 슬롯 목록을 불러오기 전 초기 UI를 구성한다.
    */
   create(): void {
+    this.isLoggingOut = false;
     this.addBackground();
     this.addForegroundUi();
     this.showLoadingState();
@@ -111,6 +110,16 @@ export class SaveSlotScene extends Phaser.Scene {
           offsetOriginY: -0.5,
         },
         {
+          gameObject: this.createLogoutButton(),
+          align: 'left-top',
+          minWidth: BACK_BUTTON_WIDTH,
+          minHeight: BACK_BUTTON_HEIGHT,
+          offsetX: LOGOUT_BUTTON_X,
+          offsetY: BACK_BUTTON_Y,
+          offsetOriginX: -0.5,
+          offsetOriginY: -0.5,
+        },
+        {
           gameObject: this.createStatusGroup(),
           align: 'left-top',
           minWidth: GAME_WIDTH,
@@ -168,6 +177,24 @@ export class SaveSlotScene extends Phaser.Scene {
     return slot;
   }
 
+  private createLogoutButton(): Phaser.GameObjects.Container {
+    const slot = this.ui.container({ width: BACK_BUTTON_WIDTH, height: BACK_BUTTON_HEIGHT });
+    const button = this.ui.button({
+      x: BACK_BUTTON_WIDTH / 2,
+      y: BACK_BUTTON_HEIGHT / 2,
+      width: BACK_BUTTON_WIDTH,
+      height: BACK_BUTTON_HEIGHT,
+      label: 'Logout',
+      enabled: true,
+      onClick: () => {
+        void this.logout();
+      },
+    });
+
+    slot.add(button);
+    return slot;
+  }
+
   private createStatusGroup(): Phaser.GameObjects.Container {
     const group = this.ui.container({ width: GAME_WIDTH, height: STATUS_GROUP_HEIGHT });
     this.statusText = this.ui.text({
@@ -189,10 +216,16 @@ export class SaveSlotScene extends Phaser.Scene {
 
   private async loadSaveSlots(): Promise<void> {
     try {
-      const slots = await fetchSaveSlotSummaries();
+      const slots = await getGameServices(this).saveSlots.fetchSummaries();
+      if (this.isLoggingOut) {
+        return;
+      }
       this.renderSlotCards(slots);
       this.setStatus('Select a slot to continue or create a new save.');
     } catch (error: unknown) {
+      if (this.isLoggingOut) {
+        return;
+      }
       this.showFailureState(error);
     }
   }
@@ -342,21 +375,49 @@ export class SaveSlotScene extends Phaser.Scene {
     this.slotContentContainer = null;
   }
 
+  private async logout(): Promise<void> {
+    if (this.isLoggingOut) {
+      return;
+    }
+    this.isLoggingOut = true;
+    this.input.enabled = false;
+    this.setStatus('Signing out...');
+    try {
+      await getGameServices(this).auth.logout();
+      this.scene.start('TitleScene', {
+        statusMessage: 'You have been logged out.',
+      } satisfies TitleSceneData);
+    } catch (error: unknown) {
+      this.isLoggingOut = false;
+      this.input.enabled = true;
+      this.setStatus(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   private async handleSlotSelection(slot: SaveSlotSummary): Promise<void> {
     try {
       if (slot.isEmpty) {
         this.setStatus(`Initializing Slot ${slot.slotId}...`);
-        const result = await initializeSaveSlot(slot.slotId);
+        const result = await getGameServices(this).saveSlots.initialize(slot.slotId);
+        if (this.isLoggingOut) {
+          return;
+        }
         const session = createGameSession(result.state);
         this.scene.start('StageScene', { session } satisfies StageSceneData);
         return;
       }
 
       this.setStatus(`Loading Slot ${slot.slotId}...`);
-      const state = await fetchSaveSlot(slot.slotId);
+      const state = await getGameServices(this).saveSlots.fetch(slot.slotId);
+      if (this.isLoggingOut) {
+        return;
+      }
       const session = createGameSession(state);
       this.scene.start('StageScene', { session } satisfies StageSceneData);
     } catch (error: unknown) {
+      if (this.isLoggingOut) {
+        return;
+      }
       this.showFailureState(error);
     }
   }

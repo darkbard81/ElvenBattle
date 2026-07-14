@@ -20,26 +20,30 @@ import {
   type SaveSlotsResponse,
 } from '../game/save/types';
 import { normalizeStageProgressState } from '../game/stage/progress';
+import { authenticateHttpRequest } from './auth-api';
+import type { AuthService } from './auth-service';
 
 type SaveSlotsApiOptions = {
+  authService: AuthService;
   projectRoot?: string;
-  saveSlotsRoot?: string;
+  dataRoot?: string;
 };
 
 type JsonRecord = Record<string, unknown>;
 
 const defaultProjectRoot = fileURLToPath(new URL('../..', import.meta.url));
-const defaultSaveSlotsRoot = path.join(defaultProjectRoot, '.data/save-slots');
+const defaultDataRoot = path.join(defaultProjectRoot, '.data');
+const defaultSaveSlotsRoot = path.join(defaultDataRoot, 'save-slots');
 
 /**
  * `/api/save-slots/...` 요청을 처리하는 공용 API 핸들러를 만든다.
  * 1~3번 슬롯의 조회, 저장, 초기화만 허용한다.
  */
 export function createSaveSlotsApiHandler(
-  options: SaveSlotsApiOptions = {},
+  options: SaveSlotsApiOptions,
 ): (request: IncomingMessage, response: ServerResponse, next: () => void) => Promise<boolean> {
   const projectRoot = options.projectRoot ?? defaultProjectRoot;
-  const saveSlotsRoot = options.saveSlotsRoot ?? defaultSaveSlotsRoot;
+  const dataRoot = options.dataRoot ?? defaultDataRoot;
 
   return async (request, response) => {
     const url = new URL(request.url ?? '/', 'http://localhost');
@@ -48,6 +52,12 @@ export function createSaveSlotsApiHandler(
     }
 
     try {
+      const account = authenticateHttpRequest(options.authService, request, response);
+      if (!account) {
+        return true;
+      }
+      const saveSlotsRoot = getAccountSaveSlotsRoot(dataRoot, account.accountId);
+
       if (request.method === 'GET' && url.pathname === '/api/save-slots') {
         sendJson(response, await listSaveSlotSummaries(saveSlotsRoot));
         return true;
@@ -124,6 +134,21 @@ export async function listSaveSlotSummaries(
   return { slots };
 }
 
+/** 첫 계정 생성 시 기존 공용 슬롯을 검증한 뒤 개인 저장소에 복사한다. */
+export async function migrateLegacySaveSlots(options: {
+  legacySaveSlotsRoot: string;
+  targetSaveSlotsRoot: string;
+}): Promise<void> {
+  const states = await Promise.all(
+    SAVE_SLOT_IDS.map((slotId) => readSaveSlotState(options.legacySaveSlotsRoot, slotId)),
+  );
+  for (const state of states) {
+    if (state) {
+      await writeSaveSlotState(options.targetSaveSlotsRoot, state);
+    }
+  }
+}
+
 async function readSaveSlotState(
   saveSlotsRoot: string,
   slotId: SaveSlotId,
@@ -175,6 +200,13 @@ function toSaveSlotSummary(state: SaveSlotState) {
 
 function getSaveSlotPath(saveSlotsRoot: string, slotId: SaveSlotId): string {
   return path.join(saveSlotsRoot, `slot-${slotId}.json`);
+}
+
+function getAccountSaveSlotsRoot(dataRoot: string, accountId: string): string {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(accountId)) {
+    throw new Error('Invalid authenticated account id');
+  }
+  return path.join(dataRoot, 'users', accountId, 'save-slots');
 }
 
 function parseSlotId(pathname: string): SaveSlotId | null {

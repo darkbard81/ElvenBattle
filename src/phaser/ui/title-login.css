@@ -1,0 +1,133 @@
+.title-login-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  align-items: center;
+  justify-items: center;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: max(160px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+  font-family: var(--eb-login-font);
+  color: var(--eb-login-text);
+  pointer-events: none;
+}
+
+.title-login-panel {
+  width: min(420px, calc(100vw - 32px));
+  box-sizing: border-box;
+  padding: 30px;
+  border: var(--eb-login-border);
+  border-radius: 10px;
+  background: var(--eb-login-panel);
+  box-shadow: var(--eb-login-shadow);
+  pointer-events: auto;
+}
+
+.title-login-heading {
+  margin: 0 0 8px;
+  font-size: 32px;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.title-login-helper {
+  margin: 0 0 24px;
+  color: var(--eb-login-muted);
+  font-size: 15px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.title-login-form {
+  display: grid;
+  gap: 18px;
+}
+
+.title-login-field {
+  display: grid;
+  gap: 8px;
+  font-size: 15px;
+}
+
+.title-login-field input {
+  width: 100%;
+  min-height: 48px;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: var(--eb-login-input-border);
+  border-radius: 6px;
+  outline: none;
+  background: var(--eb-login-input);
+  color: var(--eb-login-text);
+  font: inherit;
+  font-size: 18px;
+}
+
+.title-login-field input:focus-visible {
+  border-color: var(--eb-login-focus);
+  box-shadow: 0 0 0 3px var(--eb-login-focus-ring);
+}
+
+.title-login-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.title-login-actions button {
+  min-height: 50px;
+  border: var(--eb-login-button-border);
+  border-radius: 6px;
+  background: var(--eb-login-button);
+  color: var(--eb-login-text);
+  font: inherit;
+  font-size: 17px;
+  cursor: pointer;
+}
+
+.title-login-actions button:hover:not(:disabled),
+.title-login-actions button:focus-visible {
+  background: var(--eb-login-button-hover);
+}
+
+.title-login-actions button:disabled,
+.title-login-field input:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+.title-login-status {
+  min-height: 24px;
+  margin: 0;
+  color: var(--eb-login-muted);
+  font-size: 14px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.title-login-status[data-error='true'] {
+  color: var(--eb-login-danger);
+}
+
+@media (max-width: 520px) {
+  .title-login-overlay {
+    align-items: start;
+    padding-top: max(170px, calc(env(safe-area-inset-top) + 120px));
+  }
+
+  .title-login-panel {
+    padding: 24px 20px;
+  }
+
+  .title-login-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .title-login-field input,
+  .title-login-actions button {
+    transition: none;
+  }
+}
