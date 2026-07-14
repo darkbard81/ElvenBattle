@@ -80,6 +80,11 @@ export class MainMenuScene extends Phaser.Scene {
     super({ key: 'MainMenuScene' });
   }
 
+  /** Scene 재진입 시 이전 로그아웃 시도의 일시 상태를 초기화한다. */
+  init(): void {
+    this.isLoggingOut = false;
+  }
+
   /**
    * 메뉴 배경, 제목, 버튼과 로딩 결과 요약을 화면에 구성한다.
    */
