@@ -33,6 +33,7 @@ import type {
 } from './types';
 
 export const MAX_AUTOMATED_ACTIONS_PER_TURN = 20 as const;
+const FIRST_BATTLE_TURN_NUMBER = 1 as const;
 
 const BATTLEFIELD_ZONES: readonly BattlefieldZone[] = ['FR', 'FC', 'FL', 'BR', 'BC', 'BL'];
 const SLOT_COORDINATES: Record<BattlefieldZone, { x: number; y: number }> = {
@@ -231,7 +232,11 @@ export function listAttackActions(
   runtime: BattleRuntimeState,
   side: BattleSide = runtime.currentSide,
 ): AttackBattleAction[] {
-  if (runtime.phase === 'GAME_OVER' || side !== runtime.currentSide) {
+  if (
+    runtime.phase === 'GAME_OVER' ||
+    side !== runtime.currentSide ||
+    runtime.turnNumber === FIRST_BATTLE_TURN_NUMBER
+  ) {
     return [];
   }
 
@@ -323,7 +328,11 @@ export function listActiveSkillActions(
   runtime: BattleRuntimeState,
   side: BattleSide = runtime.currentSide,
 ): ActiveSkillBattleAction[] {
-  if (runtime.phase !== 'MAIN' || side !== runtime.currentSide) {
+  if (
+    runtime.phase !== 'MAIN' ||
+    side !== runtime.currentSide ||
+    runtime.turnNumber === FIRST_BATTLE_TURN_NUMBER
+  ) {
     return [];
   }
 

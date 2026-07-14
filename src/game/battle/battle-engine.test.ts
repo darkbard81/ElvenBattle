@@ -216,6 +216,81 @@ describe('battle engine', () => {
     expect(listMoveActions(runtime)).toEqual([]);
   });
 
+  it('disables attacks and active skills for both sides during the opening round', async () => {
+    const runtime = await createRuntime(1);
+    const playerAttacker = moveCardToBattlefield(
+      runtime,
+      'player',
+      'unit_elf_archer_001',
+      'player:FC',
+    );
+    const playerHealer = moveCardToBattlefield(
+      runtime,
+      'player',
+      'unit_elf_healer_001',
+      'player:FR',
+    );
+    moveCardToBattlefield(runtime, 'enemy', 'unit_dark_archer_001', 'enemy:FC');
+    moveCardToBattlefield(runtime, 'enemy', 'unit_dark_healer_001', 'enemy:FR');
+
+    expect(listAttackActions(runtime)).toEqual([]);
+    expect(listActiveSkillActions(runtime)).toEqual([]);
+    expect(listMoveActions(runtime).length).toBeGreaterThan(0);
+    expect(listPlaceActions(runtime).length).toBeGreaterThan(0);
+    expect(playerAttacker.hasAttackedThisTurn).toBe(false);
+    expect(playerHealer.hasUsedActiveSkillThisTurn).toBe(false);
+
+    applyTurnEnd(runtime);
+
+    expect(runtime.currentSide).toBe('enemy');
+    expect(runtime.turnNumber).toBe(1);
+    expect(listAttackActions(runtime, 'enemy')).toEqual([]);
+    expect(listActiveSkillActions(runtime, 'enemy')).toEqual([]);
+  });
+
+  it('reenables attacks and active skills after the opening round ends', async () => {
+    const runtime = await createRuntime(1);
+    moveCardToBattlefield(runtime, 'player', 'unit_elf_archer_001', 'player:FC');
+    moveCardToBattlefield(runtime, 'player', 'unit_elf_healer_001', 'player:FR');
+
+    expect(listAttackActions(runtime)).toEqual([]);
+    expect(listActiveSkillActions(runtime)).toEqual([]);
+
+    applyTurnEnd(runtime);
+    applyTurnEnd(runtime);
+
+    expect(runtime.currentSide).toBe('player');
+    expect(runtime.turnNumber).toBe(2);
+    expect(listAttackActions(runtime).length).toBeGreaterThan(0);
+    expect(listActiveSkillActions(runtime).length).toBeGreaterThan(0);
+  });
+
+  it('rejects attack and active skill actions during the opening round', async () => {
+    const runtime = await createRuntime(2);
+    const attacker = moveCardToBattlefield(runtime, 'player', 'unit_elf_archer_001', 'player:FC');
+    const healer = moveCardToBattlefield(runtime, 'player', 'unit_elf_healer_001', 'player:FR');
+    const attackAction = listAttackActions(runtime).find(
+      (action) =>
+        action.attackerInstanceId === attacker.card.instance.instanceId &&
+        action.targetInstanceId === runtime.enemy.leader.card.instance.instanceId,
+    );
+    const skillAction = listActiveSkillActions(runtime).find(
+      (action) =>
+        action.cardInstanceId === healer.card.instance.instanceId &&
+        action.targetInstanceId === attacker.card.instance.instanceId,
+    );
+    if (!attackAction || !skillAction) {
+      throw new Error('Expected legal post-opening actions');
+    }
+
+    runtime.turnNumber = 1;
+
+    expect(() => applyAttackAction(runtime, attackAction)).toThrow('Illegal attack action');
+    expect(() => applyActiveSkillAction(runtime, skillAction)).toThrow(
+      'Illegal active skill action',
+    );
+  });
+
   it('records a game-over outcome when a leader is defeated', async () => {
     const runtime = await createRuntime();
     const moveAction = listMoveActions(runtime).find(
@@ -368,6 +443,7 @@ describe('battle engine', () => {
       }),
       TEST_STAGE_DEFINITION,
     );
+    runtime.turnNumber = 2;
     const guardian = moveCardToBattlefield(runtime, 'player', 'unit_elf_guardian_001', 'player:FC');
     const action = listAttackActions(runtime).find(
       (candidate) =>
@@ -681,7 +757,7 @@ describe('battle engine', () => {
   });
 
   it('returns no active skill actions and auto-ends stalled turns once', async () => {
-    const runtime = await createRuntime();
+    const runtime = await createRuntime(1);
     runtime.player.hand = [];
     runtime.player.leader.card.instance.attack = 0;
     runtime.player.leader.hasMovedThisTurn = true;
@@ -698,7 +774,7 @@ describe('battle engine', () => {
   });
 
   it('advances turn number when enemy turn ends, starts the next turn, and resets flags', async () => {
-    const runtime = await createRuntime();
+    const runtime = await createRuntime(1);
     runtime.enemy.leader.hasMovedThisTurn = true;
     runtime.enemy.leader.hasAttackedThisTurn = true;
     runtime.enemy.leader.hasUsedActiveSkillThisTurn = true;
@@ -888,9 +964,11 @@ describe('battle engine', () => {
   });
 });
 
-async function createRuntime(): Promise<BattleRuntimeState> {
+async function createRuntime(turnNumber = 2): Promise<BattleRuntimeState> {
   const state = await createInitialSaveState({ slotId: 1 });
-  return createInitialBattleRuntime(createGameSession(state), TEST_STAGE_DEFINITION);
+  const runtime = createInitialBattleRuntime(createGameSession(state), TEST_STAGE_DEFINITION);
+  runtime.turnNumber = turnNumber;
+  return runtime;
 }
 
 function setupGuardianBlockScenario(
