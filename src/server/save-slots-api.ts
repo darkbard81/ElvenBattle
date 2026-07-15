@@ -37,7 +37,7 @@ const defaultSaveSlotsRoot = path.join(defaultDataRoot, 'save-slots');
 
 /**
  * `/api/save-slots/...` 요청을 처리하는 공용 API 핸들러를 만든다.
- * 1~3번 슬롯의 조회, 저장, 초기화만 허용한다.
+ * 1~3번 슬롯의 조회, 저장, 초기화, 삭제만 허용한다.
  */
 export function createSaveSlotsApiHandler(
   options: SaveSlotsApiOptions,
@@ -86,6 +86,12 @@ export function createSaveSlotsApiHandler(
         const body = validateSaveSlotState(await readRequestJson(request), slotId);
         await writeSaveSlotState(saveSlotsRoot, body);
         sendJson(response, body);
+        return true;
+      }
+
+      if (request.method === 'DELETE' && url.pathname === `/api/save-slots/${slotId}`) {
+        await deleteSaveSlotState(saveSlotsRoot, slotId);
+        sendJson(response, { summary: createEmptySummary(slotId) });
         return true;
       }
 
@@ -172,6 +178,10 @@ async function writeSaveSlotState(saveSlotsRoot: string, state: SaveSlotState): 
     `${JSON.stringify(state, null, 2)}\n`,
     'utf8',
   );
+}
+
+async function deleteSaveSlotState(saveSlotsRoot: string, slotId: SaveSlotId): Promise<void> {
+  await fs.rm(getSaveSlotPath(saveSlotsRoot, slotId), { force: true });
 }
 
 function createEmptySummary(slotId: SaveSlotId) {

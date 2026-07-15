@@ -7,10 +7,22 @@
       "rarity": "R",
       "type": "LEADER",
       "traits": [
-        { "key": "sourceLevel", "text": "2" },
-        { "key": "size", "text": "med" },
-        { "key": "creatureType", "text": "humanoid, orc" },
-        { "key": "role", "text": "지휘관" }
+        {
+          "key": "sourceLevel",
+          "text": "2"
+        },
+        {
+          "key": "size",
+          "text": "med"
+        },
+        {
+          "key": "creatureType",
+          "text": "humanoid, orc"
+        },
+        {
+          "key": "role",
+          "text": "지휘관"
+        }
       ],
       "slot": 0,
       "cost": 1,
@@ -21,14 +33,54 @@
       "exp": 0,
       "abilities": [],
       "growth": {
-        "lv2": [],
-        "lv3": [],
-        "lv4": [],
-        "lv5": [],
-        "lv6": [],
-        "lv7": [],
-        "lv8": [],
-        "lv9": []
+        "lv2": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv3": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ],
+        "lv4": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv5": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ],
+        "lv6": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv7": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ],
+        "lv8": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv9": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ]
       },
       "description": "강인한 오크 전사들을 규합해 전선을 압박하는 Level 02 지휘관.",
       "note": "힘과 연설로 지도권을 증명하고 습격대를 이끄는 오크 지휘관. 원본 PF2E 레벨은 2이다."
@@ -39,10 +91,22 @@
       "rarity": "UC",
       "type": "UNIT",
       "traits": [
-        { "key": "sourceLevel", "text": "2" },
-        { "key": "size", "text": "med" },
-        { "key": "creatureType", "text": "construct, mindless" },
-        { "key": "role", "text": "중장 수호자" }
+        {
+          "key": "sourceLevel",
+          "text": "2"
+        },
+        {
+          "key": "size",
+          "text": "med"
+        },
+        {
+          "key": "creatureType",
+          "text": "construct, mindless"
+        },
+        {
+          "key": "role",
+          "text": "중장 수호자"
+        }
       ],
       "slot": 0,
       "cost": 2,
@@ -60,14 +124,54 @@
         }
       ],
       "growth": {
-        "lv2": [],
-        "lv3": [],
-        "lv4": [],
-        "lv5": [],
-        "lv6": [],
-        "lv7": [],
-        "lv8": [],
-        "lv9": []
+        "lv2": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv3": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ],
+        "lv4": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv5": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ],
+        "lv6": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv7": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ],
+        "lv8": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv9": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ]
       },
       "description": "강한 일격을 갑주의 마력으로 흘려내며 전열을 지키는 방어 유닛.",
       "note": "낡은 갑옷에 움직임을 부여해 경비병이나 훈련 상대로 사용하는 구조물. 원본 PF2E 레벨은 2이다."
@@ -78,10 +182,22 @@
       "rarity": "UC",
       "type": "UNIT",
       "traits": [
-        { "key": "sourceLevel", "text": "1" },
-        { "key": "size", "text": "med" },
-        { "key": "creatureType", "text": "catfolk, humanoid" },
-        { "key": "role", "text": "돌격대" }
+        {
+          "key": "sourceLevel",
+          "text": "1"
+        },
+        {
+          "key": "size",
+          "text": "med"
+        },
+        {
+          "key": "creatureType",
+          "text": "catfolk, humanoid"
+        },
+        {
+          "key": "role",
+          "text": "돌격대"
+        }
       ],
       "slot": 0,
       "cost": 2,
@@ -99,14 +215,54 @@
         }
       ],
       "growth": {
-        "lv2": [],
-        "lv3": [],
-        "lv4": [],
-        "lv5": [],
-        "lv6": [],
-        "lv7": [],
-        "lv8": [],
-        "lv9": []
+        "lv2": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv3": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ],
+        "lv4": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv5": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ],
+        "lv6": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv7": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ],
+        "lv8": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv9": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ]
       },
       "description": "후열에서 전열로 뛰어들며 다음 공격을 크게 강화하는 기동 공격수.",
       "note": "경쾌한 움직임과 타고난 행운으로 위험을 넘나드는 캣포크 여행자. 원본 PF2E 레벨은 1이다."
@@ -117,10 +273,22 @@
       "rarity": "UC",
       "type": "UNIT",
       "traits": [
-        { "key": "sourceLevel", "text": "1" },
-        { "key": "size", "text": "sm" },
-        { "key": "creatureType", "text": "goblin, humanoid" },
-        { "key": "role", "text": "방화병" }
+        {
+          "key": "sourceLevel",
+          "text": "1"
+        },
+        {
+          "key": "size",
+          "text": "sm"
+        },
+        {
+          "key": "creatureType",
+          "text": "goblin, humanoid"
+        },
+        {
+          "key": "role",
+          "text": "방화병"
+        }
       ],
       "slot": 0,
       "cost": 2,
@@ -138,14 +306,54 @@
         }
       ],
       "growth": {
-        "lv2": [],
-        "lv3": [],
-        "lv4": [],
-        "lv5": [],
-        "lv6": [],
-        "lv7": [],
-        "lv8": [],
-        "lv9": []
+        "lv2": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv3": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ],
+        "lv4": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv5": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ],
+        "lv6": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv7": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ],
+        "lv8": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv9": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ]
       },
       "description": "등장과 동시에 정면의 적에게 불씨를 던져 진형을 흔드는 공격 유닛.",
       "note": "불에 대한 고블린의 동경을 위험한 집착으로 발전시킨 방화광. 원본 PF2E 레벨은 1이다."
@@ -156,10 +364,22 @@
       "rarity": "UC",
       "type": "UNIT",
       "traits": [
-        { "key": "sourceLevel", "text": "2" },
-        { "key": "size", "text": "med" },
-        { "key": "creatureType", "text": "aiuvarin, elf, human, humanoid" },
-        { "key": "role", "text": "원소술사" }
+        {
+          "key": "sourceLevel",
+          "text": "2"
+        },
+        {
+          "key": "size",
+          "text": "med"
+        },
+        {
+          "key": "creatureType",
+          "text": "aiuvarin, elf, human, humanoid"
+        },
+        {
+          "key": "role",
+          "text": "원소술사"
+        }
       ],
       "slot": 0,
       "cost": 1,
@@ -177,14 +397,54 @@
         }
       ],
       "growth": {
-        "lv2": [],
-        "lv3": [],
-        "lv4": [],
-        "lv5": [],
-        "lv6": [],
-        "lv7": [],
-        "lv8": [],
-        "lv9": []
+        "lv2": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv3": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ],
+        "lv4": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv5": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ],
+        "lv6": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv7": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ],
+        "lv8": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv9": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ]
       },
       "description": "원소를 응축한 화살을 선택한 적에게 발사하는 후방 주문 유닛.",
       "note": "사회적 경계 대신 주문 연구에 몰두해 원소 마법을 익힌 아이우바린. 원본 PF2E 레벨은 2이다."
@@ -195,10 +455,22 @@
       "rarity": "UC",
       "type": "UNIT",
       "traits": [
-        { "key": "sourceLevel", "text": "2" },
-        { "key": "size", "text": "med" },
-        { "key": "creatureType", "text": "bugbear, humanoid" },
-        { "key": "role", "text": "매복자" }
+        {
+          "key": "sourceLevel",
+          "text": "2"
+        },
+        {
+          "key": "size",
+          "text": "med"
+        },
+        {
+          "key": "creatureType",
+          "text": "bugbear, humanoid"
+        },
+        {
+          "key": "role",
+          "text": "매복자"
+        }
       ],
       "slot": 0,
       "cost": 2,
@@ -216,14 +488,54 @@
         }
       ],
       "growth": {
-        "lv2": [],
-        "lv3": [],
-        "lv4": [],
-        "lv5": [],
-        "lv6": [],
-        "lv7": [],
-        "lv8": [],
-        "lv9": []
+        "lv2": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv3": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ],
+        "lv4": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv5": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ],
+        "lv6": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv7": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ],
+        "lv8": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv9": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ]
       },
       "description": "상처 없이 방심한 목표를 골라 첫 일격의 위력을 높이는 잠복 공격수.",
       "note": "그림자 속에서 기다리며 공포가 무르익은 순간을 노리는 버그베어. 원본 PF2E 레벨은 2이다."
@@ -234,10 +546,22 @@
       "rarity": "C",
       "type": "UNIT",
       "traits": [
-        { "key": "sourceLevel", "text": "1" },
-        { "key": "size", "text": "sm" },
-        { "key": "creatureType", "text": "caligni, humanoid" },
-        { "key": "role", "text": "섬광 전령" }
+        {
+          "key": "sourceLevel",
+          "text": "1"
+        },
+        {
+          "key": "size",
+          "text": "sm"
+        },
+        {
+          "key": "creatureType",
+          "text": "caligni, humanoid"
+        },
+        {
+          "key": "role",
+          "text": "섬광 전령"
+        }
       ],
       "slot": 0,
       "cost": 1,
@@ -255,14 +579,54 @@
         }
       ],
       "growth": {
-        "lv2": [],
-        "lv3": [],
-        "lv4": [],
-        "lv5": [],
-        "lv6": [],
-        "lv7": [],
-        "lv8": [],
-        "lv9": []
+        "lv2": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv3": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ],
+        "lv4": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv5": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ],
+        "lv6": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv7": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ],
+        "lv8": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv9": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ]
       },
       "description": "쓰러지는 순간 강렬한 빛을 흩뿌려 적 전열 전체에 피해를 남기는 전령.",
       "note": "지하 세력 사이의 소식과 거래를 중개하며 경비와 함께 움직이는 칼리그니. 원본 PF2E 레벨은 1이다."
@@ -273,10 +637,22 @@
       "rarity": "UC",
       "type": "UNIT",
       "traits": [
-        { "key": "sourceLevel", "text": "1" },
-        { "key": "size", "text": "med" },
-        { "key": "creatureType", "text": "hobgoblin, humanoid" },
-        { "key": "role", "text": "전열 병사" }
+        {
+          "key": "sourceLevel",
+          "text": "1"
+        },
+        {
+          "key": "size",
+          "text": "med"
+        },
+        {
+          "key": "creatureType",
+          "text": "hobgoblin, humanoid"
+        },
+        {
+          "key": "role",
+          "text": "전열 병사"
+        }
       ],
       "slot": 0,
       "cost": 2,
@@ -294,14 +670,54 @@
         }
       ],
       "growth": {
-        "lv2": [],
-        "lv3": [],
-        "lv4": [],
-        "lv5": [],
-        "lv6": [],
-        "lv7": [],
-        "lv8": [],
-        "lv9": []
+        "lv2": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv3": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ],
+        "lv4": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv5": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ],
+        "lv6": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv7": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ],
+        "lv8": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv9": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ]
       },
       "description": "규율 잡힌 방진을 유지하며 전열에서 공격 압박을 높이는 정규병.",
       "note": "군사주의 사회의 대다수를 이루며 조직적으로 협력하는 홉고블린 병사. 원본 PF2E 레벨은 1이다."
@@ -312,10 +728,22 @@
       "rarity": "C",
       "type": "UNIT",
       "traits": [
-        { "key": "sourceLevel", "text": "1" },
-        { "key": "size", "text": "sm" },
-        { "key": "creatureType", "text": "goblin, humanoid" },
-        { "key": "role", "text": "전쟁가" }
+        {
+          "key": "sourceLevel",
+          "text": "1"
+        },
+        {
+          "key": "size",
+          "text": "sm"
+        },
+        {
+          "key": "creatureType",
+          "text": "goblin, humanoid"
+        },
+        {
+          "key": "role",
+          "text": "전쟁가"
+        }
       ],
       "slot": 0,
       "cost": 1,
@@ -333,14 +761,54 @@
         }
       ],
       "growth": {
-        "lv2": [],
-        "lv3": [],
-        "lv4": [],
-        "lv5": [],
-        "lv6": [],
-        "lv7": [],
-        "lv8": [],
-        "lv9": []
+        "lv2": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv3": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ],
+        "lv4": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv5": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ],
+        "lv6": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv7": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ],
+        "lv8": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv9": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ]
       },
       "description": "후열에서 귀에 꽂히는 군가를 불러 고블린 계열 아군의 사기를 높인다.",
       "note": "노래로 아군의 사기를 높이고 적의 집중을 흐트러뜨리는 고블린 전쟁가. 원본 PF2E 레벨은 1이다."
@@ -351,10 +819,22 @@
       "rarity": "C",
       "type": "UNIT",
       "traits": [
-        { "key": "sourceLevel", "text": "1" },
-        { "key": "size", "text": "lg" },
-        { "key": "creatureType", "text": "animal, swarm" },
-        { "key": "role", "text": "전열 교란" }
+        {
+          "key": "sourceLevel",
+          "text": "1"
+        },
+        {
+          "key": "size",
+          "text": "lg"
+        },
+        {
+          "key": "creatureType",
+          "text": "animal, swarm"
+        },
+        {
+          "key": "role",
+          "text": "전열 교란"
+        }
       ],
       "slot": 0,
       "cost": 1,
@@ -372,14 +852,54 @@
         }
       ],
       "growth": {
-        "lv2": [],
-        "lv3": [],
-        "lv4": [],
-        "lv5": [],
-        "lv6": [],
-        "lv7": [],
-        "lv8": [],
-        "lv9": []
+        "lv2": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv3": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ],
+        "lv4": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv5": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ],
+        "lv6": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv7": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ],
+        "lv8": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv9": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ]
       },
       "description": "전장 전체에 퍼져 적 전열의 발밑과 집중을 끊임없이 방해하는 군집.",
       "note": "수십 마리가 한꺼번에 달려들어 정착지와 전장을 혼란에 빠뜨리는 쥐 떼. 원본 PF2E 레벨은 1이다."
@@ -390,10 +910,22 @@
       "rarity": "C",
       "type": "UNIT",
       "traits": [
-        { "key": "sourceLevel", "text": "1" },
-        { "key": "size", "text": "med" },
-        { "key": "creatureType", "text": "animal" },
-        { "key": "role", "text": "기동 전투" }
+        {
+          "key": "sourceLevel",
+          "text": "1"
+        },
+        {
+          "key": "size",
+          "text": "med"
+        },
+        {
+          "key": "creatureType",
+          "text": "animal"
+        },
+        {
+          "key": "role",
+          "text": "기동 전투"
+        }
       ],
       "slot": 0,
       "cost": 2,
@@ -404,14 +936,54 @@
       "exp": 0,
       "abilities": [],
       "growth": {
-        "lv2": [],
-        "lv3": [],
-        "lv4": [],
-        "lv5": [],
-        "lv6": [],
-        "lv7": [],
-        "lv8": [],
-        "lv9": []
+        "lv2": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv3": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ],
+        "lv4": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv5": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ],
+        "lv6": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv7": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ],
+        "lv8": [
+          {
+            "stat": "hp",
+            "value": 1
+          }
+        ],
+        "lv9": [
+          {
+            "stat": "attack",
+            "value": 1
+          }
+        ]
       },
       "description": "높은 체력과 공격력을 함께 갖춘 Level 02의 안정적인 기본 전투 유닛.",
       "note": "하플링과 노움의 탈것으로도 쓰이며 주인에게 충실하고 전투에서 용맹한 대형견. 원본 PF2E 레벨은 1이다."

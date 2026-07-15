@@ -300,6 +300,14 @@ const surfaces = {
   },
   slotEmptyHover: { fill: color(0x173027), fillAlpha: 0.99 },
   slotReadyHover: { fill: colors.surfaceHover, fillAlpha: 0.99 },
+  slotDelete: {
+    fill: color(0x341d22),
+    fillAlpha: 0.97,
+    stroke: colors.dangerBorder,
+    strokeAlpha: 0.94,
+    strokeWidth: 2,
+  },
+  slotDeleteHover: { fill: color(0x51252d), fillAlpha: 0.99 },
   row: {
     fill: colors.surfaceRow,
     fillAlpha: 0.92,

@@ -19,6 +19,10 @@ const BACK_BUTTON_HEIGHT = 58;
 const LOGOUT_BUTTON_X = GAME_WIDTH - BACK_BUTTON_X - BACK_BUTTON_WIDTH;
 const STATUS_GROUP_Y = 232;
 const STATUS_GROUP_HEIGHT = 1;
+const DELETE_BUTTON_WIDTH = 280;
+const DELETE_BUTTON_HEIGHT = 64;
+const DELETE_BUTTON_X = (GAME_WIDTH - DELETE_BUTTON_WIDTH) / 2;
+const DELETE_BUTTON_Y = 570;
 const RETRY_BUTTON_WIDTH = 280;
 const RETRY_BUTTON_HEIGHT = 64;
 const RETRY_BUTTON_X = (GAME_WIDTH - RETRY_BUTTON_WIDTH) / 2;
@@ -32,6 +36,10 @@ export class SaveSlotScene extends Phaser.Scene {
   private readonly ui = new CanvasUiFactory(this);
   private statusText!: Phaser.GameObjects.Text;
   private slotContentContainer: Phaser.GameObjects.GameObject | null = null;
+  private deleteButtonGroup!: Phaser.GameObjects.Container;
+  private slotSummaries: SaveSlotSummary[] = [];
+  private deleteMode = false;
+  private isSlotActionPending = false;
   private isLoggingOut = false;
 
   constructor() {
@@ -43,6 +51,9 @@ export class SaveSlotScene extends Phaser.Scene {
    */
   create(): void {
     this.isLoggingOut = false;
+    this.isSlotActionPending = false;
+    this.deleteMode = false;
+    this.slotSummaries = [];
     this.addBackground();
     this.addForegroundUi();
     this.showLoadingState();
@@ -128,6 +139,16 @@ export class SaveSlotScene extends Phaser.Scene {
           offsetOriginX: -0.5,
           offsetOriginY: -0.5,
         },
+        {
+          gameObject: this.createDeleteButtonGroup(),
+          align: 'left-top',
+          minWidth: DELETE_BUTTON_WIDTH,
+          minHeight: DELETE_BUTTON_HEIGHT,
+          offsetX: DELETE_BUTTON_X,
+          offsetY: DELETE_BUTTON_Y,
+          offsetOriginX: -0.5,
+          offsetOriginY: -0.5,
+        },
       ],
     });
   }
@@ -209,6 +230,32 @@ export class SaveSlotScene extends Phaser.Scene {
     return group;
   }
 
+  private createDeleteButtonGroup(): Phaser.GameObjects.Container {
+    this.deleteButtonGroup = this.ui.container({
+      width: DELETE_BUTTON_WIDTH,
+      height: DELETE_BUTTON_HEIGHT,
+    });
+    this.renderDeleteButton();
+    return this.deleteButtonGroup;
+  }
+
+  private renderDeleteButton(): void {
+    this.deleteButtonGroup.removeAll(true);
+    this.deleteButtonGroup.add(
+      this.ui.button({
+        x: DELETE_BUTTON_WIDTH / 2,
+        y: DELETE_BUTTON_HEIGHT / 2,
+        width: DELETE_BUTTON_WIDTH,
+        height: DELETE_BUTTON_HEIGHT,
+        label: this.deleteMode ? 'Cancel Delete' : 'Delete',
+        enabled: true,
+        onClick: () => {
+          this.toggleDeleteMode();
+        },
+      }),
+    );
+  }
+
   private showLoadingState(): void {
     this.clearSlotCards();
     this.setStatus('Loading save slots...');
@@ -220,6 +267,7 @@ export class SaveSlotScene extends Phaser.Scene {
       if (this.isLoggingOut) {
         return;
       }
+      this.slotSummaries = slots;
       this.renderSlotCards(slots);
       this.setStatus('Select a slot to continue or create a new save.');
     } catch (error: unknown) {
@@ -258,13 +306,18 @@ export class SaveSlotScene extends Phaser.Scene {
 
   private createSlotCard(slot: SaveSlotSummary): Phaser.GameObjects.Container {
     const group = this.ui.container({ width: SLOT_CARD_WIDTH, height: SLOT_CARD_HEIGHT });
+    const isDeleteTarget = this.deleteMode && !slot.isEmpty;
     const background = this.ui.pressableSurface({
       x: SLOT_CARD_WIDTH / 2,
       y: SLOT_CARD_HEIGHT / 2,
       width: SLOT_CARD_WIDTH,
       height: SLOT_CARD_HEIGHT,
-      variant: slot.isEmpty ? 'slotEmpty' : 'slotReady',
-      hoverVariant: slot.isEmpty ? 'slotEmptyHover' : 'slotReadyHover',
+      variant: isDeleteTarget ? 'slotDelete' : slot.isEmpty ? 'slotEmpty' : 'slotReady',
+      hoverVariant: isDeleteTarget
+        ? 'slotDeleteHover'
+        : slot.isEmpty
+          ? 'slotEmptyHover'
+          : 'slotReadyHover',
       onClick: () => {
         void this.handleSlotSelection(slot);
       },
@@ -278,7 +331,11 @@ export class SaveSlotScene extends Phaser.Scene {
       y: SLOT_CARD_HEIGHT / 2 - 88,
       text: slotLabel,
       variant: 'slotLabel',
-      color: slot.isEmpty ? UI_THEME.colors.disabledAccent : UI_THEME.colors.readyAccent,
+      color: isDeleteTarget
+        ? UI_THEME.colors.danger
+        : slot.isEmpty
+          ? UI_THEME.colors.disabledAccent
+          : UI_THEME.colors.readyAccent,
       align: 'center',
       origin: 0.5,
     });
@@ -304,9 +361,19 @@ export class SaveSlotScene extends Phaser.Scene {
     const footerText = this.ui.text({
       x: SLOT_CARD_WIDTH / 2,
       y: SLOT_CARD_HEIGHT / 2 + 74,
-      text: slot.isEmpty ? 'Click to create' : 'Click to load',
+      text: this.deleteMode
+        ? slot.isEmpty
+          ? 'Already empty'
+          : 'Click to delete'
+        : slot.isEmpty
+          ? 'Click to create'
+          : 'Click to load',
       variant: 'slotFooter',
-      color: slot.isEmpty ? UI_THEME.text.caption.color : UI_THEME.colors.readyFooter,
+      color: isDeleteTarget
+        ? UI_THEME.colors.danger
+        : slot.isEmpty
+          ? UI_THEME.text.caption.color
+          : UI_THEME.colors.readyFooter,
       align: 'center',
       origin: 0.5,
       alpha: 0.92,
@@ -366,8 +433,12 @@ export class SaveSlotScene extends Phaser.Scene {
     return slot;
   }
 
-  private setStatus(message: string): void {
+  private setStatus(
+    message: string,
+    color: typeof UI_THEME.text.statusLarge.color = UI_THEME.text.statusLarge.color,
+  ): void {
     this.statusText.setText(message);
+    this.statusText.setColor(color.css);
   }
 
   private clearSlotCards(): void {
@@ -395,6 +466,15 @@ export class SaveSlotScene extends Phaser.Scene {
   }
 
   private async handleSlotSelection(slot: SaveSlotSummary): Promise<void> {
+    if (this.isSlotActionPending || this.isLoggingOut) {
+      return;
+    }
+    if (this.deleteMode) {
+      await this.deleteSlot(slot);
+      return;
+    }
+
+    this.isSlotActionPending = true;
     try {
       if (slot.isEmpty) {
         this.setStatus(`Initializing Slot ${slot.slotId}...`);
@@ -419,6 +499,59 @@ export class SaveSlotScene extends Phaser.Scene {
         return;
       }
       this.showFailureState(error);
+    } finally {
+      this.isSlotActionPending = false;
+    }
+  }
+
+  private toggleDeleteMode(): void {
+    if (this.isSlotActionPending || this.isLoggingOut) {
+      return;
+    }
+    if (this.slotSummaries.length === 0) {
+      this.setStatus('Save slots are not available yet.');
+      return;
+    }
+
+    this.deleteMode = !this.deleteMode;
+    this.renderDeleteButton();
+    this.renderSlotCards(this.slotSummaries);
+    if (this.deleteMode) {
+      this.setStatus('Delete mode: select a saved slot to delete.', UI_THEME.colors.danger);
+      return;
+    }
+    this.setStatus('Select a slot to continue or create a new save.');
+  }
+
+  private async deleteSlot(slot: SaveSlotSummary): Promise<void> {
+    if (slot.isEmpty) {
+      this.setStatus(`Slot ${slot.slotId} is already empty.`, UI_THEME.colors.danger);
+      return;
+    }
+
+    this.isSlotActionPending = true;
+    this.setStatus(`Deleting Slot ${slot.slotId}...`, UI_THEME.colors.danger);
+    try {
+      const summary = await getGameServices(this).saveSlots.delete(slot.slotId);
+      if (this.isLoggingOut) {
+        return;
+      }
+
+      this.slotSummaries = this.slotSummaries.map((entry) =>
+        entry.slotId === summary.slotId ? summary : entry,
+      );
+      this.deleteMode = false;
+      this.renderDeleteButton();
+      this.renderSlotCards(this.slotSummaries);
+      this.setStatus(`Slot ${slot.slotId} deleted. Select a slot to continue.`);
+    } catch (error: unknown) {
+      if (this.isLoggingOut) {
+        return;
+      }
+      const message = error instanceof Error ? error.message : String(error);
+      this.setStatus(`Failed to delete Slot ${slot.slotId}: ${message}`, UI_THEME.colors.danger);
+    } finally {
+      this.isSlotActionPending = false;
     }
   }
 }

@@ -195,6 +195,47 @@ describe('save slots api', () => {
     });
   });
 
+  it('deletes an initialized slot and returns an empty summary', async () => {
+    const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'save-slots-'));
+    const { handler, request, slotsRoot } = await createTestContext(tempRoot);
+
+    const initRes = createResponse();
+    await handler(
+      request('POST', '/api/save-slots/2/initialize'),
+      initRes.response,
+      () => undefined,
+    );
+    expect(initRes.statusCode()).toBe(200);
+
+    const deleteRes = createResponse();
+    await handler(request('DELETE', '/api/save-slots/2'), deleteRes.response, () => undefined);
+
+    expect(deleteRes.statusCode()).toBe(200);
+    expect(deleteRes.json()).toEqual({
+      summary: {
+        slotId: 2,
+        saveName: null,
+        updatedAt: null,
+        deckCardCount: null,
+        leaderName: null,
+        isEmpty: true,
+      },
+    });
+    await expect(fs.stat(path.join(slotsRoot, 'slot-2.json'))).rejects.toMatchObject({
+      code: 'ENOENT',
+    });
+    const summaries = await listSaveSlotSummaries(slotsRoot);
+    expect(summaries.slots[1]).toMatchObject({ slotId: 2, isEmpty: true });
+
+    const repeatedDeleteRes = createResponse();
+    await handler(
+      request('DELETE', '/api/save-slots/2'),
+      repeatedDeleteRes.response,
+      () => undefined,
+    );
+    expect(repeatedDeleteRes.statusCode()).toBe(200);
+  });
+
   it('normalizes legacy card instances when reading an existing slot', async () => {
     const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'save-slots-'));
     const { handler, request, slotsRoot } = await createTestContext(tempRoot);

@@ -223,4 +223,53 @@ describe('save slot client api', () => {
       },
     });
   });
+
+  it('deletes a slot with DELETE and returns its empty summary', async () => {
+    const summary = {
+      slotId: 2 as const,
+      saveName: null,
+      updatedAt: null,
+      deckCardCount: null,
+      leaderName: null,
+      isEmpty: true,
+    };
+    const fetchSpy = vi.fn(async () =>
+      createFakeResponse({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        body: { summary },
+      }),
+    );
+    const client = new SaveSlotsClient(fetchSpy);
+
+    await expect(client.delete(2)).resolves.toEqual(summary);
+    expect(fetchSpy).toHaveBeenCalledWith('/api/save-slots/2', {
+      method: 'DELETE',
+    });
+  });
+
+  it('rejects invalid delete responses', async () => {
+    const client = new SaveSlotsClient(
+      vi.fn(async () =>
+        createFakeResponse({
+          ok: true,
+          status: 200,
+          statusText: 'OK',
+          body: {
+            summary: {
+              slotId: 1,
+              saveName: 'Still occupied',
+              updatedAt: '2024-01-01T00:00:00.000Z',
+              deckCardCount: 1,
+              leaderName: '미네르바',
+              isEmpty: false,
+            },
+          },
+        }),
+      ),
+    );
+
+    await expect(client.delete(1)).rejects.toThrow('Invalid delete save slot response');
+  });
 });

@@ -311,7 +311,11 @@ describe('stage battle result', () => {
       attack: savedState.deck.leader.attack,
       cost: savedState.deck.leader.cost,
       dominance: savedState.deck.leader.dominance,
-    }).toEqual(originalLeaderStats);
+    }).toEqual({
+      ...originalLeaderStats,
+      hp: (originalLeaderStats.hp ?? 0) + 1,
+      attack: (originalLeaderStats.attack ?? 0) + 1,
+    });
     expect({
       hp: savedState.deck.cards[0]!.hp,
       attack: savedState.deck.cards[0]!.attack,
@@ -350,8 +354,8 @@ describe('stage battle result', () => {
 
     expect(reloadedTarget.instance.exp).toBe(500);
     expect(reloadedTarget.instance.level).toBe(4);
-    expect(reloadedTarget.instance.hp).toBe((targetCard.instance.hp ?? 0) + 1);
-    expect(reloadedTarget.instance.attack).toBe((targetCard.instance.attack ?? 0) + 1);
+    expect(reloadedTarget.instance.hp).toBe((targetCard.instance.hp ?? 0) + 2);
+    expect(reloadedTarget.instance.attack).toBe((targetCard.instance.attack ?? 0) + 2);
   });
 });
 

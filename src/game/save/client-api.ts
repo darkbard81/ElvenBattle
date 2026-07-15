@@ -25,6 +25,11 @@ export class SaveSlotsClient {
   initialize(slotId: SaveSlotId): Promise<{ state: SaveSlotState; summary: SaveSlotSummary }> {
     return initializeSaveSlot(this.request, slotId);
   }
+
+  /** 현재 계정의 지정 슬롯을 삭제하고 빈 슬롯 요약을 반환한다. */
+  delete(slotId: SaveSlotId): Promise<SaveSlotSummary> {
+    return deleteSaveSlot(this.request, slotId);
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -199,4 +204,29 @@ async function initializeSaveSlot(
     state: data.state,
     summary: data.summary,
   };
+}
+
+/**
+ * 지정한 슬롯의 저장 상태를 삭제하고 서버가 반환한 빈 슬롯 요약을 검증한다.
+ * 삭제 결과가 요청한 슬롯과 일치하지 않으면 화면 상태를 갱신하지 않는다.
+ */
+async function deleteSaveSlot(request: ApiFetch, slotId: SaveSlotId): Promise<SaveSlotSummary> {
+  const response = await request(`/api/save-slots/${slotId}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+
+  const data = (await response.json()) as unknown;
+  if (
+    !isRecord(data) ||
+    !isSaveSlotSummary(data.summary) ||
+    data.summary.slotId !== slotId ||
+    !data.summary.isEmpty
+  ) {
+    throw new Error('Invalid delete save slot response');
+  }
+
+  return data.summary;
 }

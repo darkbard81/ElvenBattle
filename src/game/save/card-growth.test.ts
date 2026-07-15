@@ -33,10 +33,12 @@ describe('card growth', () => {
 
     expect(grown.card.instance.exp).toBe(500);
     expect(grown.card.instance.level).toBe(4);
-    expect(grown.card.instance.hp).toBe(originalHp + 1);
-    expect(grown.card.instance.attack).toBe(originalAttack + 1);
+    expect(grown.card.instance.hp).toBe(originalHp + 2);
+    expect(grown.card.instance.attack).toBe(originalAttack + 2);
     expect(grown.result.appliedGrowth).toEqual([
       { level: 2, stat: 'hp', value: 1 },
+      { level: 3, stat: 'hp', value: 1 },
+      { level: 3, stat: 'attack', value: 1 },
       { level: 4, stat: 'attack', value: 1 },
     ]);
     expect(card.instance.exp).toBe(0);
