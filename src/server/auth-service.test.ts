@@ -82,7 +82,7 @@ describe('auth service', () => {
     expect(service.getActiveSessionCount()).toBe(0);
   });
 
-  it('limits active ids to five without preventing inactive accounts from existing', async () => {
+  it('limits active ids to ten without preventing inactive accounts from existing', async () => {
     const dataRoot = await createTempDataRoot();
     let now = Date.parse('2026-07-14T00:00:00.000Z');
     const service = new AuthService({
@@ -91,7 +91,7 @@ describe('auth service', () => {
       startCleanupTimer: false,
     });
 
-    for (let index = 1; index <= 6; index += 1) {
+    for (let index = 1; index <= MAX_ACTIVE_AUTH_IDS + 1; index += 1) {
       const issued = await service.register({ id: `user_${index}`, password: PASSWORD });
       service.logout(issued.token);
     }
@@ -102,11 +102,15 @@ describe('auth service', () => {
     }
     expect(service.getActiveSessionCount()).toBe(MAX_ACTIVE_AUTH_IDS);
 
-    await expect(service.login({ id: 'user_6', password: PASSWORD })).rejects.toMatchObject({
+    await expect(
+      service.login({ id: `user_${MAX_ACTIVE_AUTH_IDS + 1}`, password: PASSWORD }),
+    ).rejects.toMatchObject({
       code: 'ACTIVE_ID_LIMIT',
       statusCode: 429,
     });
-    await expect(service.register({ id: 'user_7', password: PASSWORD })).rejects.toMatchObject({
+    await expect(
+      service.register({ id: `user_${MAX_ACTIVE_AUTH_IDS + 2}`, password: PASSWORD }),
+    ).rejects.toMatchObject({
       code: 'ACTIVE_ID_LIMIT',
       statusCode: 429,
     });
@@ -118,15 +122,15 @@ describe('auth service', () => {
 
     now += AUTH_SESSION_IDLE_MS;
     expect(service.getActiveSessionCount()).toBe(0);
-    await expect(service.login({ id: 'user_6', password: PASSWORD })).resolves.toMatchObject({
-      loginId: 'user_6',
-    });
+    await expect(
+      service.login({ id: `user_${MAX_ACTIVE_AUTH_IDS + 1}`, password: PASSWORD }),
+    ).resolves.toMatchObject({ loginId: `user_${MAX_ACTIVE_AUTH_IDS + 1}` });
 
     const accountStore = JSON.parse(
       await fs.readFile(path.join(dataRoot, 'auth', 'accounts.json'), 'utf8'),
     ) as { accounts: unknown[] };
-    expect(accountStore.accounts).toHaveLength(6);
-  }, 20_000);
+    expect(accountStore.accounts).toHaveLength(MAX_ACTIVE_AUTH_IDS + 1);
+  }, 40_000);
 
   it('rolls back the first account when legacy migration fails', async () => {
     const dataRoot = await createTempDataRoot();

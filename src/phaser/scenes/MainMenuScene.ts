@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { UI_THEME } from '../../theme';
 import { GAME_HEIGHT, GAME_WIDTH } from '../config/constants';
-import { CanvasUiFactory } from '../ui/CanvasUiFactory';
+import { CanvasUiFactory, type UiLayoutChild } from '../ui/CanvasUiFactory';
 import { getGameServices } from '../services/game-services';
 import type { MainMenuSceneData, TitleSceneData } from './scene-data';
 
@@ -17,6 +17,7 @@ const STATUS_HEIGHT = 96;
 const STATUS_TOP_PADDING = 52;
 const MENU_HEIGHT =
   TITLE_HEIGHT + BUTTON_TOP_PADDING + BUTTON_STACK_HEIGHT + STATUS_TOP_PADDING + STATUS_HEIGHT;
+const CARD_TEXT_TOOL_ACCOUNT_ID = 'darkbard81';
 
 type LicenseLink = {
   label: string;
@@ -190,49 +191,50 @@ export class MainMenuScene extends Phaser.Scene {
   }
 
   private createButtonLayout(): Phaser.GameObjects.GameObject {
+    const children: UiLayoutChild[] = [
+      this.createButtonChild('Start Game', () => {
+        this.scene.start('SaveSlotScene');
+      }),
+    ];
+
+    if (getGameServices(this).auth.current?.id === CARD_TEXT_TOOL_ACCOUNT_ID) {
+      children.push(
+        this.createButtonChild('Card Text Tool', () => {
+          window.location.assign('/tools/card-text/');
+        }),
+      );
+    }
+
+    children.push(
+      this.createButtonChild('License', () => {
+        this.showLicenseOverlay();
+      }),
+      this.createButtonChild('Logout', () => {
+        void this.logout();
+      }),
+    );
+
+    const buttonStackHeight = BUTTON_HEIGHT * children.length + BUTTON_GAP * (children.length - 1);
+
     return this.ui.stack({
       x: 0,
       y: 0,
       width: BUTTON_WIDTH,
-      height: BUTTON_STACK_HEIGHT,
+      height: buttonStackHeight,
       orientation: 'y',
       origin: 0,
       gap: BUTTON_GAP,
-      children: [
-        {
-          gameObject: this.createButton('Start Game', () => {
-            this.scene.start('SaveSlotScene');
-          }),
-          align: 'center',
-          minWidth: BUTTON_WIDTH,
-          minHeight: BUTTON_HEIGHT,
-        },
-        {
-          gameObject: this.createButton('Card Text Tool', () => {
-            window.location.assign('/tools/card-text/');
-          }),
-          align: 'center',
-          minWidth: BUTTON_WIDTH,
-          minHeight: BUTTON_HEIGHT,
-        },
-        {
-          gameObject: this.createButton('License', () => {
-            this.showLicenseOverlay();
-          }),
-          align: 'center',
-          minWidth: BUTTON_WIDTH,
-          minHeight: BUTTON_HEIGHT,
-        },
-        {
-          gameObject: this.createButton('Logout', () => {
-            void this.logout();
-          }),
-          align: 'center',
-          minWidth: BUTTON_WIDTH,
-          minHeight: BUTTON_HEIGHT,
-        },
-      ],
+      children,
     });
+  }
+
+  private createButtonChild(label: string, onClick: () => void): UiLayoutChild {
+    return {
+      gameObject: this.createButton(label, onClick),
+      align: 'center',
+      minWidth: BUTTON_WIDTH,
+      minHeight: BUTTON_HEIGHT,
+    };
   }
 
   private createButton(label: string, onClick: () => void): Phaser.GameObjects.Container {

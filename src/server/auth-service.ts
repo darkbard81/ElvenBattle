@@ -11,7 +11,7 @@ import type { AuthCredentials, AuthErrorCode, AuthSessionInfo } from '../game/au
 
 export const AUTH_SESSION_IDLE_MS = 15 * 60 * 1000;
 export const AUTH_SESSION_CLEANUP_INTERVAL_MS = 60 * 1000;
-export const MAX_ACTIVE_AUTH_IDS = 5;
+export const MAX_ACTIVE_AUTH_IDS = 10;
 
 const ACCOUNT_STORE_SCHEMA_VERSION = 1;
 const SCRYPT_KEY_LENGTH = 64;
@@ -127,7 +127,11 @@ export class AuthService {
         throw new AuthServiceError('ID_TAKEN', '이미 사용 중인 ID입니다.', 409);
       }
       if (this.sessionsByDigest.size >= MAX_ACTIVE_AUTH_IDS) {
-        throw new AuthServiceError('ACTIVE_ID_LIMIT', '현재 활성 사용자 수가 최대 5명입니다.', 429);
+        throw new AuthServiceError(
+          'ACTIVE_ID_LIMIT',
+          `현재 활성 사용자 수가 최대 ${MAX_ACTIVE_AUTH_IDS}명입니다.`,
+          429,
+        );
       }
 
       const account: AccountRecord = {
@@ -176,7 +180,11 @@ export class AuthService {
 
       const existingDigest = this.sessionDigestByAccountId.get(account.accountId);
       if (!existingDigest && this.sessionsByDigest.size >= MAX_ACTIVE_AUTH_IDS) {
-        throw new AuthServiceError('ACTIVE_ID_LIMIT', '현재 활성 사용자 수가 최대 5명입니다.', 429);
+        throw new AuthServiceError(
+          'ACTIVE_ID_LIMIT',
+          `현재 활성 사용자 수가 최대 ${MAX_ACTIVE_AUTH_IDS}명입니다.`,
+          429,
+        );
       }
       if (existingDigest) {
         this.removeSessionByDigest(existingDigest);

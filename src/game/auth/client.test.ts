@@ -74,14 +74,14 @@ describe('auth session controller', () => {
     const controller = new AuthSessionController({
       fetcher: vi.fn(async () =>
         response(429, {
-          error: { code: 'ACTIVE_ID_LIMIT', message: '현재 활성 사용자 수가 최대 5명입니다.' },
+          error: { code: 'ACTIVE_ID_LIMIT', message: '현재 활성 사용자 수가 최대 10명입니다.' },
         }),
       ),
       onExpired: vi.fn(),
     });
 
     await expect(
-      controller.register({ id: 'sixth_user', password: 'password-123' }),
+      controller.register({ id: 'eleventh_user', password: 'password-123' }),
     ).rejects.toMatchObject({
       code: 'ACTIVE_ID_LIMIT',
       statusCode: 429,
