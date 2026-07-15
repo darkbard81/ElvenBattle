@@ -47,8 +47,9 @@
       "description": "전투 런타임에 표시할 적 덱 ID"
     },
     "enemyDeckPath": {
-      "const": "cards/deck_dark.json",
-      "description": "현재 지원하는 적 덱 JSON 경로"
+      "type": "string",
+      "pattern": "^cards/deck_[A-Za-z0-9_-]+\\.json$",
+      "description": "cards/deck_*.json 규칙을 따르는 적 덱 JSON 경로"
     },
     "victoryCondition": {
       "$ref": "#/$defs/victoryCondition"

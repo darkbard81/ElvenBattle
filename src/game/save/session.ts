@@ -7,11 +7,8 @@ import {
   type SaveSlotState,
   type SaveSlotId,
 } from './types';
-import {
-  KNOWN_CARD_DEFINITIONS,
-  createCardDefinitionMap,
-  type CardDefinition,
-} from './card-catalog';
+import { createCardDefinitionMap, type CardDefinition } from './card-catalog';
+import { ALL_CARD_DEFINITIONS } from './auto-card-catalog';
 import type { StageProgressState } from '../stage/types';
 
 export type RuntimeCardInstance = {
@@ -43,7 +40,7 @@ export type GameSession = {
 
 export function createGameSession(
   state: SaveSlotState,
-  cardDefinitions: CardDefinition[] = KNOWN_CARD_DEFINITIONS,
+  cardDefinitions: readonly CardDefinition[] = ALL_CARD_DEFINITIONS,
 ): GameSession {
   const cardDefinitionMap = createCardDefinitionMap(cardDefinitions);
 

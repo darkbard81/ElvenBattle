@@ -13,6 +13,7 @@ import { createInitialBattleRuntime } from './create-battle-runtime';
 import { ENEMY_INITIAL_LEADER_SLOT, INITIAL_HAND_SIZE, PLAYER_INITIAL_LEADER_SLOT } from './types';
 
 const TEST_STAGE_DEFINITION = requireStageDefinition('test-stage-dark');
+const LEVEL01_STAGE_DEFINITION = requireStageDefinition('level01');
 
 describe('createInitialBattleRuntime', () => {
   it('places both leaders on their center back battlefield slots', async () => {
@@ -227,6 +228,21 @@ describe('createInitialBattleRuntime', () => {
     expect(runtime.enemy.deck.every((card) => card.card.instance.owner === 'ENEMY')).toBe(true);
     expect(
       runtime.enemy.hand.every((card) => card.card.definition.id.startsWith('unit_dark_')),
+    ).toBe(true);
+  });
+
+  it('creates the Level 01 enemy runtime from deck_level01.json', async () => {
+    const state = await createInitialSaveState({ slotId: 1 });
+    const session = createGameSession(state);
+    const runtime = createInitialBattleRuntime(session, LEVEL01_STAGE_DEFINITION);
+
+    expect(runtime.enemy.leader.card.definition.id).toBe('oaxKg1yQDmK2PWXG');
+    expect(runtime.enemy.hand).toHaveLength(INITIAL_HAND_SIZE);
+    expect(runtime.enemy.deck).toHaveLength(24);
+    expect(
+      [...runtime.enemy.hand, ...runtime.enemy.deck].every((card) =>
+        card.card.definition.traits.some((trait) => trait.key === 'sourceLevel'),
+      ),
     ).toBe(true);
   });
 

@@ -78,21 +78,21 @@ export const KNOWN_CARD_DEFINITIONS: CardDefinition[] = mergeCardDefinitions([
 ]);
 
 export function createCardDefinitionMap(
-  cardDefinitions: CardDefinition[] = KNOWN_CARD_DEFINITIONS,
+  cardDefinitions: readonly CardDefinition[] = KNOWN_CARD_DEFINITIONS,
 ): Map<string, CardDefinition> {
   return new Map(cardDefinitions.map((definition) => [definition.id, definition]));
 }
 
 export function findCardDefinition(
   definitionId: string,
-  cardDefinitions: CardDefinition[] = KNOWN_CARD_DEFINITIONS,
+  cardDefinitions: readonly CardDefinition[] = KNOWN_CARD_DEFINITIONS,
 ): CardDefinition | null {
   return createCardDefinitionMap(cardDefinitions).get(definitionId) ?? null;
 }
 
 export function requireCardDefinition(
   definitionId: string,
-  cardDefinitions: CardDefinition[] = KNOWN_CARD_DEFINITIONS,
+  cardDefinitions: readonly CardDefinition[] = KNOWN_CARD_DEFINITIONS,
 ): CardDefinition {
   const definition = findCardDefinition(definitionId, cardDefinitions);
   if (!definition) {

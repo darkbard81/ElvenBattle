@@ -9,9 +9,7 @@ import type {
 
 type JsonRecord = Record<string, unknown>;
 
-const SUPPORTED_ENEMY_DECK_PATHS = ['cards/deck_dark.json'] as const satisfies readonly [
-  StageEnemyDeckPath,
-];
+const ENEMY_DECK_PATH_PATTERN = /^cards\/deck_[A-Za-z0-9_-]+\.json$/;
 
 /**
  * Stage JSON 모듈 목록을 런타임 Stage 정의 배열로 변환한다.
@@ -170,7 +168,7 @@ function readEnemyDeckPath(record: JsonRecord, stagePath: string): StageEnemyDec
 }
 
 function isSupportedEnemyDeckPath(value: string): value is StageEnemyDeckPath {
-  return SUPPORTED_ENEMY_DECK_PATHS.includes(value as StageEnemyDeckPath);
+  return ENEMY_DECK_PATH_PATTERN.test(value);
 }
 
 function readString(record: JsonRecord, key: string, path: string): string {

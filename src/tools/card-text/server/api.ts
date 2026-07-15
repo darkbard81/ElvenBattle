@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { appConfig } from '../../../config';
 import sharp from 'sharp';
+import { launchCaptureBrowser } from './playwright-browser';
 
 const projectRoot = fileURLToPath(new URL('../../../../', import.meta.url));
 const assetsRoot = path.join(projectRoot, 'assets');
@@ -491,8 +492,7 @@ async function renderCardByScreenshot(input: {
   captureUrl.searchParams.set('referenceImage', input.referenceImage);
   captureUrl.searchParams.set('artOffsetY', String(input.artOffsetY));
 
-  const { chromium } = await import('playwright');
-  const browser = await chromium.launch({ headless: true });
+  const browser = await launchCaptureBrowser();
 
   try {
     const page = await browser.newPage({

@@ -1,11 +1,11 @@
 {
   "$schema": "../stage.schema.json",
-  "id": "test-stage-dark4",
-  "order": 5,
-  "name": "Test Stage4",
-  "description": "기본 전투 흐름과 리더 격파 승리 조건을 검증하는 테스트 Stage입니다.",
-  "enemyDeckId": "deck-enemy-dark-test",
-  "enemyDeckPath": "cards/deck_dark.json",
+  "id": "level01",
+  "order": 6,
+  "name": "Level 01",
+  "description": "PF2E Monster Core의 레벨 -1~1 몬스터로 구성된 덱과 전투하는 Stage입니다.",
+  "enemyDeckId": "deck-enemy-level01",
+  "enemyDeckPath": "cards/deck_level01.json",
   "victoryCondition": {
     "type": "DEFEAT_ENEMY_LEADER"
   },
@@ -15,7 +15,7 @@
     }
   ],
   "rewards": {
-    "description": "승리 시 적 배하 카드 일부를 보상 후보로 사용할 수 있습니다.",
+    "description": "승리 시 Level 01 적 카드 일부를 보상 후보로 사용할 수 있습니다.",
     "enemyCardDrop": {
       "source": "ENEMY_DROP",
       "chancePercent": 100,

@@ -11,7 +11,7 @@ export type StageDefeatCondition =
 
 export type StageUnlockCondition = { type: 'ALWAYS' } | { type: 'STAGE_CLEARED'; stageId: string };
 
-export type StageEnemyDeckPath = 'cards/deck_dark.json';
+export type StageEnemyDeckPath = `cards/deck_${string}.json`;
 
 export type StageRewardDefinition = {
   description: string;

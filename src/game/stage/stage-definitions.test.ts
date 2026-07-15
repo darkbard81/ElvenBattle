@@ -34,16 +34,9 @@ const TEST_STAGE_DATA = {
 describe('stage definitions', () => {
   it('lists the test stage as data-driven stage content', () => {
     const stages = listStageDefinitions();
+    const testStage = stages.find((stage) => stage.id === 'test-stage-dark');
 
-    expect(stages).toHaveLength(5);
-    expect(stages.map((stage) => stage.id)).toEqual([
-      'test-stage-dark',
-      'test-stage-dark1',
-      'test-stage-dark2',
-      'test-stage-dark3',
-      'test-stage-dark4',
-    ]);
-    expect(stages[0]).toMatchObject({
+    expect(testStage).toMatchObject({
       id: 'test-stage-dark',
       order: 1,
       name: 'Test Stage',
@@ -69,7 +62,7 @@ describe('stage definitions', () => {
     expect(isStageUnlocked(stage, createDefaultStageProgressState())).toBe(true);
   });
 
-  it('resolves the stage enemy deck from the registered static deck map', () => {
+  it('resolves the stage enemy deck from the automatically registered deck map', () => {
     const stage = requireStageDefinition('test-stage-dark');
     const enemyDeck = resolveStageEnemyDeck(stage);
 
@@ -78,6 +71,22 @@ describe('stage definitions', () => {
     expect(
       enemyDeck.cardDefinitionFile.cards.some((card) => card.id === 'leader_dark_empress'),
     ).toBe(true);
+  });
+
+  it('resolves the Level 01 stage with its PF2E enemy deck', () => {
+    const stage = requireStageDefinition('level01');
+    const enemyDeck = resolveStageEnemyDeck(stage);
+
+    expect(stage).toMatchObject({
+      order: 6,
+      name: 'Level 01',
+      unlock: { type: 'ALWAYS' },
+    });
+    expect(enemyDeck.deckId).toBe('deck-enemy-level01');
+    expect(enemyDeck.deckPath).toBe('cards/deck_level01.json');
+    expect(enemyDeck.cardDefinitionFile.cards.some((card) => card.id === 'oaxKg1yQDmK2PWXG')).toBe(
+      true,
+    );
   });
 
   it('returns null for unknown stage ids', () => {
@@ -119,15 +128,37 @@ describe('stage definitions', () => {
     ).toThrow('Duplicate stage order: 1');
   });
 
-  it('throws when a stage references an unsupported enemy deck path', () => {
+  it('accepts future deck JSON paths that follow the deck naming convention', () => {
+    const [stage] = loadStageDefinitions({
+      'cards/stages/stage_future.json': createStageData({
+        enemyDeckPath: 'cards/deck_future.json',
+      }),
+    });
+
+    expect(stage?.enemyDeckPath).toBe('cards/deck_future.json');
+  });
+
+  it('throws when a stage references a path outside the deck naming convention', () => {
     expect(() =>
       loadStageDefinitions({
         'cards/stages/stage_bad_deck.json': createStageData({
-          enemyDeckPath: 'cards/deck_missing.json',
+          enemyDeckPath: 'assets/deck_missing.json',
         }),
       }),
     ).toThrow(
-      'cards/stages/stage_bad_deck.json.enemyDeckPath is not supported: cards/deck_missing.json',
+      'cards/stages/stage_bad_deck.json.enemyDeckPath is not supported: assets/deck_missing.json',
+    );
+  });
+
+  it('throws when a valid deck path has no matching deck JSON file', () => {
+    expect(() =>
+      resolveStageEnemyDeck({
+        ...TEST_STAGE_DATA,
+        id: 'missing-deck-stage',
+        enemyDeckPath: 'cards/deck_missing.json',
+      }),
+    ).toThrow(
+      'Stage missing-deck-stage references an unknown enemy deck path: cards/deck_missing.json',
     );
   });
 

@@ -21,11 +21,13 @@ export type BattleAbilityEffectExpiration =
   | 'TURN_END'
   | 'NEXT_OWN_TURN_START'
   | 'NEXT_OWN_TURN_END'
+  | 'NEXT_ATTACK'
   | 'BATTLEFIELD_LEAVE'
   | 'NONE';
 
 export type BattleAbilityEffectRuntime = {
   id: string;
+  abilityId: string;
   sourceInstanceId: string;
   category: AbilityCategory;
   stat?: 'attack' | 'hp' | 'dominance';

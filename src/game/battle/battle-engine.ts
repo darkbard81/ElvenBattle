@@ -3,11 +3,16 @@ import {
   ACTIVE_SKILL_DEFINITIONS,
   AFTER_ATTACK_BUFF_ABILITY_IDS,
   ATTACK_DAMAGE_BONUS_ABILITY_HANDLERS,
+  BACK_PASSIVE_ABILITY_HANDLERS,
   BLOCK_ABILITY_IDS,
+  DAMAGE_REDUCTION_ABILITY_HANDLERS,
   FRONT_PASSIVE_ABILITY_HANDLERS,
   GLOBAL_PASSIVE_ABILITY_HANDLERS,
   MOVE_ATTACK_BONUS_ABILITY_IDS,
+  MOVE_NEXT_ATTACK_BONUS_ABILITY_IDS,
+  RETREAT_ADJACENT_ALLY_HEAL_VALUES,
   SUMMON_ATTACK_BONUS_ABILITY_IDS,
+  SUMMON_OPPOSING_ENEMY_ATTACK_PENALTY_ABILITY_IDS,
   type ActiveSkillDefinition,
   type BattleRuntimeEffectStat,
 } from './ability-handlers';
@@ -472,7 +477,7 @@ export function applyActiveSkillAction(
 
   source.hasUsedActiveSkillThisTurn = true;
   if (action.effect === 'HEAL') {
-    target.card.instance.hp = readCardNumber(target.card.instance.hp, 0) + action.value;
+    applyHealingToBattlefieldCard(target, action.value);
     return;
   }
 
@@ -1048,7 +1053,9 @@ function getPassiveStatBonus(
       target: card,
       ability,
       isFrontRowCard,
+      isBackRowCard,
       hasTrait,
+      hasTraitToken,
     });
     if (modifier?.stat === stat) {
       total += modifier.value;
@@ -1060,6 +1067,22 @@ function getPassiveStatBonus(
       continue;
     }
 
+    for (const ability of listCardAbilities(source, 'BACK')) {
+      const modifier = BACK_PASSIVE_ABILITY_HANDLERS[ability.id]?.({
+        runtime,
+        source,
+        target: card,
+        ability,
+        isFrontRowCard,
+        isBackRowCard,
+        hasTrait,
+        hasTraitToken,
+      });
+      if (modifier?.stat === stat) {
+        total += modifier.value;
+      }
+    }
+
     for (const ability of listCardAbilities(source, 'GLOBAL')) {
       const modifier = GLOBAL_PASSIVE_ABILITY_HANDLERS[ability.id]?.({
         runtime,
@@ -1067,7 +1090,9 @@ function getPassiveStatBonus(
         target: card,
         ability,
         isFrontRowCard,
+        isBackRowCard,
         hasTrait,
+        hasTraitToken,
       });
       if (modifier?.stat === stat) {
         total += modifier.value;
@@ -1080,29 +1105,47 @@ function getPassiveStatBonus(
 
 function resolveSummonAbilities(runtime: BattleRuntimeState, card: BattleCardRuntimeState): void {
   for (const ability of listCardAbilities(card, 'SUMMON')) {
-    if (!SUMMON_ATTACK_BONUS_ABILITY_IDS.has(ability.id)) {
-      continue;
+    if (SUMMON_ATTACK_BONUS_ABILITY_IDS.has(ability.id)) {
+      addAbilityEffect(runtime, card, card, ability, {
+        stat: 'attack',
+        value: 1,
+        expiresAt: 'TURN_END',
+      });
     }
 
-    addAbilityEffect(runtime, card, card, ability, {
-      stat: 'attack',
-      value: 1,
-      expiresAt: 'TURN_END',
-    });
+    if (SUMMON_OPPOSING_ENEMY_ATTACK_PENALTY_ABILITY_IDS.has(ability.id)) {
+      const target = findOpposingFrontCard(runtime, card);
+      if (target) {
+        addAbilityEffect(runtime, target, card, ability, {
+          stat: 'attack',
+          value: -1,
+          expiresAt: 'TURN_END',
+        });
+      }
+    }
   }
 }
 
 function resolveMoveAbilities(runtime: BattleRuntimeState, card: BattleCardRuntimeState): void {
   for (const ability of listCardAbilities(card, 'MOVE')) {
-    if (!MOVE_ATTACK_BONUS_ABILITY_IDS.has(ability.id)) {
-      continue;
+    if (MOVE_ATTACK_BONUS_ABILITY_IDS.has(ability.id)) {
+      addAbilityEffect(runtime, card, card, ability, {
+        stat: 'attack',
+        value: 1,
+        expiresAt: 'TURN_END',
+      });
     }
 
-    addAbilityEffect(runtime, card, card, ability, {
-      stat: 'attack',
-      value: 1,
-      expiresAt: 'TURN_END',
-    });
+    if (MOVE_NEXT_ATTACK_BONUS_ABILITY_IDS.has(ability.id)) {
+      card.abilityEffects = card.abilityEffects.filter(
+        (effect) => effect.expiresAt !== 'NEXT_ATTACK' || effect.abilityId !== ability.id,
+      );
+      addAbilityEffect(runtime, card, card, ability, {
+        stat: 'attack',
+        value: 1,
+        expiresAt: 'NEXT_ATTACK',
+      });
+    }
   }
 }
 
@@ -1162,7 +1205,52 @@ function resolveAttackDamage(
   attacker.hasAttackedThisTurn = true;
   action.attack = calculateAttackDamage(runtime, attacker, originalTarget);
   applyDamageToBattlefieldCard(runtime, attacker.side, damageTarget, action.attack);
+  consumeNextAttackAbilityEffects(attacker);
   resolveAfterAttackAbilities(runtime, attacker);
+}
+
+function findOpposingFrontCard(
+  runtime: BattleRuntimeState,
+  source: BattleCardRuntimeState,
+): BattleCardRuntimeState | null {
+  if (!source.battlefieldSlot) {
+    return null;
+  }
+
+  const { zone } = parseBattleSlotId(source.battlefieldSlot);
+  if (isBackRowZone(zone)) {
+    return null;
+  }
+
+  return findBattlefieldCardAtSlot(runtime, formatBattleSlotId(getOpposingSide(source.side), zone));
+}
+
+function resolveRetreatAbilities(runtime: BattleRuntimeState, card: BattleCardRuntimeState): void {
+  if (!card.battlefieldSlot) {
+    return;
+  }
+
+  const { zone } = parseBattleSlotId(card.battlefieldSlot);
+  const adjacentAllies = getAdjacentSlotIds(card.side, zone)
+    .map((slotId) => findBattlefieldCardAtSlot(runtime, slotId))
+    .filter(
+      (candidate): candidate is BattleCardRuntimeState =>
+        candidate !== null &&
+        candidate.side === card.side &&
+        getEffectiveHp(runtime, candidate) > 0,
+    )
+    .sort((left, right) => getEffectiveHp(runtime, left) - getEffectiveHp(runtime, right));
+  const target = adjacentAllies[0];
+  if (!target) {
+    return;
+  }
+
+  for (const ability of listCardAbilities(card, 'RETREAT')) {
+    const healValue = RETREAT_ADJACENT_ALLY_HEAL_VALUES[ability.id];
+    if (healValue !== undefined) {
+      applyHealingToBattlefieldCard(target, healValue);
+    }
+  }
 }
 
 function listActiveSkillTargets(
@@ -1187,6 +1275,7 @@ function addAbilityEffect(
 ): void {
   target.abilityEffects.push({
     id: `${ability.id}:${source.card.instance.instanceId}:${target.card.instance.instanceId}:${runtime.turnNumber}:${target.abilityEffects.length}`,
+    abilityId: ability.id,
     sourceInstanceId: source.card.instance.instanceId,
     category: ability.category,
     stat: effect.stat,
@@ -1238,7 +1327,12 @@ function applyDamageToBattlefieldCard(
   target: BattleCardRuntimeState,
   damage: number,
 ): void {
-  target.card.instance.hp = readCardNumber(target.card.instance.hp, 0) - Math.max(0, damage);
+  const damageReduction = listCardAbilities(target, 'SPECIAL').reduce((total, ability) => {
+    const handler = DAMAGE_REDUCTION_ABILITY_HANDLERS[ability.id];
+    return total + (handler?.({ runtime, target, ability }) ?? 0);
+  }, 0);
+  const resolvedDamage = Math.max(0, damage - damageReduction);
+  target.card.instance.hp = readCardNumber(target.card.instance.hp, 0) - resolvedDamage;
   if (getEffectiveHp(runtime, target) > 0) {
     return;
   }
@@ -1277,6 +1371,25 @@ function clearBattlefieldLeaveEffects(
 
 function hasTrait(card: BattleCardRuntimeState, key: string, text: string): boolean {
   return card.card.definition.traits.some((trait) => trait.key === key && trait.text === text);
+}
+
+function hasTraitToken(card: BattleCardRuntimeState, key: string, text: string): boolean {
+  return card.card.definition.traits.some(
+    (trait) =>
+      trait.key === key &&
+      trait.text
+        .split(',')
+        .map((token) => token.trim())
+        .includes(text),
+  );
+}
+
+function applyHealingToBattlefieldCard(target: BattleCardRuntimeState, value: number): void {
+  target.card.instance.hp = readCardNumber(target.card.instance.hp, 0) + Math.max(0, value);
+}
+
+function consumeNextAttackAbilityEffects(card: BattleCardRuntimeState): void {
+  card.abilityEffects = card.abilityEffects.filter((effect) => effect.expiresAt !== 'NEXT_ATTACK');
 }
 
 function readCardNumber(value: number | undefined, fallback: number): number {
@@ -1362,6 +1475,7 @@ function moveBattlefieldCardToDrop(
   runtime: BattleRuntimeState,
   card: BattleCardRuntimeState,
 ): void {
+  resolveRetreatAbilities(runtime, card);
   clearBattlefieldLeaveEffects(runtime, card);
   runtime.battlefield = runtime.battlefield.filter(
     (entry) => entry.card.instance.instanceId !== card.card.instance.instanceId,
