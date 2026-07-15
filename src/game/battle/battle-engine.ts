@@ -9,9 +9,12 @@ import {
   FRONT_PASSIVE_ABILITY_HANDLERS,
   GLOBAL_PASSIVE_ABILITY_HANDLERS,
   MOVE_ATTACK_BONUS_ABILITY_IDS,
-  MOVE_NEXT_ATTACK_BONUS_ABILITY_IDS,
+  MOVE_NEXT_ATTACK_BONUS_VALUES,
+  MOVE_NEXT_ATTACK_FRONT_ROW_ONLY_ABILITY_IDS,
   RETREAT_ADJACENT_ALLY_HEAL_VALUES,
+  RETREAT_ALL_ENEMY_DAMAGE_VALUES,
   SUMMON_ATTACK_BONUS_ABILITY_IDS,
+  SUMMON_OPPOSING_ENEMY_DAMAGE_VALUES,
   SUMMON_OPPOSING_ENEMY_ATTACK_PENALTY_ABILITY_IDS,
   type ActiveSkillDefinition,
   type BattleRuntimeEffectStat,
@@ -1123,6 +1126,14 @@ function resolveSummonAbilities(runtime: BattleRuntimeState, card: BattleCardRun
         });
       }
     }
+
+    const damageValue = SUMMON_OPPOSING_ENEMY_DAMAGE_VALUES[ability.id];
+    if (damageValue !== undefined) {
+      const target = findOpposingFrontCard(runtime, card);
+      if (target) {
+        applyDamageToBattlefieldCard(runtime, card.side, target, damageValue);
+      }
+    }
   }
 }
 
@@ -1136,13 +1147,15 @@ function resolveMoveAbilities(runtime: BattleRuntimeState, card: BattleCardRunti
       });
     }
 
-    if (MOVE_NEXT_ATTACK_BONUS_ABILITY_IDS.has(ability.id)) {
+    const nextAttackBonus = MOVE_NEXT_ATTACK_BONUS_VALUES[ability.id];
+    const requiresFrontRow = MOVE_NEXT_ATTACK_FRONT_ROW_ONLY_ABILITY_IDS.has(ability.id);
+    if (nextAttackBonus !== undefined && (!requiresFrontRow || isFrontRowCard(card))) {
       card.abilityEffects = card.abilityEffects.filter(
         (effect) => effect.expiresAt !== 'NEXT_ATTACK' || effect.abilityId !== ability.id,
       );
       addAbilityEffect(runtime, card, card, ability, {
         stat: 'attack',
-        value: 1,
+        value: nextAttackBonus,
         expiresAt: 'NEXT_ATTACK',
       });
     }
@@ -1241,14 +1254,23 @@ function resolveRetreatAbilities(runtime: BattleRuntimeState, card: BattleCardRu
     )
     .sort((left, right) => getEffectiveHp(runtime, left) - getEffectiveHp(runtime, right));
   const target = adjacentAllies[0];
-  if (!target) {
-    return;
-  }
 
   for (const ability of listCardAbilities(card, 'RETREAT')) {
     const healValue = RETREAT_ADJACENT_ALLY_HEAL_VALUES[ability.id];
-    if (healValue !== undefined) {
+    if (healValue !== undefined && target) {
       applyHealingToBattlefieldCard(target, healValue);
+    }
+
+    const damageValue = RETREAT_ALL_ENEMY_DAMAGE_VALUES[ability.id];
+    if (damageValue === undefined) {
+      continue;
+    }
+
+    const enemyUnits = listBattlefieldCards(runtime, getOpposingSide(card.side)).filter(
+      (enemy) => !isLeaderCard(runtime, enemy) && getEffectiveHp(runtime, enemy) > 0,
+    );
+    for (const enemy of enemyUnits) {
+      applyDamageToBattlefieldCard(runtime, card.side, enemy, damageValue);
     }
   }
 }
@@ -1329,7 +1351,7 @@ function applyDamageToBattlefieldCard(
 ): void {
   const damageReduction = listCardAbilities(target, 'SPECIAL').reduce((total, ability) => {
     const handler = DAMAGE_REDUCTION_ABILITY_HANDLERS[ability.id];
-    return total + (handler?.({ runtime, target, ability }) ?? 0);
+    return total + (handler?.({ runtime, target, ability, damage }) ?? 0);
   }, 0);
   const resolvedDamage = Math.max(0, damage - damageReduction);
   target.card.instance.hp = readCardNumber(target.card.instance.hp, 0) - resolvedDamage;

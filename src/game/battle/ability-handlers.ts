@@ -43,6 +43,7 @@ export type DamageReductionAbilityHandler = (context: {
   runtime: BattleRuntimeState;
   target: BattleCardRuntimeState;
   ability: CardAbility;
+  damage: number;
 }) => number;
 
 export const FRONT_PASSIVE_ABILITY_HANDLERS: Partial<Record<string, PassiveAbilityHandler>> = {
@@ -52,12 +53,22 @@ export const FRONT_PASSIVE_ABILITY_HANDLERS: Partial<Record<string, PassiveAbili
     source === target && isFrontRowCard(source) ? { stat: 'hp', value: 1 } : null,
   dwarf_hold_ground: ({ source, target, isFrontRowCard }) =>
     source === target && isFrontRowCard(source) ? { stat: 'hp', value: 1 } : null,
+  hobgoblin_shield_line: ({ source, target, isFrontRowCard }) =>
+    source === target && isFrontRowCard(source) ? { stat: 'attack', value: 1 } : null,
 };
 
 /** 후위에 있는 동안 다른 카드에 적용되는 지속 능력을 ID별로 해석한다. */
 export const BACK_PASSIVE_ABILITY_HANDLERS: Partial<Record<string, PassiveAbilityHandler>> = {
   gnome_traveling_song: ({ source, target, isBackRowCard }) =>
     source !== target && source.side === target.side && isBackRowCard(source)
+      ? { stat: 'attack', value: 1 }
+      : null,
+  goblin_war_chant: ({ source, target, isBackRowCard, hasTraitToken }) =>
+    source !== target &&
+    source.side === target.side &&
+    isBackRowCard(source) &&
+    (hasTraitToken(target, 'creatureType', 'goblin') ||
+      hasTraitToken(target, 'creatureType', 'hobgoblin'))
       ? { stat: 'attack', value: 1 }
       : null,
 };
@@ -79,21 +90,39 @@ export const GLOBAL_PASSIVE_ABILITY_HANDLERS: Partial<Record<string, PassiveAbil
     hasTraitToken(target, 'creatureType', 'animal')
       ? { stat: 'attack', value: 1 }
       : null,
+  rat_swarm_distraction: ({ source, target, isFrontRowCard }) =>
+    source.side !== target.side && isFrontRowCard(target) ? { stat: 'attack', value: -1 } : null,
 };
 
 export const SUMMON_ATTACK_BONUS_ABILITY_IDS = new Set(['greenwood_charge', 'iron_spike_charge']);
 
 export const MOVE_ATTACK_BONUS_ABILITY_IDS = new Set(['forest_path', 'mist_stride']);
 
-/** 턴이 지나도 다음 공격까지 유지되는 이동 공격력 보너스 능력 ID다. */
-export const MOVE_NEXT_ATTACK_BONUS_ABILITY_IDS = new Set(['eagle_dive']);
+/** 턴이 지나도 다음 공격까지 유지되는 이동 공격력 보너스를 능력 ID별로 정의한다. */
+export const MOVE_NEXT_ATTACK_BONUS_VALUES: Partial<Record<string, number>> = {
+  eagle_dive: 1,
+  catfolk_pouncing_stride: 2,
+};
+
+/** 전열에 도착한 이동에만 다음 공격 보너스를 부여하는 능력 ID다. */
+export const MOVE_NEXT_ATTACK_FRONT_ROW_ONLY_ABILITY_IDS = new Set(['catfolk_pouncing_stride']);
 
 /** 등장 위치와 정면으로 맞닿은 적의 공격력을 낮추는 능력 ID다. */
 export const SUMMON_OPPOSING_ENEMY_ATTACK_PENALTY_ABILITY_IDS = new Set(['flash_beetle_glare']);
 
+/** 등장 위치와 정면으로 맞닿은 적에게 적용할 피해량을 능력 ID별로 정의한다. */
+export const SUMMON_OPPOSING_ENEMY_DAMAGE_VALUES: Partial<Record<string, number>> = {
+  goblin_pyro_fireburst: 1,
+};
+
 /** 퇴각 시 인접한 아군에게 적용할 회복량을 능력 ID별로 정의한다. */
 export const RETREAT_ADJACENT_ALLY_HEAL_VALUES: Partial<Record<string, number>> = {
   homunculus_last_service: 1,
+};
+
+/** 퇴각 시 모든 적 UNIT에게 적용할 피해량을 능력 ID별로 정의한다. */
+export const RETREAT_ALL_ENEMY_DAMAGE_VALUES: Partial<Record<string, number>> = {
+  caligni_death_flash: 1,
 };
 
 export const AFTER_ATTACK_BUFF_ABILITY_IDS = new Set(['leafwind_flurry', 'shadow_blade_flurry']);
@@ -111,6 +140,8 @@ export const ATTACK_DAMAGE_BONUS_ABILITY_HANDLERS: Partial<
     getEffectiveHp(runtime, target) <= 3 ? 1 : 0,
   rapier_thrust: () => 2,
   hryngar_overwatch: ({ target, isBackRowCard }) => (isBackRowCard(target) ? 1 : 0),
+  bugbear_first_strike: ({ runtime, target, getEffectiveHp }) =>
+    getEffectiveHp(runtime, target) >= (target.card.definition.hp ?? 0) ? 1 : 0,
 };
 
 /** 대상의 SPECIAL 능력이 제공하는 피해 감소 규칙을 ID별로 해석한다. */
@@ -118,6 +149,7 @@ export const DAMAGE_REDUCTION_ABILITY_HANDLERS: Partial<
   Record<string, DamageReductionAbilityHandler>
 > = {
   animated_resilience: () => 1,
+  animated_armor_plating: ({ damage }) => (damage >= 3 ? 2 : 0),
 };
 
 export const ACTIVE_SKILL_DEFINITIONS: Partial<Record<string, ActiveSkillDefinition>> = {
@@ -128,4 +160,5 @@ export const ACTIVE_SKILL_DEFINITIONS: Partial<Record<string, ActiveSkillDefinit
   rune_tempering: { effect: 'BUFF_ATTACK', value: 1, targetSide: 'ally' },
   rune_forge: { effect: 'BUFF_ATTACK', value: 1, targetSide: 'ally' },
   leshy_leaf_mending: { effect: 'HEAL', value: 1, targetSide: 'ally' },
+  aiuvarin_elemental_bolt: { effect: 'DAMAGE', value: 2, targetSide: 'enemy' },
 };

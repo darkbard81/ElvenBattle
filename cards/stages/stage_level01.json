@@ -1,7 +1,7 @@
 {
   "$schema": "../stage.schema.json",
   "id": "level01",
-  "order": 6,
+  "order": 2,
   "name": "Level 01",
   "description": "PF2E Monster Core의 레벨 -1~1 몬스터로 구성된 덱과 전투하는 Stage입니다.",
   "enemyDeckId": "deck-enemy-level01",
@@ -18,7 +18,7 @@
     "description": "승리 시 Level 01 적 카드 일부를 보상 후보로 사용할 수 있습니다.",
     "enemyCardDrop": {
       "source": "ENEMY_DROP",
-      "chancePercent": 100,
+      "chancePercent": 50,
       "maxCards": 5,
       "excludeLeader": true
     }

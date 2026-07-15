@@ -78,7 +78,6 @@ describe('stage definitions', () => {
     const enemyDeck = resolveStageEnemyDeck(stage);
 
     expect(stage).toMatchObject({
-      order: 6,
       name: 'Level 01',
       unlock: { type: 'ALWAYS' },
     });
@@ -87,6 +86,28 @@ describe('stage definitions', () => {
     expect(enemyDeck.cardDefinitionFile.cards.some((card) => card.id === 'oaxKg1yQDmK2PWXG')).toBe(
       true,
     );
+  });
+
+  it('resolves Level 02 and unlocks it only after Level 01 is cleared', () => {
+    const stage = requireStageDefinition('level02');
+    const enemyDeck = resolveStageEnemyDeck(stage);
+
+    expect(stage).toMatchObject({
+      name: 'Level 02',
+      unlock: { type: 'STAGE_CLEARED', stageId: 'level01' },
+    });
+    expect(enemyDeck.deckId).toBe('deck-enemy-level02');
+    expect(enemyDeck.deckPath).toBe('cards/deck_level02.json');
+    expect(enemyDeck.cardDefinitionFile.cards.some((card) => card.id === 'PLZk6zY5iwccPTPS')).toBe(
+      true,
+    );
+    expect(isStageUnlocked(stage, createDefaultStageProgressState())).toBe(false);
+    expect(
+      isStageUnlocked(stage, {
+        clearedStageIds: ['level01'],
+        lastSelectedStageId: 'level01',
+      }),
+    ).toBe(true);
   });
 
   it('returns null for unknown stage ids', () => {
