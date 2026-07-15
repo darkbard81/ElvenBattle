@@ -13,7 +13,8 @@ export const AUTH_SESSION_IDLE_MS = 15 * 60 * 1000;
 export const AUTH_SESSION_CLEANUP_INTERVAL_MS = 60 * 1000;
 export const MAX_ACTIVE_AUTH_IDS = 10;
 
-const ACCOUNT_STORE_SCHEMA_VERSION = 1;
+const ACCOUNT_STORE_SCHEMA_VERSION = 2;
+const LEGACY_ACCOUNT_STORE_SCHEMA_VERSION = 1;
 const SCRYPT_KEY_LENGTH = 64;
 const SCRYPT_OPTIONS = {
   N: 2 ** 15,
@@ -38,6 +39,7 @@ type AccountRecord = {
   normalizedLoginId: string;
   password: PasswordHash;
   createdAt: string;
+  loginHistory: string[];
 };
 
 type AccountStore = {
@@ -140,6 +142,7 @@ export class AuthService {
         normalizedLoginId: parsed.normalizedLoginId,
         password: await hashPassword(parsed.password),
         createdAt: new Date(this.now()).toISOString(),
+        loginHistory: [],
       };
       const isFirstAccount = store.accounts.length === 0;
       const accountRoot = path.join(this.usersRoot, account.accountId);
@@ -186,11 +189,23 @@ export class AuthService {
           429,
         );
       }
+
+      const updatedAccount: AccountRecord = {
+        ...account,
+        loginHistory: [...account.loginHistory, new Date(this.now()).toISOString()],
+      };
+      await this.writeAccountStore({
+        schemaVersion: ACCOUNT_STORE_SCHEMA_VERSION,
+        accounts: store.accounts.map((candidate) =>
+          candidate.accountId === updatedAccount.accountId ? updatedAccount : candidate,
+        ),
+      });
+
       if (existingDigest) {
         this.removeSessionByDigest(existingDigest);
       }
 
-      return this.issueSession(account);
+      return this.issueSession(updatedAccount);
     });
   }
 
@@ -392,19 +407,44 @@ function derivePassword(
 }
 
 function validateAccountStore(value: unknown): AccountStore {
-  if (!isRecord(value) || value.schemaVersion !== ACCOUNT_STORE_SCHEMA_VERSION) {
+  if (
+    !isRecord(value) ||
+    (value.schemaVersion !== ACCOUNT_STORE_SCHEMA_VERSION &&
+      value.schemaVersion !== LEGACY_ACCOUNT_STORE_SCHEMA_VERSION)
+  ) {
     throw new Error('Invalid account store schema');
   }
-  if (!Array.isArray(value.accounts) || !value.accounts.every(isAccountRecord)) {
+  const isLegacyStore = value.schemaVersion === LEGACY_ACCOUNT_STORE_SCHEMA_VERSION;
+  if (
+    !Array.isArray(value.accounts) ||
+    !value.accounts.every((account) =>
+      isLegacyStore ? isLegacyAccountRecord(account) : isAccountRecord(account),
+    )
+  ) {
     throw new Error('Invalid account store accounts');
   }
   return {
     schemaVersion: ACCOUNT_STORE_SCHEMA_VERSION,
-    accounts: value.accounts,
+    accounts: value.accounts.map((account) => ({
+      ...account,
+      loginHistory: isLegacyStore ? [] : account.loginHistory,
+    })),
   };
 }
 
 function isAccountRecord(value: unknown): value is AccountRecord {
+  if (!isRecord(value)) {
+    return false;
+  }
+  const loginHistory = value.loginHistory;
+  return (
+    isLegacyAccountRecord(value) &&
+    Array.isArray(loginHistory) &&
+    loginHistory.every((timestamp) => typeof timestamp === 'string')
+  );
+}
+
+function isLegacyAccountRecord(value: unknown): value is Omit<AccountRecord, 'loginHistory'> {
   if (!isRecord(value) || !isRecord(value.password)) {
     return false;
   }

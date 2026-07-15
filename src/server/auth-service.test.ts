@@ -15,8 +15,10 @@ describe('auth service', () => {
   it('stores a salted hash, treats ids case-insensitively, and rotates the latest login', async () => {
     const dataRoot = await createTempDataRoot();
     const migrationTargets: string[] = [];
+    let now = Date.parse('2026-07-14T00:00:00.000Z');
     const service = new AuthService({
       dataRoot,
+      now: () => now,
       startCleanupTimer: false,
       migrateFirstAccount: async (target) => {
         migrationTargets.push(target);
@@ -31,9 +33,12 @@ describe('auth service', () => {
 
     const storedText = await fs.readFile(path.join(dataRoot, 'auth', 'accounts.json'), 'utf8');
     const stored = JSON.parse(storedText) as {
-      accounts: Array<{ password: Record<string, unknown> }>;
+      schemaVersion: number;
+      accounts: Array<{ password: Record<string, unknown>; loginHistory: string[] }>;
     };
+    expect(stored.schemaVersion).toBe(2);
     expect(storedText).not.toContain(PASSWORD);
+    expect(stored.accounts[0]?.loginHistory).toEqual([]);
     expect(stored.accounts[0]?.password).toMatchObject({
       algorithm: 'scrypt',
       N: 2 ** 15,
@@ -48,16 +53,74 @@ describe('auth service', () => {
     await expect(
       service.login({ id: 'USER_ONE', password: 'incorrect-password' }),
     ).rejects.toMatchObject({ code: 'INVALID_CREDENTIALS', statusCode: 401 });
+    expect(
+      JSON.parse(await fs.readFile(path.join(dataRoot, 'auth', 'accounts.json'), 'utf8')),
+    ).toMatchObject({ accounts: [{ loginHistory: [] }] });
 
+    now += 60_000;
     const loggedIn = await service.login({ id: 'USER_ONE', password: PASSWORD });
     expect(loggedIn.session.id).toBe('User_One');
     expect(service.authenticate(registered.token)).toBeNull();
     expect(service.authenticate(loggedIn.token)?.accountId).toBe(registered.accountId);
+    expect(
+      JSON.parse(await fs.readFile(path.join(dataRoot, 'auth', 'accounts.json'), 'utf8')),
+    ).toMatchObject({ accounts: [{ loginHistory: ['2026-07-14T00:01:00.000Z'] }] });
 
-    const restarted = new AuthService({ dataRoot, startCleanupTimer: false });
+    now += 60_000;
+    const restarted = new AuthService({ dataRoot, now: () => now, startCleanupTimer: false });
     expect(restarted.authenticate(loggedIn.token)).toBeNull();
     await expect(restarted.login({ id: 'user_one', password: PASSWORD })).resolves.toMatchObject({
       accountId: registered.accountId,
+    });
+    expect(
+      JSON.parse(await fs.readFile(path.join(dataRoot, 'auth', 'accounts.json'), 'utf8')),
+    ).toMatchObject({
+      accounts: [
+        {
+          loginHistory: ['2026-07-14T00:01:00.000Z', '2026-07-14T00:02:00.000Z'],
+        },
+      ],
+    });
+  });
+
+  it('migrates schema version one accounts when recording the next login', async () => {
+    const dataRoot = await createTempDataRoot();
+    const service = new AuthService({ dataRoot, startCleanupTimer: false });
+    const registered = await service.register({ id: 'legacy_user', password: PASSWORD });
+    service.dispose();
+
+    const accountsPath = path.join(dataRoot, 'auth', 'accounts.json');
+    const currentStore = JSON.parse(await fs.readFile(accountsPath, 'utf8')) as {
+      accounts: Array<Record<string, unknown>>;
+    };
+    await fs.writeFile(
+      accountsPath,
+      `${JSON.stringify({
+        schemaVersion: 1,
+        accounts: currentStore.accounts.map((account) => {
+          const legacyAccount = { ...account };
+          delete legacyAccount.loginHistory;
+          return legacyAccount;
+        }),
+      })}\n`,
+      'utf8',
+    );
+
+    const now = Date.parse('2026-07-14T01:00:00.000Z');
+    const restarted = new AuthService({
+      dataRoot,
+      now: () => now,
+      startCleanupTimer: false,
+    });
+    await expect(restarted.login({ id: 'legacy_user', password: PASSWORD })).resolves.toMatchObject(
+      {
+        accountId: registered.accountId,
+      },
+    );
+
+    expect(JSON.parse(await fs.readFile(accountsPath, 'utf8'))).toMatchObject({
+      schemaVersion: 2,
+      accounts: [{ loginHistory: ['2026-07-14T01:00:00.000Z'] }],
     });
   });
 
