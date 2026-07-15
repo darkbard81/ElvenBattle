@@ -110,6 +110,32 @@ describe('stage definitions', () => {
     ).toBe(true);
   });
 
+  it.each([
+    ['03', '02'],
+    ['04', '03'],
+    ['05', '04'],
+    ['06', '05'],
+    ['07', '06'],
+  ])('resolves Level %s and unlocks it only after Level %s is cleared', (level, previous) => {
+    const stage = requireStageDefinition(`level${level}`);
+    const enemyDeck = resolveStageEnemyDeck(stage);
+
+    expect(stage).toMatchObject({
+      name: `Level ${level}`,
+      unlock: { type: 'STAGE_CLEARED', stageId: `level${previous}` },
+    });
+    expect(enemyDeck.deckId).toBe(`deck-enemy-level${level}`);
+    expect(enemyDeck.deckPath).toBe(`cards/deck_level${level}.json`);
+    expect(enemyDeck.cardDefinitionFile.cards).toHaveLength(11);
+    expect(isStageUnlocked(stage, createDefaultStageProgressState())).toBe(false);
+    expect(
+      isStageUnlocked(stage, {
+        clearedStageIds: [`level${previous}`],
+        lastSelectedStageId: `level${previous}`,
+      }),
+    ).toBe(true);
+  });
+
   it('returns null for unknown stage ids', () => {
     expect(findStageDefinition('missing-stage')).toBeNull();
   });

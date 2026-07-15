@@ -37,6 +37,7 @@ import {
 } from './types';
 
 const TEST_STAGE_DEFINITION = requireStageDefinition('test-stage-dark');
+const PRESERVE_DECK_ORDER = () => 0.999_999;
 
 describe('battle engine', () => {
   it('calculates dominance from only orthogonally adjacent allied cards on empty slots', async () => {
@@ -485,6 +486,7 @@ describe('battle engine', () => {
         equipmentCardInstanceId: equipment.instance.instanceId,
       }),
       TEST_STAGE_DEFINITION,
+      PRESERVE_DECK_ORDER,
     );
     runtime.turnNumber = 2;
     const guardian = moveCardToBattlefield(runtime, 'player', 'unit_elf_guardian_001', 'player:FC');
@@ -1025,7 +1027,11 @@ describe('battle engine', () => {
 
 async function createRuntime(turnNumber = 2): Promise<BattleRuntimeState> {
   const state = await createInitialSaveState({ slotId: 1 });
-  const runtime = createInitialBattleRuntime(createGameSession(state), TEST_STAGE_DEFINITION);
+  const runtime = createInitialBattleRuntime(
+    createGameSession(state),
+    TEST_STAGE_DEFINITION,
+    PRESERVE_DECK_ORDER,
+  );
   runtime.turnNumber = turnNumber;
   return runtime;
 }

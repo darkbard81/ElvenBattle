@@ -2,6 +2,8 @@ import type { AbilityCategory, CardAbility } from '../save/card-catalog';
 import {
   ACTIVE_SKILL_DEFINITIONS,
   AFTER_ATTACK_BUFF_ABILITY_IDS,
+  AFTER_ATTACK_SELF_HEAL_VALUES,
+  AFTER_ATTACK_SELF_HP_BONUS_VALUES,
   ATTACK_DAMAGE_BONUS_ABILITY_HANDLERS,
   BACK_PASSIVE_ABILITY_HANDLERS,
   BLOCK_ABILITY_IDS,
@@ -1171,18 +1173,27 @@ function resolveAfterAttackAbilities(
   }
 
   for (const ability of listCardAbilities(attacker, 'ATTACK')) {
-    if (!AFTER_ATTACK_BUFF_ABILITY_IDS.has(ability.id)) {
-      continue;
-    }
-    if (getEffectiveHp(runtime, attacker) < 3) {
-      continue;
+    if (AFTER_ATTACK_BUFF_ABILITY_IDS.has(ability.id) && getEffectiveHp(runtime, attacker) >= 3) {
+      addAbilityEffect(runtime, attacker, attacker, ability, {
+        stat: 'attack',
+        value: 1,
+        expiresAt: 'NEXT_OWN_TURN_END',
+      });
     }
 
-    addAbilityEffect(runtime, attacker, attacker, ability, {
-      stat: 'attack',
-      value: 1,
-      expiresAt: 'NEXT_OWN_TURN_END',
-    });
+    const healValue = AFTER_ATTACK_SELF_HEAL_VALUES[ability.id];
+    if (healValue !== undefined) {
+      applyHealingToBattlefieldCard(attacker, healValue);
+    }
+
+    const hpBonus = AFTER_ATTACK_SELF_HP_BONUS_VALUES[ability.id];
+    if (hpBonus !== undefined) {
+      addAbilityEffect(runtime, attacker, attacker, ability, {
+        stat: 'hp',
+        value: hpBonus,
+        expiresAt: 'NEXT_OWN_TURN_END',
+      });
+    }
   }
 }
 

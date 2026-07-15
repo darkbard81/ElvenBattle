@@ -56,19 +56,38 @@ describe('createInitialBattleRuntime', () => {
     expect(zones).not.toContain('LEADER');
   });
 
-  it('draws the initial hand from the top of the saved deck', async () => {
+  it('draws the initial hand from a temporary shuffle without changing the saved deck order', async () => {
     const state = await createInitialSaveState({ slotId: 1 });
     const session = createGameSession(state);
-    const runtime = createInitialBattleRuntime(session, TEST_STAGE_DEFINITION);
+    const savedOrder = session.deck.cards.map((card) => card.instance.instanceId);
+    const runtime = createInitialBattleRuntime(session, TEST_STAGE_DEFINITION, () => 0);
+    const runtimeOrder = [...runtime.player.hand, ...runtime.player.deck].map(
+      (card) => card.card.instance.instanceId,
+    );
 
     expect(runtime.player.hand).toHaveLength(INITIAL_HAND_SIZE);
     expect(runtime.player.deck).toHaveLength(session.deck.cards.length - INITIAL_HAND_SIZE);
-    expect(runtime.player.hand.map((card) => card.card.instance.instanceId)).toEqual(
-      session.deck.cards.slice(0, INITIAL_HAND_SIZE).map((card) => card.instance.instanceId),
+    expect(runtimeOrder).not.toEqual(savedOrder);
+    expect([...runtimeOrder].sort()).toEqual([...savedOrder].sort());
+    expect(session.deck.cards.map((card) => card.instance.instanceId)).toEqual(savedOrder);
+  });
+
+  it('temporarily shuffles the enemy deck before creating its initial hand', async () => {
+    const state = await createInitialSaveState({ slotId: 1 });
+    const session = createGameSession(state);
+    const shuffledRuntime = createInitialBattleRuntime(session, TEST_STAGE_DEFINITION, () => 0);
+    const orderedRuntime = createInitialBattleRuntime(
+      session,
+      TEST_STAGE_DEFINITION,
+      () => 0.999_999,
     );
-    expect(runtime.player.deck.map((card) => card.card.instance.instanceId)).toEqual(
-      session.deck.cards.slice(INITIAL_HAND_SIZE).map((card) => card.instance.instanceId),
-    );
+    const readEnemyOrder = (runtime: ReturnType<typeof createInitialBattleRuntime>) =>
+      [...runtime.enemy.hand, ...runtime.enemy.deck].map((card) => card.card.definition.id);
+    const shuffledOrder = readEnemyOrder(shuffledRuntime);
+    const orderedOrder = readEnemyOrder(orderedRuntime);
+
+    expect(shuffledOrder).not.toEqual(orderedOrder);
+    expect([...shuffledOrder].sort()).toEqual([...orderedOrder].sort());
   });
 
   it('draws a collection card moved into the saved deck for the next battle', async () => {

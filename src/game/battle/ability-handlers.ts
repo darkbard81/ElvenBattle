@@ -55,6 +55,16 @@ export const FRONT_PASSIVE_ABILITY_HANDLERS: Partial<Record<string, PassiveAbili
     source === target && isFrontRowCard(source) ? { stat: 'hp', value: 1 } : null,
   hobgoblin_shield_line: ({ source, target, isFrontRowCard }) =>
     source === target && isFrontRowCard(source) ? { stat: 'attack', value: 1 } : null,
+  cockatrice_stone_guard: ({ source, target, isFrontRowCard }) =>
+    source === target && isFrontRowCard(source) ? { stat: 'hp', value: 2 } : null,
+  pixie_dust_guard: ({ source, target, isFrontRowCard }) =>
+    source === target && isFrontRowCard(source) ? { stat: 'hp', value: 3 } : null,
+  poltergeist_flying_debris: ({ source, target, isFrontRowCard }) =>
+    source === target && isFrontRowCard(source) ? { stat: 'attack', value: 2 } : null,
+  nightmare_blazing_vanguard: ({ source, target, isFrontRowCard }) =>
+    source === target && isFrontRowCard(source) ? { stat: 'attack', value: 3 } : null,
+  omen_dragon_mirrored_fate: ({ source, target, isFrontRowCard }) =>
+    source === target && isFrontRowCard(source) ? { stat: 'hp', value: 4 } : null,
 };
 
 /** 후위에 있는 동안 다른 카드에 적용되는 지속 능력을 ID별로 해석한다. */
@@ -70,6 +80,47 @@ export const BACK_PASSIVE_ABILITY_HANDLERS: Partial<Record<string, PassiveAbilit
     (hasTraitToken(target, 'creatureType', 'goblin') ||
       hasTraitToken(target, 'creatureType', 'hobgoblin'))
       ? { stat: 'attack', value: 1 }
+      : null,
+  dryad_wounded_grove: ({ source, target, isBackRowCard }) =>
+    source !== target &&
+    source.side === target.side &&
+    target.card.definition.type === 'UNIT' &&
+    isBackRowCard(source) &&
+    (target.card.instance.hp ?? 0) < (target.card.definition.hp ?? 0)
+      ? { stat: 'hp', value: 1 }
+      : null,
+  grenadier_underdog_mix: ({ source, target, isBackRowCard }) =>
+    source !== target &&
+    source.side === target.side &&
+    target.card.definition.type === 'UNIT' &&
+    isBackRowCard(source) &&
+    (target.card.definition.attack ?? 0) <= 3
+      ? { stat: 'attack', value: 1 }
+      : null,
+  redcap_bully_support: ({ source, target, isBackRowCard }) =>
+    source !== target &&
+    source.side === target.side &&
+    target.card.definition.type === 'UNIT' &&
+    isBackRowCard(source) &&
+    (target.card.definition.attack ?? 0) > (source.card.definition.attack ?? 0)
+      ? { stat: 'attack', value: 1 }
+      : null,
+  revenant_wounded_vengeance: ({ source, target, isBackRowCard, hasTraitToken }) =>
+    source !== target &&
+    source.side === target.side &&
+    target.card.definition.type === 'UNIT' &&
+    isBackRowCard(source) &&
+    hasTraitToken(target, 'creatureType', 'undead') &&
+    (target.card.instance.hp ?? 0) < (target.card.definition.hp ?? 0)
+      ? { stat: 'attack', value: 2 }
+      : null,
+  quetzalcoatlus_wing_command: ({ source, target, isBackRowCard, isFrontRowCard }) =>
+    source !== target &&
+    source.side === target.side &&
+    target.card.definition.type === 'UNIT' &&
+    isBackRowCard(source) &&
+    isFrontRowCard(target)
+      ? { stat: 'dominance', value: 2 }
       : null,
 };
 
@@ -92,6 +143,36 @@ export const GLOBAL_PASSIVE_ABILITY_HANDLERS: Partial<Record<string, PassiveAbil
       : null,
   rat_swarm_distraction: ({ source, target, isFrontRowCard }) =>
     source.side !== target.side && isFrontRowCard(target) ? { stat: 'attack', value: -1 } : null,
+  hell_hound_finisher_aura: ({ source, target }) =>
+    source.side !== target.side &&
+    target.card.definition.type === 'UNIT' &&
+    (target.card.instance.hp ?? 0) * 2 <= (target.card.definition.hp ?? 0)
+      ? { stat: 'attack', value: -1 }
+      : null,
+  shadow_dominance_drain: ({ source, target }) =>
+    source.side !== target.side && target.card.definition.type === 'UNIT'
+      ? { stat: 'dominance', value: -1 }
+      : null,
+  witchwarg_chilling_pressure: ({ source, target }) =>
+    source.side !== target.side &&
+    target.card.definition.type === 'UNIT' &&
+    (target.card.definition.attack ?? 0) >= 4
+      ? { stat: 'attack', value: -1 }
+      : null,
+  wisp_unmoved_dread: ({ source, target }) =>
+    source.side !== target.side &&
+    target.card.definition.type === 'UNIT' &&
+    !target.hasMovedThisTurn &&
+    !target.hasAttackedThisTurn
+      ? { stat: 'attack', value: -1 }
+      : null,
+  skeletal_hulk_bone_bulwark: ({ source, target }) =>
+    source !== target &&
+    source.side === target.side &&
+    target.card.definition.type === 'UNIT' &&
+    (target.card.definition.hp ?? 0) < (source.card.definition.hp ?? 0)
+      ? { stat: 'hp', value: 2 }
+      : null,
 };
 
 export const SUMMON_ATTACK_BONUS_ABILITY_IDS = new Set(['greenwood_charge', 'iron_spike_charge']);
@@ -102,6 +183,11 @@ export const MOVE_ATTACK_BONUS_ABILITY_IDS = new Set(['forest_path', 'mist_strid
 export const MOVE_NEXT_ATTACK_BONUS_VALUES: Partial<Record<string, number>> = {
   eagle_dive: 1,
   catfolk_pouncing_stride: 2,
+  ankhrav_burrow_rush: 2,
+  stonecaster_fault_step: 3,
+  brimorak_burning_step: 3,
+  ankylosaurus_tail_momentum: 4,
+  frost_drake_glacial_rush: 5,
 };
 
 /** 전열에 도착한 이동에만 다음 공격 보너스를 부여하는 능력 ID다. */
@@ -113,19 +199,39 @@ export const SUMMON_OPPOSING_ENEMY_ATTACK_PENALTY_ABILITY_IDS = new Set(['flash_
 /** 등장 위치와 정면으로 맞닿은 적에게 적용할 피해량을 능력 ID별로 정의한다. */
 export const SUMMON_OPPOSING_ENEMY_DAMAGE_VALUES: Partial<Record<string, number>> = {
   goblin_pyro_fireburst: 1,
+  athamaru_harpoon_entry: 2,
+  gargoyle_ambush_drop: 3,
+  flame_drake_eruption: 3,
+  hydra_many_maws: 4,
+  giant_statue_crushing_entry: 5,
 };
 
 /** 퇴각 시 인접한 아군에게 적용할 회복량을 능력 ID별로 정의한다. */
 export const RETREAT_ADJACENT_ALLY_HEAL_VALUES: Partial<Record<string, number>> = {
   homunculus_last_service: 1,
+  landslide_last_shelter: 3,
+  naiad_parting_tide: 5,
 };
 
 /** 퇴각 시 모든 적 UNIT에게 적용할 피해량을 능력 ID별로 정의한다. */
 export const RETREAT_ALL_ENEMY_DAMAGE_VALUES: Partial<Record<string, number>> = {
   caligni_death_flash: 1,
+  cinder_rat_smoke_burst: 2,
+  phantom_last_oath: 3,
+  mummy_tomb_miasma: 4,
 };
 
 export const AFTER_ATTACK_BUFF_ABILITY_IDS = new Set(['leafwind_flurry', 'shadow_blade_flurry']);
+
+/** 공격 해결 뒤 공격자 자신이 회복하는 능력과 회복량이다. */
+export const AFTER_ATTACK_SELF_HEAL_VALUES: Partial<Record<string, number>> = {
+  unicorn_purifying_charge: 1,
+};
+
+/** 공격 해결 뒤 공격자 자신이 다음 자기 턴 종료까지 얻는 HP 보너스다. */
+export const AFTER_ATTACK_SELF_HP_BONUS_VALUES: Partial<Record<string, number>> = {
+  stegosaurus_guarded_swing: 2,
+};
 
 export const BLOCK_ABILITY_IDS = new Set(['guardian_block']);
 
@@ -142,6 +248,19 @@ export const ATTACK_DAMAGE_BONUS_ABILITY_HANDLERS: Partial<
   hryngar_overwatch: ({ target, isBackRowCard }) => (isBackRowCard(target) ? 1 : 0),
   bugbear_first_strike: ({ runtime, target, getEffectiveHp }) =>
     getEffectiveHp(runtime, target) >= (target.card.definition.hp ?? 0) ? 1 : 0,
+  herbalist_weakening_strike: ({ runtime, target, getEffectiveHp }) =>
+    getEffectiveHp(runtime, target) >= (target.card.definition.hp ?? 0) ? 2 : 0,
+  minotaur_opening_gore: ({ runtime, target, getEffectiveHp }) =>
+    getEffectiveHp(runtime, target) >= (target.card.definition.hp ?? 0) ? 3 : 0,
+  harpy_backline_gale: ({ target, isBackRowCard }) => (isBackRowCard(target) ? 3 : 0),
+  lamia_backline_curse: ({ target, isBackRowCard }) => (isBackRowCard(target) ? 4 : 0),
+  medusa_first_gaze: ({ runtime, target, getEffectiveHp }) =>
+    getEffectiveHp(runtime, target) >= (target.card.definition.hp ?? 0) ? 5 : 0,
+  werebear_wounded_fury: ({ runtime, attacker, getEffectiveHp }) =>
+    getEffectiveHp(runtime, attacker) * 2 <= (attacker.card.definition.hp ?? 0) ? 2 : 0,
+  yeti_size_hunt: ({ attacker, target }) => (readSizeRank(attacker) > readSizeRank(target) ? 2 : 0),
+  wyvern_opposing_dive: ({ attacker, target }) =>
+    readBattlefieldColumn(attacker) === readBattlefieldColumn(target) ? 3 : 0,
 };
 
 /** 대상의 SPECIAL 능력이 제공하는 피해 감소 규칙을 ID별로 해석한다. */
@@ -150,6 +269,11 @@ export const DAMAGE_REDUCTION_ABILITY_HANDLERS: Partial<
 > = {
   animated_resilience: () => 1,
   animated_armor_plating: ({ damage }) => (damage >= 3 ? 2 : 0),
+  statue_stone_shell: () => 2,
+  arboreal_bark_armor: () => 3,
+  basilisk_crystal_hide: ({ damage }) => (damage >= 4 ? 3 : 0),
+  granitescale_plating: () => 3,
+  dullahan_deathless_guard: () => 4,
 };
 
 export const ACTIVE_SKILL_DEFINITIONS: Partial<Record<string, ActiveSkillDefinition>> = {
@@ -161,4 +285,18 @@ export const ACTIVE_SKILL_DEFINITIONS: Partial<Record<string, ActiveSkillDefinit
   rune_forge: { effect: 'BUFF_ATTACK', value: 1, targetSide: 'ally' },
   leshy_leaf_mending: { effect: 'HEAL', value: 1, targetSide: 'ally' },
   aiuvarin_elemental_bolt: { effect: 'DAMAGE', value: 2, targetSide: 'enemy' },
+  swampseer_bog_bolt: { effect: 'DAMAGE', value: 3, targetSide: 'enemy' },
+  griffon_wind_lift: { effect: 'BUFF_ATTACK', value: 2, targetSide: 'ally' },
+  forest_troll_regrowth: { effect: 'HEAL', value: 3, targetSide: 'ally' },
+  iron_hag_cage_hex: { effect: 'DAMAGE', value: 4, targetSide: 'enemy' },
+  greater_shadow_void_touch: { effect: 'DAMAGE', value: 5, targetSide: 'enemy' },
 };
+
+function readSizeRank(card: BattleCardRuntimeState): number {
+  const size = card.card.definition.traits.find((trait) => trait.key === 'size')?.text;
+  return { tiny: 0, sm: 1, med: 2, lg: 3, huge: 4, grg: 5 }[size ?? ''] ?? -1;
+}
+
+function readBattlefieldColumn(card: BattleCardRuntimeState): string | null {
+  return card.battlefieldSlot?.slice(-1) ?? null;
+}
